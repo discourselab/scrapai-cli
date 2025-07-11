@@ -1,0 +1,10 @@
+project_name: "example-project"
+spiders:
+  - politifact
+  - snopes
+settings:
+  download_delay: 2
+  concurrent_requests: 4
+  concurrent_requests_per_domain: 2
+  robotstxt_obey: true
+output_format: json
