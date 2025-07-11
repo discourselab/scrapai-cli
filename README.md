@@ -1,119 +1,68 @@
 # scrapai-cli
 
-Scrapy spider generation for large-scale web scraping. Built for Claude Code to easily add new websites.
+Scrapy spider generation for large-scale web scraping. Built for Claude Code to intelligently analyze and scrape websites.
 
 ## For Claude Code Instances
 
 **When asked to add any website, follow this systematic process:**
 
-1. **Check for sitemaps** → Choose spider type
-2. **Analyze site structure** → Get selectors  
-3. **Copy template** → Modify for site
-4. **Test spider** → Verify it works
-5. **Run spider** → Get articles
+1. **Analyze site structure** → Use inspector tool (handles JavaScript rendering internally)
+2. **Check for sitemaps** → Determine spider strategy  
+3. **Generate domain-specific spider** → Create custom extraction code for this specific site
+4. **Test spider** → Verify extraction works
+5. **Run spider** → Collect articles
+
+**IMPORTANT:** Don't use generic templates. Generate custom spider code based on actual site analysis.
 
 ## Quick Start
 
 ### 1. Setup Environment
 
 ```bash
-# Install uv (if not already installed)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Create virtual environment in the repo
-uv venv
-
 # Activate virtual environment (ALWAYS use this in the repo)
 source .venv/bin/activate  # Linux/Mac
-# or
-.venv\Scripts\activate     # Windows
 
-# Install dependencies
-uv pip install -r requirements.txt
+# Install Playwright browsers (required for inspector)
+playwright install
 
 # Verify setup
 ./scrapai list
 ```
 
-### 2. Add a Website - Step by Step
+### 2. Add a Website - Proper Analysis Process
 
-#### Step 1: Check for Sitemaps
-
-```python
-from core.sitemap import SitemapDiscovery
-
-discovery = SitemapDiscovery('https://example.com')
-sitemaps = discovery.discover_sitemaps()
-
-if sitemaps:
-    print(f"✅ Found sitemaps: {sitemaps}")
-    # Use SitemapSpider template
-else:
-    print("❌ No sitemaps found")
-    # Use CrawlSpider template
-```
-
-#### Step 2: Analyze Site Structure
-
+**Step 1: Analyze the actual page structure**
 ```bash
-# Use the inspector tool
 bin/inspector --url https://example.com
-
-# This creates analysis files in data/[site]/analysis/
-# Look at analysis.json for selectors
+# Inspector automatically handles JavaScript rendering when needed
+# Creates analysis files in data/[site]/analysis/
 ```
 
-**If HTML is unclear/empty (JavaScript-based site):**
+**Step 2: Generate domain-specific spider**
 ```python
-# Use headless browser for JavaScript-heavy sites
-from utils.browser import BrowserClient
-
-browser = BrowserClient()
-html = browser.get_rendered_html('https://example.com')
-print(html[:500])  # Check if content is now visible
+# DON'T use generic generate_spider_from_analysis()
+# Instead, create custom spider code based on:
+# - Actual selectors found in the HTML analysis
+# - Site-specific URL patterns  
+# - Domain-specific content structure
+# - Proper extraction logic for this specific site
 ```
 
-#### Step 3: Choose and Copy Template
-
-**If sitemaps exist:**
-```bash
-cp templates/sitemap_spider_template.py scrapers/spiders/sitename.py
-```
-
-**If no sitemaps:**
-```bash
-cp templates/crawl_spider_template.py scrapers/spiders/sitename.py
-```
-
-#### Step 4: Modify Template
-
-**Replace in the copied file:**
-1. `SITENAME` → actual spider name
-2. `example.com` → actual domain
-3. Update URLs (start_urls or sitemap_urls)
-4. Update selectors based on analysis
-
-#### Step 5: Test and Run
-
-```bash
-# Test with limited items
-./scrapai test sitename
-
-# Run full crawl
-./scrapai crawl sitename --limit 100 --output articles.json
-```
+**Step 3: Write the spider with proper selectors**
+- Use the analysis to understand the actual page structure
+- Create selectors that match the real HTML elements
+- Test extraction on sample articles
+- Generate spider code that works for this specific domain
 
 ## Project Structure
 
 ```
 scrapai-cli/
-├── templates/                          # Spider templates
-│   ├── crawl_spider_template.py       # For sites without sitemaps
-│   └── sitemap_spider_template.py     # For sites with sitemaps
-├── core/                               # Analysis tools
+├── core/                               # Analysis and generation tools
 │   ├── sitemap.py                     # Sitemap discovery
-│   ├── analyzer.py                    # Site structure analysis
-│   └── add_site.py                    # Automated workflow (optional)
+│   ├── analyzer.py                    # Site structure analysis  
+│   ├── spider_templates.py            # Spider code generation
+│   └── add_site.py                    # Automated workflow
 ├── scrapers/                          # Scrapy project
 │   ├── spiders/                       # Generated spiders go here
 │   ├── settings.py                   # Scrapy configuration
@@ -124,10 +73,17 @@ scrapai-cli/
 └── scrapy.cfg                        # Scrapy configuration
 ```
 
-## Available Tools
+## Analysis Tools
 
-### 1. Sitemap Discovery
+### 1. Inspector Tool
+Analyzes page structure and generates selectors:
 
+```bash
+bin/inspector --url https://example.com
+# Creates analysis files in data/[site]/analysis/
+```
+
+### 2. Sitemap Discovery
 ```python
 from core.sitemap import SitemapDiscovery
 
@@ -136,32 +92,13 @@ sitemaps = discovery.discover_sitemaps()
 article_urls = discovery.get_all_article_urls()[:10]
 ```
 
-### 2. Inspector Tool
-
-```bash
-# Analyze website structure
-bin/inspector --url https://example.com
-
-# Creates analysis files in data/[site]/analysis/
-```
-
-### 3. Browser Client
-
+### 3. Browser Client (for JavaScript sites)
 ```python
 from utils.browser import BrowserClient
 
-# For JavaScript-heavy sites (when HTML is garbled/empty)
 browser = BrowserClient()
 html = browser.get_rendered_html('https://example.com')
 ```
-
-## Spider Templates
-
-### CrawlSpider (No Sitemaps)
-**Use when:** No sitemaps found, need to follow links manually
-
-### SitemapSpider (Has Sitemaps)  
-**Use when:** Site has sitemap.xml files
 
 ## CLI Commands
 
@@ -169,22 +106,11 @@ html = browser.get_rendered_html('https://example.com')
 # List available spiders
 ./scrapai list
 
-# Test a spider
+# Test a spider (limited items)
 ./scrapai test spidername
 
 # Run a spider
 ./scrapai crawl spidername --limit 100 --output articles.json
-```
-
-## Common Selector Patterns
-
-### News/Article Sites
-```css
-title:     h1, .headline, .article-title
-content:   article p, .article-body p, .content p
-date:      time, .date, .published
-author:    .author, .byline, [rel="author"]
-tags:      .tag, .category, .label
 ```
 
 ## Output Format
@@ -195,54 +121,55 @@ tags:      .tag, .category, .label
   "title": "Article title",
   "content": "Full article text...",
   "published_date": "2024-01-15",
-  "author": "Author name",
+  "author": "Author name", 
   "tags": ["tag1", "tag2"],
   "source": "sitename",
   "scraped_at": "2024-01-15T10:30:00"
 }
 ```
 
-## Decision Tree
+## Claude Code Decision Process
 
 ```
 User asks: "Add [website] to scrapai"
 │
-├─ Check sitemaps with core/sitemap.py
-│  │
-│  ├─ Sitemaps found?
-│  │  ├─ YES → Use sitemap_spider_template.py
-│  │  │        → Update sitemap_urls
-│  │  │        → Analyze sample articles for selectors
-│  │  │
-│  │  └─ NO  → Use crawl_spider_template.py
-│  │           → Analyze site navigation
-│  │           → Update start_urls and rules
-│  │
-├─ Analyze site structure with bin/inspector
-├─ Copy appropriate template
-├─ Modify selectors based on analysis
+├─ Run inspector to analyze actual page structure
+│  └─ Inspector uses browser.py internally for JavaScript sites
+├─ Check for sitemaps with core/sitemap.py  
+├─ Generate CUSTOM spider code (not generic templates)
+│  ├─ Analyze real selectors from HTML
+│  ├─ Create domain-specific extraction logic
+│  └─ Write spider tailored to this specific site
 ├─ Test with ./scrapai test [spider]
-└─ Run with ./scrapai crawl [spider] --limit 100
+└─ Validate extraction works properly
 ```
 
-## Common Issues
+## Common Patterns
+
+### News/Article Sites
+- Look for article containers, headlines, bylines
+- Check for pagination and category pages  
+- Analyze date formats and author attribution
+- Test content extraction depth
+
+### Sitemap vs Crawl Strategy
+- **Sitemap Spider**: When site has comprehensive sitemaps
+- **Crawl Spider**: When need to follow navigation links
+- **Mixed Strategy**: Use both for maximum coverage
+
+## Troubleshooting
 
 ### No Articles Found
-- Check selectors with browser developer tools
-- Verify URLs are correct
-- Look at spider logs for errors
+- Check selectors match actual page structure
+- Verify URLs are being extracted correctly
+- Look at spider logs for crawl patterns
 
 ### Wrong Content Extracted  
-- Update CSS selectors in parse_article method
-- Test selectors in browser console first
-- Check for JavaScript-loaded content
+- Re-run inspector on sample articles
+- Update selectors based on analysis
+- Test on multiple article types
 
 ### JavaScript-Heavy Sites
-- HTML appears garbled/compressed? Use headless browser
-- Content not loading? Site likely uses JavaScript
-- Use `utils.browser.BrowserClient()` for proper rendering
-
-### Spider Not Found
-- Ensure file is in scrapers/spiders/ directory
-- Check file naming matches spider name
-- Verify Python syntax is correct
+- Use BrowserClient for proper rendering
+- Check if content loads after page load
+- Consider API endpoints if available

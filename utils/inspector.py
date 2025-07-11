@@ -12,20 +12,20 @@ Usage:
 import os
 import json
 import argparse
-import requests
+import asyncio
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 
-from utils.http import get_client
+from utils.browser import BrowserClient
 
-def inspect_page(url, output_dir=None, proxy_type="auto", save_html=True):
+async def inspect_page_async(url, output_dir=None, proxy_type="auto", save_html=True):
     """
-    Inspect a page and output analysis to help with creating a scraper
+    Inspect a page using browser client and output analysis to help with creating a scraper
     
     Args:
         url (str): URL to inspect
         output_dir (str): Directory to save analysis and HTML. If None, a directory is created based on the domain
-        proxy_type (str): Proxy type to use
+        proxy_type (str): Proxy type to use (unused now, browser handles this)
         save_html (bool): Whether to save the full HTML
     
     Returns:
@@ -54,23 +54,24 @@ def inspect_page(url, output_dir=None, proxy_type="auto", save_html=True):
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
     
-    # Get the page
-    http_client = get_client(proxy_type=proxy_type)
-    response = http_client.get(url)
-    
-    if not response:
-        print(f"Failed to fetch page: {url}")
-        return None
-    
-    # Save the HTML if requested
-    if save_html:
-        html_file = os.path.join(output_dir, "page.html")
-        with open(html_file, 'w', encoding='utf-8') as f:
-            f.write(response.text)
-        print(f"Saved HTML to: {html_file}")
-    
-    # Parse the HTML
-    soup = BeautifulSoup(response.text, 'html.parser')
+    # Get the page using browser client
+    async with BrowserClient(headless=True) as browser:
+        await browser.goto(url)
+        html_content = await browser.get_html()
+        
+        if not html_content:
+            print(f"Failed to fetch page: {url}")
+            return None
+        
+        # Save the HTML if requested
+        if save_html:
+            html_file = os.path.join(output_dir, "page.html")
+            with open(html_file, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            print(f"Saved HTML to: {html_file}")
+        
+        # Parse the HTML
+        soup = BeautifulSoup(html_content, 'html.parser')
     
     # Extract useful information
     title = soup.title.text if soup.title else "No title"
@@ -113,7 +114,13 @@ def inspect_page(url, output_dir=None, proxy_type="auto", save_html=True):
             if selector:
                 print(f"  {field}: {selector}")
     
-    return analysis
+        return analysis
+
+def inspect_page(url, output_dir=None, proxy_type="auto", save_html=True):
+    """
+    Synchronous wrapper for inspect_page_async
+    """
+    return asyncio.run(inspect_page_async(url, output_dir, proxy_type, save_html))
 
 def analyze_potential_containers(soup):
     """
