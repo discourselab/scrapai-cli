@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""
+Inspector CLI wrapper
+
+A command-line tool to inspect fact-checking websites and help with creating scrapers.
+This is a simple wrapper around the inspector utility in utils/inspector.py.
+
+Usage:
+    bin/inspector --url https://example.com/fact-checks
+"""
+
+import argparse
+import sys
+import os
+
+# For development mode, add the project root to the path
+if __name__ == "__main__":
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Use absolute imports for package structure
+from utils.inspector import inspect_page
+from utils.logger import setup_logging
+
+# Set up logging with colored output
+logger = setup_logging('inspector', log_format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+def main():
+    parser = argparse.ArgumentParser(description='Inspect a fact-checking website to help create scrapers')
+    parser.add_argument('--url', type=str, required=True, help='URL to inspect')
+    parser.add_argument('--output-dir', type=str, default=None, help='Directory to save analysis')
+    parser.add_argument('--proxy-type', choices=['none', 'static', 'residential', 'auto'], 
+                      default='auto', help='Proxy type to use')
+    parser.add_argument('--no-save-html', action='store_true', help='Do not save the full HTML')
+    parser.add_argument('--log-level', choices=['debug', 'info', 'warning', 'error', 'critical'],
+                      default='info', help='Set the logging level')
+    parser.add_argument('--log-file', type=str, help='Path to log file (optional)')
+    
+    args = parser.parse_args()
+    
+    # Configure logging with provided options
+    global logger
+    logger = setup_logging(
+        'inspector',
+        level=args.log_level,
+        log_file=args.log_file
+    )
+    
+    logger.info(f"Starting inspection of {args.url}")
+    inspect_page(args.url, args.output_dir, args.proxy_type, not args.no_save_html)
+    logger.info("Inspection complete")
+
+if __name__ == "__main__":
+    main()

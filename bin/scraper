@@ -1,0 +1,215 @@
+#!/usr/bin/env python3
+"""
+Article Scraper CLI
+
+This script provides a command-line interface for scraping full article content
+from fact-checking websites based on URLs obtained from previous crawler runs.
+"""
+
+import argparse
+import logging
+import importlib
+import json
+import os
+import sys
+from typing import List, Dict, Any
+
+# For development mode, add the project root to the path
+if __name__ == "__main__":
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Use absolute imports for package structure
+from utils.config import get_scraper_config, validate_source_config, get_project_root
+
+# Use centralized logging
+from utils.logger import setup_logging
+
+# Use color formatter for logs
+logger = setup_logging('scraper', log_format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# Load available scrapers from config file
+ARTICLE_SCRAPERS = get_scraper_config()
+
+def get_article_scraper(source_id: str, proxy_type: str = 'auto'):
+    """
+    Get the appropriate article scraper for a source ID
+    
+    Args:
+        source_id (str): The source ID
+        proxy_type (str): Proxy type to use
+        
+    Returns:
+        object: An instance of the appropriate article scraper
+    """
+    if source_id not in ARTICLE_SCRAPERS:
+        raise ValueError(f"No article scraper available for source: {source_id}")
+    
+    # Get configuration for the scraper
+    config = ARTICLE_SCRAPERS[source_id]
+    
+    try:
+        # Import the scraper class dynamically
+        module_path = config['module']
+        class_name = config['class']
+        
+        module = importlib.import_module(module_path)
+        scraper_class = getattr(module, class_name)
+        
+        # Create and return an instance of the scraper
+        return scraper_class(proxy_type=proxy_type)
+    except (ImportError, AttributeError, KeyError) as e:
+        logger.error(f"Failed to load scraper class for {source_id}: {e}")
+        raise ValueError(f"Error loading scraper for {source_id}: {e}")
+
+def get_urls_from_articles_file(source_id: str, limit: int = None) -> List[str]:
+    """
+    Get article URLs from the crawler output file
+    
+    Args:
+        source_id (str): The source ID
+        limit (int, optional): Maximum number of URLs to return
+        
+    Returns:
+        list: List of article URLs
+    """
+    # Construct the path to the articles JSON file
+    articles_file = os.path.join(get_project_root(), 'data', source_id, 'articles.json')
+    
+    if not os.path.exists(articles_file):
+        logger.error(f"No articles file found for source: {source_id}")
+        return []
+    
+    try:
+        with open(articles_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        articles = data.get('articles', [])
+        urls = [article['url'] for article in articles if 'url' in article]
+        
+        if limit and limit > 0:
+            urls = urls[:limit]
+            
+        logger.info(f"Found {len(urls)} article URLs for source: {source_id}")
+        return urls
+    except Exception as e:
+        logger.error(f"Error reading articles file: {e}")
+        return []
+
+def main():
+    """Main entry point for the article scraper CLI"""
+    parser = argparse.ArgumentParser(description="Scrape full article content from fact-checking websites")
+    
+    # Source options
+    source_group = parser.add_mutually_exclusive_group()
+    source_group.add_argument('--source', '-s', help="Source to scrape (e.g., 'politifact')")
+    source_group.add_argument('--all', '-a', action='store_true', help="Scrape all available sources")
+    source_group.add_argument('--list', '-l', action='store_true', help="List available sources")
+    
+    # Scraping options
+    parser.add_argument('--limit', type=int, help="Maximum number of articles to scrape")
+    parser.add_argument('--url', help="Scrape a specific URL instead of using the articles file")
+    parser.add_argument('--skip-existing', action='store_true', help="Skip articles that have already been scraped", default=True)
+    parser.add_argument('--force', '-f', action='store_false', dest='skip_existing', help="Scrape all articles, even if already scraped")
+    
+    # Proxy options
+    parser.add_argument('--proxy-type', choices=['none', 'static', 'residential', 'auto'],
+                        default='auto', help="Proxy type to use")
+    
+    # Logging options
+    parser.add_argument('--log-level', choices=['debug', 'info', 'warning', 'error', 'critical'],
+                        default='info', help='Set the logging level')
+    parser.add_argument('--log-file', type=str, help='Path to log file (optional)')
+    
+    args = parser.parse_args()
+    
+    # Configure logging with provided options
+    global logger
+    logger = setup_logging(
+        'scraper',
+        level=args.log_level,
+        log_file=args.log_file
+    )
+    
+    logger.info("Starting article scraper")
+    
+    # List available sources
+    if args.list:
+        print("Available article scrapers:")
+        for source_id in sorted(ARTICLE_SCRAPERS.keys()):
+            print(f"  - {source_id}")
+        return 0
+        
+    # If no option is specified, show help and available sources
+    if not args.list and not args.source and not args.all and not args.url:
+        parser.print_help()
+        print("\nAvailable article scrapers:")
+        for source_id in sorted(ARTICLE_SCRAPERS.keys()):
+            print(f"  - {source_id}")
+        return 1
+    
+    # If --list is the only option, we've already handled it
+    if args.list and not args.source and not args.all and not args.url:
+        return 0
+    
+    # Determine which sources to scrape
+    sources_to_scrape = []
+    if args.all:
+        sources_to_scrape = list(ARTICLE_SCRAPERS.keys())
+    elif args.source:
+        if args.source not in ARTICLE_SCRAPERS:
+            logger.error(f"No article scraper available for source: {args.source}")
+            print(f"\nAvailable article scrapers:")
+            for source_id in sorted(ARTICLE_SCRAPERS.keys()):
+                print(f"  - {source_id}")
+            return 1
+        sources_to_scrape = [args.source]
+    elif args.url:
+        if not args.source:
+            logger.error("When using --url, you must also specify --source")
+            return 1
+        sources_to_scrape = [args.source]
+    
+    # Scrape each source
+    for source_id in sources_to_scrape:
+        logger.info(f"Scraping articles for source: {source_id}")
+        
+        try:
+            # Get the appropriate scraper
+            scraper = get_article_scraper(source_id, args.proxy_type)
+            
+            # If a specific URL is provided, scrape just that URL
+            if args.url:
+                logger.info(f"Scraping specific URL: {args.url}")
+                article_data = scraper.scrape_article(args.url)
+                
+                if article_data:
+                    article_id = scraper.get_article_id_from_url(args.url)
+                    scraper.save_article(article_id, article_data)
+                    logger.info(f"Successfully scraped article: {args.url}")
+                else:
+                    logger.error(f"Failed to scrape article: {args.url}")
+            else:
+                # Get URLs from the articles file
+                urls = get_urls_from_articles_file(source_id, args.limit)
+                
+                if not urls:
+                    logger.warning(f"No URLs found for source: {source_id}")
+                    continue
+                
+                # Scrape the URLs
+                stats = scraper.scrape_batch(urls, skip_existing=args.skip_existing)
+                
+                logger.info(f"Scraping complete for {source_id}:")
+                logger.info(f"  Total URLs: {stats['total']}")
+                logger.info(f"  Successfully scraped: {stats['successful']}")
+                logger.info(f"  Failed: {stats['failed']}")
+                logger.info(f"  Skipped (already scraped): {stats['skipped']}")
+                
+        except Exception as e:
+            logger.error(f"Error scraping source {source_id}: {e}")
+    
+    logger.info("Scraper execution complete")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

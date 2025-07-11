@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+
+import argparse
+import logging
+import importlib
+import os
+import sys
+from typing import Dict, Type, List
+
+# For development mode, add the project root to the path
+if __name__ == "__main__":
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Use absolute imports for package structure
+from utils.config import get_crawler_config, validate_source_config
+
+# Use centralized logging
+from utils.logger import setup_logging
+
+# Use color formatter for logs
+logger = setup_logging('crawler', log_format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# Load available crawlers from config file
+CRAWLERS = get_crawler_config()
+
+def load_crawler_class(source_id: str) -> Type:
+    """
+    Dynamically load a crawler class
+    
+    Args:
+        source_id (str): Source ID to load the crawler for
+        
+    Returns:
+        Type: The crawler class
+    """
+    try:
+        if source_id not in CRAWLERS:
+            logger.error(f"No crawler configuration found for source: {source_id}")
+            return None
+            
+        config = CRAWLERS[source_id]
+        module_path = config['module']
+        class_name = config['class']
+        
+        module = importlib.import_module(module_path)
+        return getattr(module, class_name)
+    except (ImportError, AttributeError, KeyError) as e:
+        logger.error(f"Failed to load crawler class for {source_id}: {e}")
+        return None
+
+def run_crawler(source_id: str, max_pages: int = None, new_only: bool = False, 
+                overwrite: bool = False, proxy_type: str = 'auto') -> None:
+    """
+    Run a specific crawler
+    
+    Args:
+        source_id (str): ID of the source to crawl
+        max_pages (int, optional): Maximum number of pages to crawl
+        new_only (bool): Only crawl articles newer than the latest one
+        overwrite (bool): Whether to overwrite existing articles or append
+        proxy_type (str): Proxy type to use: 'none', 'static', 'residential', or 'auto'
+    """
+    if source_id not in CRAWLERS:
+        logger.error(f"Unknown source: {source_id}")
+        print(f"Available sources: {', '.join(CRAWLERS.keys())}")
+        return
+    
+    crawler_class = load_crawler_class(source_id)
+    if not crawler_class:
+        return
+    
+    try:
+        crawler = crawler_class(proxy_type=proxy_type)
+        crawler.run(max_pages=max_pages, new_only=new_only, overwrite=overwrite)
+    except Exception as e:
+        logger.exception(f"Error running crawler for {source_id}: {e}")
+
+def run_all_crawlers(max_pages: int = None, new_only: bool = False, 
+                     overwrite: bool = False, proxy_type: str = 'auto') -> None:
+    """
+    Run all available crawlers
+    
+    Args:
+        max_pages (int, optional): Maximum number of pages to crawl
+        new_only (bool): Only crawl articles newer than the latest one
+        overwrite (bool): Whether to overwrite existing articles or append
+        proxy_type (str): Proxy type to use: 'none', 'static', 'residential', or 'auto'
+    """
+    logger.info(f"Running all crawlers: {', '.join(CRAWLERS.keys())}")
+    
+    for source_id in CRAWLERS:
+        run_crawler(source_id, max_pages, new_only, overwrite, proxy_type)
+
+def list_sources() -> None:
+    """List all available sources"""
+    print("Available sources:")
+    for source_id in CRAWLERS:
+        print(f"  - {source_id}")
+
+def main():
+    """Main entry point for the crawler CLI"""
+    parser = argparse.ArgumentParser(description='Factcheck Crawlers')
+    
+    # Source selection
+    source_group = parser.add_mutually_exclusive_group(required=True)
+    source_group.add_argument('--source', '-s', type=str, help='Source to crawl')
+    source_group.add_argument('--all', '-a', action='store_true', help='Run all crawlers')
+    source_group.add_argument('--list', '-l', action='store_true', help='List available sources')
+    
+    # Crawling options
+    parser.add_argument('--max-pages', '-m', type=int, help='Maximum number of pages to crawl')
+    parser.add_argument('--new-only', '-n', action='store_true', help='Only crawl articles newer than the latest one')
+    parser.add_argument('--overwrite', '-o', action='store_true', 
+                        help='Overwrite existing articles instead of appending, and ignore date filtering. '
+                             'This will force a full crawl even if already run today, and will override --new-only.')
+    parser.add_argument('--proxy-type', choices=['none', 'static', 'residential', 'auto'], default='auto',
+                        help='Proxy type to use (default: auto - escalates from none to static to residential)')
+    
+    # Logging options
+    parser.add_argument('--log-level', choices=['debug', 'info', 'warning', 'error', 'critical'],
+                        default='info', help='Set the logging level')
+    parser.add_argument('--log-file', type=str, help='Path to log file (optional)')
+    
+    args = parser.parse_args()
+    
+    # Configure logging with provided options
+    global logger
+    logger = setup_logging(
+        'crawler',
+        level=args.log_level,
+        log_file=args.log_file
+    )
+    
+    logger.info("Starting factcheck crawler")
+    
+    if args.list:
+        list_sources()
+    elif args.all:
+        run_all_crawlers(args.max_pages, args.new_only, args.overwrite, args.proxy_type)
+    else:
+        run_crawler(args.source, args.max_pages, args.new_only, args.overwrite, args.proxy_type)
+        
+    logger.info("Crawler execution complete")
+
+if __name__ == "__main__":
+    main()
