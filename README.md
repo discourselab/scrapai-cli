@@ -1,87 +1,119 @@
 # scrapai-cli
 
-Project-based Scrapy spider management for large-scale web scraping. Built for Claude Code to intelligently analyze and scrape websites with multi-project isolation.
+Project-based Scrapy spider management for large-scale web scraping. Built for Claude Code to intelligently analyze and scrape websites with multi-project isolation and newspaper4k-powered content extraction.
 
 ## For Claude Code Instances
 
-**When asked to add any website, follow this systematic process:**
+**When asked to add any website, follow the 3-phase enhanced workflow:**
 
-1. **Create/Select Project** → Determine which project this spider belongs to
-2. **Analyze site structure** → Use inspector tool (handles JavaScript rendering internally)
-3. **Check for sitemaps** → Determine spider strategy  
-4. **Generate domain-specific spider** → Create custom extraction code in `spiders/` directory
-5. **Test spider** → Verify extraction works for the project
-6. **Run spider** → Collect articles with project isolation
+1. **Phase 1: URL Collection** → Create basic spider to collect article URLs
+2. **Phase 2: Parser Creation** → Analyze samples and create newspaper4k parser
+3. **Phase 3: Integration** → Integrate parser into spider and deploy
 
-**IMPORTANT:** 
-- Don't use generic templates. Generate custom spider code based on actual site analysis.
-- Always create spiders in the shared `spiders/` directory
+**IMPORTANT:**
+
+- Use the newspaper4k library for content extraction (not CSS selectors)
+- Always test parsers on sample URLs before integration
+- **ALWAYS inspect collected URLs** and make spider restrictive to avoid non-article pages
+- Create spiders in the shared `spiders/` directory and parsers in `parsers/`
 - Use project system for client isolation and output organization
 
-## Ideal User Flow
+## Claude Code Decision Process - ENHANCED WORKFLOW
 
-### **Perfect Single Request**
+**When user says: "Add [website] to our system" or "Create project X and add [website] to it"**
+
 ```
-User: "Create a project called BrownU and add politifact.com to it"
+PHASE 1: PROJECT SETUP & HTML ANALYSIS
+│
+├─ 1. CREATE PROJECT (if needed)
+│  └─ ./scrapai projects create --name X --spiders ""
+│
+├─ 2. INSPECT WEBSITE STRUCTURE
+│  ├─ bin/inspector --url https://website.com/
+│  ├─ Analyze homepage HTML structure and link patterns
+│  ├─ Identify article URL patterns vs non-article pages
+│  └─ Create analysis files in data/website/analysis/
+│
+├─ 3. CREATE BASIC URL-COLLECTING SPIDER
+│  ├─ Create spiders/website.py based on inspector findings
+│  ├─ Use restrictive rules targeting ONLY article URLs
+│  ├─ Focus ONLY on collecting article URLs (not content extraction)
+│  ├─ Use homepage crawling to find articles (sitemap only if user requests)
+│  └─ Save URLs to data/website/urls.json
+│
+├─ 4. RUN URL COLLECTION
+│  ├─ ./scrapai test --project X website --limit 5
+│  └─ Collect representative article URLs for analysis
+│
+├─ 5. INSPECT COLLECTED URLS
+│  ├─ Review data/website/urls.json to verify URL quality
+│  ├─ Ensure only articles are captured (no categories, static pages, etc.)
+│  ├─ Update spider rules if non-articles are being collected
+│  └─ Re-run collection to verify only article URLs are captured
+│
+PHASE 2: CONTENT ANALYSIS & PARSER CREATION
+│
+├─ 6. ANALYZE SAMPLE ARTICLES
+│  ├─ Take 3-5 URLs from collected data/website/urls.json
+│  ├─ Show Claude Code the actual article URLs for inspection
+│  ├─ Claude analyzes HTML structure and content patterns
+│  └─ Identify extraction requirements (title, content, author, date, etc.)
+│
+├─ 7. USE SHARED NEWSPAPER4K PARSER
+│  ├─ Import and use utils.newspaper_parser.parse_article() in spider
+│  ├─ Shared parser handles proxies, retries, and standardized output automatically
+│  ├─ No need to create domain-specific parser files
+│  ├─ Custom metadata extraction only if shared parser misses site-specific data
+│  └─ Focus on spider URL collection rules, not parsing logic
+│
+├─ 8. TEST PARSER ON SAMPLE URLS
+│  ├─ Test parser against 5-10 collected URLs (using existing framework)
+│  ├─ Validate extraction: title, content, authors, publish_date, images
+│  ├─ Check newspaper4k's automatic extraction quality
+│  ├─ Use existing CLI commands for testing (no custom scripts)
+│  └─ Refine parser if needed for missing metadata
+│
+PHASE 3: INTEGRATION & DEPLOYMENT
+│
+├─ 9. INTEGRATE SHARED PARSER INTO SPIDER
+│  ├─ Update spiders/website.py to use utils.newspaper_parser.parse_article()
+│  ├─ Replace URL collection logic with content parsing
+│  ├─ Import from utils.newspaper_parser import parse_article
+│  └─ Maintain Scrapy framework for URL discovery
+│
+├─ 10. FINAL TESTING
+│  ├─ ./scrapai test --project X website --limit 5
+│  ├─ Verify complete article extraction (not just URLs)
+│  └─ Ensure 100% success rate for content extraction
+│
+├─ 11. ADD TO PROJECT CONFIG
+│  ├─ Edit projects/X/config.yaml
+│  ├─ Add "website" to spiders list
+│  └─ Configure any site-specific settings
+│
+└─ 12. READY FOR PRODUCTION
+   ├─ ./scrapai crawl --project X website --limit 100
+   └─ Full article content extraction with reliable newspaper4k
 ```
 
-**Claude Code automatically handles:**
+## Why newspaper4k Over CSS Selectors?
 
-1. **Creates the project first**
-   ```bash
-   ./scrapai projects create --name BrownU --spiders ""
-   ```
+**Problems with Traditional CSS Selectors:**
 
-2. **Analyzes the site structure**
-   ```bash
-   bin/inspector --url https://politifact.com
-   ```
+- Break when sites update HTML structure
+- Miss content from varying layouts
+- Extract wrong content (ads, navigation)
+- Require manual selector maintenance
+- Fragile and site-specific
 
-3. **Generates custom spider code**
-   - Create `spiders/politifact.py` extending `BaseSpider`
-   - Use real selectors from HTML analysis
-   - Implement site-specific extraction logic
-   - Save the working spider file
+**Benefits of newspaper4k:**
 
-4. **Tests the spider**
-   ```bash
-   ./scrapai test --project BrownU politifact --limit 5
-   ```
-
-5. **Fixes any issues found during testing**
-   - Update selectors if needed
-   - Fix extraction logic
-   - Re-test until working
-
-6. **Adds spider to project config**
-   - Edit `projects/BrownU/config.yaml`
-   - Add `politifact` to the spiders list
-   - Now project knows about the spider
-
-7. **Provides ready-to-use commands**
-   ```bash
-   # Run 100 articles
-   ./scrapai crawl --project BrownU politifact --limit 100
-   
-   # Run all articles
-   ./scrapai crawl --project BrownU politifact
-   ```
-
-**Result:** Complete working solution from one request!
-
-### **Alternative Flows**
-
-**If user provides just URL:**
-```
-User: "Add https://politifact.com"
-Claude: "Which project should this be added to? Or should I create a new project?"
-```
-
-**If user has existing project:**
-```
-User: "Add reuters.com to my ClientA project"
-Claude: [Analyzes reuters.com → Creates spider → Tests → Ready to use]
-```
+- Automatic content extraction using ML
+- Handles layout variations automatically
+- Extracts clean article text reliably
+- Provides metadata (authors, dates, images)
+- Minimal custom code needed
+- Works across different site structures
 
 ## Quick Start
 
@@ -91,7 +123,10 @@ Claude: [Analyzes reuters.com → Creates spider → Tests → Ready to use]
 # Activate virtual environment (ALWAYS use this in the repo)
 source .venv/bin/activate  # Linux/Mac
 
-# Install Playwright browsers (required for inspector)
+# Install dependencies if not already installed
+pip install newspaper4k
+
+# Install Playwright browsers (required for inspector, if not already installed)
 playwright install
 
 # Check available projects
@@ -101,56 +136,53 @@ playwright install
 ### 2. Project Management
 
 **Create a new project:**
+
 ```bash
-./scrapai projects create --name client-team-a --spiders politifact,snopes
+./scrapai projects create --name client-team-a --spiders ""
 ```
 
 **List all projects:**
+
 ```bash
 ./scrapai projects list
 ```
 
 **Check project status:**
+
 ```bash
 ./scrapai projects status --project client-team-a
 ```
 
-### 3. Add a Website - Proper Analysis Process
+### 3. Example: Adding a New Website
 
-**Step 1: Analyze the actual page structure**
+**User request:** "Add https://example-news-site.com/ to our system"
+
+**Phase 1 - URL Collection:**
+
 ```bash
-bin/inspector --url https://example.com
-# Inspector automatically handles JavaScript rendering when needed
-# Creates analysis files in data/[site]/analysis/
+# Check if project exists or create new one
+./scrapai projects list
+./scrapai projects create --name MyProject --spiders ""
+
+# Claude creates spiders/example_news.py (URL collection only)
+# Run URL collection
+./scrapai test --project MyProject example_news --limit 5
 ```
 
-**Step 2: Generate domain-specific spider**
-- Create spider in `spiders/` directory (shared across projects)
-- Extend `BaseSpider` class for common functionality
-- Use actual selectors found in HTML analysis
-- Implement site-specific URL patterns and extraction logic
+**Phase 2 - Parser Creation:**
 
-**Step 3: Add spider to project configuration**
 ```bash
-# Spider is automatically available to all projects
-# Configure which spiders each project uses in their config.yaml
+# Claude analyzes sample URLs and creates parsers/example_news.py
+# Test parser on sample URLs
+./scrapai test --project MyProject example_news --limit 5
 ```
 
-### 4. Running Spiders
+**Phase 3 - Integration:**
 
-**Run a specific spider for a project:**
 ```bash
-./scrapai crawl --project client-team-a politifact --limit 10
-```
-
-**Run all spiders for a project:**
-```bash
-./scrapai crawl-all --project client-team-a
-```
-
-**Test a spider:**
-```bash
-./scrapai test --project client-team-a politifact --limit 5
+# Claude integrates parser into spider
+# Final production test
+./scrapai crawl --project MyProject example_news --limit 100
 ```
 
 ## Project Structure
@@ -160,14 +192,16 @@ scrapai-cli/
 ├── spiders/                            # Shared spider library
 │   ├── __init__.py
 │   ├── base_spider.py                  # Base class with common functionality
-│   ├── politifact.py                   # Reusable spiders
-│   └── snopes.py
+│   ├── politifact.py                   # Domain-specific spiders
+├── parsers/                            # newspaper4k-based parsers
+│   ├── __init__.py
+│   ├── politifact.py                   # Domain-specific parsers
 ├── projects/                           # Project instances (client isolation)
 │   ├── client-team-a/
 │   │   ├── config.yaml                 # Project configuration
 │   │   ├── outputs/                    # Project-specific outputs
 │   │   │   ├── politifact/
-│   │   │   └── snopes/
+│   │   │   └── desmog/
 │   │   └── logs/                       # Project-specific logs
 │   ├── client-team-b/
 │   │   ├── config.yaml
@@ -177,17 +211,95 @@ scrapai-cli/
 │       ├── config.yaml
 │       ├── outputs/
 │       └── logs/
+├── data/                               # URL collection and analysis
+│   └── politifact/
+│       ├── urls.json
+│       └── analysis/
 ├── core/                               # Analysis and project management
 │   ├── project_manager.py              # Project creation and management
 │   ├── config_loader.py                # YAML configuration handling
 │   ├── sitemap.py                      # Sitemap discovery
-│   ├── analyzer.py                     # Site structure analysis  
-│   └── add_site.py                     # Automated workflow
+│   └── analyzer.py                     # Site structure analysis
 ├── utils/                              # Utilities (http, logging, etc.)
 ├── bin/                               # Analysis tools
 ├── settings.py                        # Default Scrapy configuration
 ├── scrapai                           # Enhanced CLI with project support
 └── scrapy.cfg                        # Scrapy configuration
+```
+
+## Shared Parser Implementation
+
+**utils/newspaper_parser.py** (already created):
+
+The system now uses a shared newspaper4k parser with built-in proxy support, retry logic, and standardized output. Key features:
+
+- **Automatic proxy handling**: Integrates with existing `utils/http.py` proxy infrastructure
+- **Retry logic**: Built-in retry with exponential backoff for failed requests
+- **Content cleaning**: Automatic cleaning of titles and content
+- **Standardized output**: Consistent data structure across all sites
+- **Multiple proxy types**: Supports 'none', 'static', 'residential', and 'auto' modes
+
+```python
+from utils.newspaper_parser import parse_article
+
+# Simple usage - auto proxy selection
+article_data = parse_article(url, source_name='desmog')
+
+# Advanced usage with specific proxy type
+from utils.newspaper_parser import NewspaperParser
+parser = NewspaperParser(proxy_type='residential')
+article_data = parser.parse_article(url, source_name='desmog')
+```
+
+**Benefits:**
+- ✅ No duplicate parser code across domains
+- ✅ Centralized proxy configuration and retry logic
+- ✅ Consistent output format for all sites
+- ✅ Easy to maintain and update parsing logic
+- ✅ Built-in content cleaning and validation
+
+**spiders/website.py (integrated with shared parser):**
+
+```python
+import scrapy
+from scrapy.linkextractors import LinkExtractor
+from scrapy.spiders import CrawlSpider, Rule
+from .base_spider import BaseSpider
+from utils.newspaper_parser import parse_article
+
+class WebsiteSpider(BaseSpider):
+    name = 'website'
+    allowed_domains = ['website.com', 'www.website.com']
+    start_urls = ['https://www.website.com/']
+    
+    # Define crawling rules - adjust patterns for your site
+    rules = (
+        # Follow article links (adjust regex pattern for your site's URL structure)
+        Rule(LinkExtractor(allow=r'/\d{4}/\d{2}/\d{2}/[^/]+/$'), 
+             callback='parse_article', follow=True),
+        # Follow pagination and category pages
+        Rule(LinkExtractor(allow=r'/(page|category)/'), 
+             follow=True),
+    )
+
+    def parse_article(self, response):
+        """Parse article using shared newspaper4k parser"""
+        # Use the shared newspaper4k parser with automatic proxy handling
+        article_data = parse_article(response.url, source_name=self.name)
+        
+        if article_data:
+            # Create enhanced item using newspaper4k extracted data
+            item = self.create_item(response, **article_data)
+            yield item
+        else:
+            # Fallback for failed parsing
+            self.logger.warning(f"Failed to parse article: {response.url}")
+            item = self.create_item(response, 
+                url=response.url,
+                title=response.css('title::text').get(),
+                status='parse_failed'
+            )
+            yield item
 ```
 
 ## Project Configuration
@@ -198,49 +310,26 @@ Each project has a `config.yaml` file:
 project_name: "client-team-a"
 spiders:
   - politifact
-  - snopes
-  - factcheck_org
+
 settings:
   download_delay: 2
   concurrent_requests: 4
   concurrent_requests_per_domain: 2
   robotstxt_obey: true
+  # newspaper4k settings
+  newspaper_config:
+    memoize_articles: false
+    fetch_images: true
 output_format: json
-```
-
-## Analysis Tools
-
-### 1. Inspector Tool
-Analyzes page structure and generates selectors:
-
-```bash
-bin/inspector --url https://example.com
-# Creates analysis files in data/[site]/analysis/
-```
-
-### 2. Sitemap Discovery
-```python
-from core.sitemap import SitemapDiscovery
-
-discovery = SitemapDiscovery('https://example.com')
-sitemaps = discovery.discover_sitemaps()
-article_urls = discovery.get_all_article_urls()[:10]
-```
-
-### 3. Browser Client (for JavaScript sites)
-```python
-from utils.browser import BrowserClient
-
-browser = BrowserClient()
-html = browser.get_rendered_html('https://example.com')
 ```
 
 ## CLI Commands
 
 ### Project Management
+
 ```bash
 # Create project with spiders
-./scrapai projects create --name BrownU --spiders politifact,snopes
+./scrapai projects create --name BrownU --spiders politifact,desmog
 
 # Create project without spiders (add later)
 ./scrapai projects create --name ClientA --spiders ""
@@ -256,6 +345,7 @@ html = browser.get_rendered_html('https://example.com')
 ```
 
 ### Spider Operations
+
 ```bash
 # List all available spiders
 ./scrapai list
@@ -264,96 +354,179 @@ html = browser.get_rendered_html('https://example.com')
 ./scrapai list --project client-team-a
 
 # Run specific spider
-./scrapai crawl --project client-team-a politifact --limit 100
+./scrapai crawl --project client-team-a website --limit 100
 
 # Run all project spiders
 ./scrapai crawl-all --project client-team-a
 
 # Test spider
-./scrapai test --project client-team-a politifact --limit 5
+./scrapai test --project client-team-a website --limit 5
 ```
 
 ### Monitoring
+
 ```bash
 # Project status
 ./scrapai status --project client-team-a
 
 # View logs
 ./scrapai logs --project client-team-a
-./scrapai logs --project client-team-a --spider politifact
+./scrapai logs --project client-team-a --spider website
 ```
 
 ## Output Format
 
 ```json
 {
-  "url": "https://example.com/article/...",
-  "title": "Article title",
-  "content": "Full article text...",
-  "published_date": "2024-01-15",
-  "author": "Author name", 
-  "tags": ["tag1", "tag2"],
-  "source": "spider_name",
-  "project": "client-team-a",
-  "scraped_at": "2024-01-15T10:30:00"
+  "url": "https://www.example-news-site.com/2025/07/08/sample-article/",
+  "title": "Sample News Article Title",
+  "content": "The full article content extracted by newspaper4k...",
+  "author": "John Doe, Jane Smith",
+  "published_date": "2025-07-08T10:30:00",
+  "top_image": "https://www.example-news-site.com/images/article.jpg",
+  "meta_data": {
+    "viewport": "width=device-width, initial-scale=1",
+    "author": "John Doe",
+    "description": "Article description from meta tags",
+    "og:site_name": "Example News"
+  },
+  "source": "example_news",
+  "project": "MyProject",
+  "scraped_at": "2025-07-12T15:45:00",
+  "extracted_at": "2025-07-12T15:45:00"
 }
 ```
 
-## Claude Code Decision Process
+## Analysis Tools
 
-```
-User asks: "Create project X and add [website] to it"
-│
-├─ 1. CREATE PROJECT FIRST
-│  └─ ./scrapai projects create --name X --spiders ""
-│
-├─ 2. ANALYZE WEBSITE STRUCTURE  
-│  ├─ Run inspector: bin/inspector --url https://website.com
-│  └─ Check for sitemaps with core/sitemap.py
-│
-├─ 3. WRITE CUSTOM SPIDER CODE
-│  ├─ Create spiders/website.py extending BaseSpider
-│  ├─ Use real selectors from HTML analysis  
-│  ├─ Implement domain-specific extraction logic
-│  └─ Save the working spider file
-│
-├─ 4. TEST THE SPIDER
-│  ├─ ./scrapai test --project X website --limit 5
-│  └─ Verify data extraction works correctly
-│
-├─ 5. FIX ANY ISSUES
-│  ├─ Update selectors if extraction fails
-│  ├─ Fix extraction logic problems
-│  └─ Re-test until working properly
-│
-├─ 6. ADD SPIDER TO PROJECT CONFIG
-│  ├─ Edit projects/X/config.yaml
-│  ├─ Add "website" to spiders list  
-│  └─ Now project can use the spider
-│
-└─ 7. PROVIDE USAGE COMMANDS
-   ├─ ./scrapai crawl --project X website --limit 100
-   └─ Ready for production use
+### 1. Inspector Tool
+
+```bash
+# Analyze single URL
+bin/inspector --url https://www.example-news-site.com/2025/07/08/some-article/
+# Creates analysis files in data/example_news/analysis/
 ```
 
-## Benefits of Project System
+### 2. Sitemap Discovery
+
+```python
+from core.sitemap import SitemapDiscovery
+
+discovery = SitemapDiscovery('https://www.example-news-site.com')
+sitemaps = discovery.discover_sitemaps()
+article_urls = discovery.get_all_article_urls()[:10]
+```
+
+### 3. Browser Client (for JavaScript sites)
+
+```python
+from utils.browser import BrowserClient
+
+browser = BrowserClient()
+html = browser.get_rendered_html('https://www.example-news-site.com')
+```
+
+## IMPORTANT CONSTRAINTS FOR CLAUDE CODE
+
+**Decision Making Philosophy:**
+
+- 🔄 **Be Liberal by Default**: For any spiders and parsers, be liberal in implementation choices unless explicitly told by users
+- 🚫 **Minimal Restrictions**: Don't make too many decisions or impose unnecessary constraints
+- 👤 **User-Driven**: Only apply specific restrictions when explicitly requested by users
+
+**⚠️ CRITICAL: What "Liberal by Default" Means:**
+
+- ❌ **DON'T** filter by date ranges (like `/2024/`, `/2023/`) unless user specifies
+- ❌ **DON'T** limit content types arbitrarily 
+- ❌ **DON'T** restrict URL patterns beyond basic article detection
+- ❌ **DON'T** add unnecessary conditions or filters
+- ❌ **DON'T** use sitemap crawling unless user explicitly requests it
+- ✅ **DO** collect ALL available content from the site
+- ✅ **DO** use broad URL patterns that capture maximum content
+- ✅ **DO** let users specify restrictions if they want them
+- ✅ **DO** focus on homepage crawling for article discovery
+
+**⚠️ EXCEPTION: Avoid Non-Article Pages**
+
+While being liberal with article content, you MUST be restrictive about URL types:
+
+- ❌ **DON'T** include: `/topic/`, `/category/`, `/donate/`, `/about/`, `/contact/`
+- ❌ **DON'T** include: Static pages, archive pages, author bio pages
+- ✅ **DO** inspect `data/website/urls.json` after initial collection
+- ✅ **DO** update spider rules to target only actual articles
+- ✅ **DO** look for date patterns like `/YYYY/MM/DD/` in article URLs
+
+**Examples of Liberal vs Restrictive Code:**
+
+```python
+# ❌ RESTRICTIVE (Don't do this unless user asks)
+if any(pattern in url for pattern in ['/2024/', '/2023/', '/2022/']):
+    yield scrapy.Request(url, callback=self.collect_url)
+
+# ✅ LIBERAL (Default approach)
+yield scrapy.Request(url, callback=self.collect_url)
+```
+
+```python
+# ❌ RESTRICTIVE 
+if 'article' in url and len(url.split('/')) > 5:
+    yield scrapy.Request(url)
+
+# ✅ LIBERAL
+if 'article' in url:
+    yield scrapy.Request(url)
+```
+
+**What Claude Code CAN create/modify:**
+
+- ✅ `spiders/website.py` (domain-specific spiders using shared parser)
+- ✅ `projects/X/config.yaml` (project configurations)
+- ✅ Domain-specific data files in `data/website/`
+- ✅ `utils/newspaper_parser.py` (shared parsing logic - already created)
+
+**What Claude Code CANNOT modify:**
+
+- ❌ `core/` directory files (framework code)
+- ❌ `utils/` directory files (utility functions) - except newspaper_parser.py
+- ❌ `bin/` directory files (CLI tools)
+- ❌ `settings.py`, `scrapy.cfg` (framework config)
+- ❌ Create new custom execution scripts
+- ❌ Modify existing framework functionality
+
+**Testing approach:**
+
+- Use existing `./scrapai test` commands
+- Use existing inspector tools
+- No custom testing scripts
+
+## Benefits of This System
 
 ### Code Reuse
-- Write spider once in `spiders/`
+
+- Write parser once in `parsers/`
 - Use across multiple projects
-- No duplicated code
+- newspaper4k handles content extraction universally
 
 ### Client Isolation
+
 - Separate outputs per project
 - Independent configurations
 - Isolated logging
 
+### Reliability
+
+- newspaper4k's ML-based extraction
+- Handles site updates automatically
+- Consistent output format
+
 ### Easy Management
+
 - Track crawls by client
 - Different spider combinations per project
 - Project-specific settings
 
 ### Scalability
+
 - Add new clients easily
 - Organize hundreds of websites
 - Clear billing/usage tracking
@@ -361,30 +534,42 @@ User asks: "Create project X and add [website] to it"
 ## Common Patterns
 
 ### News/Article Sites
-- Create spider extending `BaseSpider`
-- Use `self.create_item()` for standardized output
-- Look for article containers, headlines, bylines
-- Check for pagination and category pages  
-- Analyze date formats and author attribution
 
-### Sitemap vs Crawl Strategy
-- **Sitemap Spider**: When site has comprehensive sitemaps
-- **Crawl Spider**: When need to follow navigation links
-- **Mixed Strategy**: Use both for maximum coverage
+- Create URL-collecting spider first
+- Use newspaper4k for content extraction
+- Add custom metadata extraction only if needed
+- Test thoroughly before deployment
+
+### Crawl Strategy
+
+- **Homepage Crawling**: Default approach - follow navigation links from homepage
+- **Sitemap Spider**: Only when user explicitly requests sitemap crawling
+- **Mixed Strategy**: Use both only if user specifically asks for sitemap + crawling
 
 ## Troubleshooting
 
 ### Project Issues
+
 - **Project not found**: Use `./scrapai projects list` to check available projects
 - **Spider not configured**: Check project's `config.yaml` file
 - **No outputs**: Check `projects/[name]/outputs/` directory
 
 ### Spider Issues
-- **No Articles Found**: Check selectors match actual page structure
-- **Wrong Content Extracted**: Re-run inspector on sample articles
+
+- **No Articles Found**: Check URL collection phase first
+- **Poor Content Extraction**: newspaper4k usually handles this automatically
+- **Missing Metadata**: Add custom extraction to parser if needed
 - **JavaScript-Heavy Sites**: Use BrowserClient for proper rendering
 
+### Parser Issues
+
+- **Empty Content**: Check if newspaper4k can access the URL
+- **Missing Authors/Dates**: newspaper4k extracts these automatically, add custom logic only if needed
+- **Proxy Issues**: Pass proxy configuration to newspaper4k
+
 ### Permission/Access
+
 - **Spider not found**: Ensure spider exists in `spiders/` directory
+- **Parser not found**: Ensure parser exists in `parsers/` directory
 - **Config errors**: Validate YAML syntax in project config
 - **Output permission**: Check write access to project directories

@@ -5,6 +5,5 @@ settings:
   concurrent_requests_per_domain: 2
   download_delay: 1
 spiders:
-- politifact
-- desmog
-- carbonbrief
+  - politifact
+  - desmog
