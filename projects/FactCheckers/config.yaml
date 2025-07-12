@@ -8,3 +8,4 @@ spiders:
   - politifact
   - desmog
   - carbon_brief
+  - snopes
