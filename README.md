@@ -45,11 +45,14 @@ PHASE 1: PROJECT SETUP & HTML ANALYSIS
 │  ├─ ./scrapai test --project X website --limit 5
 │  └─ Collect representative article URLs for analysis
 │
-├─ 5. INSPECT COLLECTED URLS
-│  ├─ Review data/website/urls.json to verify URL quality
+├─ 5. INSPECT COLLECTED URLS & ITERATIVE FILTERING
+│  ├─ Review collected URLs in projects/X/outputs/spider/latest.json
+│  ├─ If navigation/category pages are found instead of actual articles:
+│  │  ├─ Add specific deny patterns to spider rules for those nav/category URLs
+│  │  ├─ Re-run URL collection: ./scrapai test --project X website --limit 5
+│  │  └─ Repeat until only actual article URLs are captured
 │  ├─ Ensure only articles are captured (no categories, static pages, etc.)
-│  ├─ Update spider rules if non-articles are being collected
-│  └─ Re-run collection to verify only article URLs are captured
+│  └─ Continue iterating until spider collects real article content
 │
 PHASE 2: CONTENT ANALYSIS & PARSER CREATION
 │
@@ -272,14 +275,17 @@ class WebsiteSpider(BaseSpider):
     allowed_domains = ['website.com', 'www.website.com']
     start_urls = ['https://www.website.com/']
     
-    # Define crawling rules - adjust patterns for your site
+    # Define crawling rules - liberal approach with deny rules only
     rules = (
-        # Follow article links (adjust regex pattern for your site's URL structure)
-        Rule(LinkExtractor(allow=r'/\d{4}/\d{2}/\d{2}/[^/]+/$'), 
-             callback='parse_article', follow=True),
-        # Follow pagination and category pages
-        Rule(LinkExtractor(allow=r'/(page|category)/'), 
-             follow=True),
+        # Follow all article links, only excluding static/non-article pages
+        Rule(LinkExtractor(
+            deny=r'/(about|contact|donate|privacy|terms|advertise|careers|subscribe|help|support|login|register)/?$'
+        ), callback='parse_article', follow=True),
+        # Follow pagination and navigation pages
+        Rule(LinkExtractor(
+            allow=r'/(page|category|tag|archive)/',
+            deny=r'/(about|contact|donate|privacy|terms)/'
+        ), follow=True),
     )
 
     def parse_article(self, response):
@@ -446,35 +452,42 @@ html = browser.get_rendered_html('https://www.example-news-site.com')
 - ✅ **DO** let users specify restrictions if they want them
 - ✅ **DO** focus on homepage crawling for article discovery
 
-**⚠️ EXCEPTION: Avoid Non-Article Pages**
+**⚠️ SYSTEMATIC APPROACH: Liberal with Website-Specific Deny Rules**
 
-While being liberal with article content, you MUST be restrictive about URL types:
+Follow this systematic approach for creating spiders:
 
-- ❌ **DON'T** include: `/topic/`, `/category/`, `/donate/`, `/about/`, `/contact/`
-- ❌ **DON'T** include: Static pages, archive pages, author bio pages
-- ✅ **DO** inspect `data/website/urls.json` after initial collection
-- ✅ **DO** update spider rules to target only actual articles
-- ✅ **DO** look for date patterns like `/YYYY/MM/DD/` in article URLs
+1. **ALLOW ALL by default** - No restrictive allow patterns
+2. **INSPECT the actual website** - Look at real URL patterns from inspector and collected data
+3. **CREATE SERIOUS DENY RULES** - Based on actual website structure, not guessing
+4. **WEBSITE-SPECIFIC RULES** - Each site has unique patterns, don't copy/paste
+
+**Common deny patterns (but always inspect first):**
+- ❌ **DENY**: `/about/`, `/contact/`, `/donate/`, `/privacy/`, `/terms/`, `/advertise/`, `/careers/`, `/subscribe/`, `/help/`, `/support/`, `/login/`, `/register/`
+- ❌ **DENY**: Navigation pages like `/category/$`, `/tag/$`, `/author/$`, `/search/$`
+- ❌ **DENY**: Archive pages like `/news/$`, `/articles/$` (but allow `/news/article-slug/`)
+- ✅ **INSPECT**: `data/website/urls.json` and `data/website/analysis/page.html` to identify patterns
+- ✅ **SYSTEMATIC**: Never guess patterns - always base on real website inspection
 
 **Examples of Liberal vs Restrictive Code:**
 
 ```python
 # ❌ RESTRICTIVE (Don't do this unless user asks)
-if any(pattern in url for pattern in ['/2024/', '/2023/', '/2022/']):
-    yield scrapy.Request(url, callback=self.collect_url)
+Rule(LinkExtractor(allow=r'/fact-check/[^/]+/$'), callback='parse_article', follow=True)
 
-# ✅ LIBERAL (Default approach)
-yield scrapy.Request(url, callback=self.collect_url)
+# ✅ LIBERAL (Default approach - allow all, deny only static pages)
+Rule(LinkExtractor(
+    deny=r'/(about|contact|donate|privacy|terms|advertise|careers|subscribe)/?$'
+), callback='parse_article', follow=True)
 ```
 
 ```python
 # ❌ RESTRICTIVE 
-if 'article' in url and len(url.split('/')) > 5:
-    yield scrapy.Request(url)
+Rule(LinkExtractor(allow=r'/\d{4}/\d{2}/\d{2}/[^/]+/$'), callback='parse_article')
 
 # ✅ LIBERAL
-if 'article' in url:
-    yield scrapy.Request(url)
+Rule(LinkExtractor(
+    deny=r'/(about|contact|donate|help|support|login)/?$'
+), callback='parse_article', follow=True)
 ```
 
 **What Claude Code CAN create/modify:**
