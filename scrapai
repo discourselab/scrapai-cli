@@ -158,17 +158,25 @@ def run_spider(project_name, spider_name, output_file=None, limit=None):
         # Build scrapy command
         cmd = ['scrapy', 'crawl', spider_name]
         
-        # Add settings
+        # Add settings (only simple ones that can be passed via command line)
         for key, value in settings.items():
-            if key not in ['FEEDS', 'LOG_FILE']:  # These are handled differently
-                cmd.extend(['-s', f'{key}={repr(value)}'])
+            if key not in ['FEEDS', 'LOG_FILE', 'ITEM_PIPELINES']:  # These are handled differently
+                # Only add simple settings that can be passed via command line
+                if isinstance(value, (str, int, float, bool)):
+                    cmd.extend(['-s', f'{key}={value}'])
         
         # Handle output
         if output_file:
             cmd.extend(['-o', output_file])
-        elif 'FEEDS' in settings:
-            # Use project-configured output
-            pass
+        else:
+            # Create output directory and add default output
+            import os
+            output_dir = f'projects/{project_name}/outputs/{spider_name}'
+            os.makedirs(output_dir, exist_ok=True)
+            from datetime import datetime
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            output_file = f'{output_dir}/{timestamp}.json'
+            cmd.extend(['-o', output_file])
         
         # Handle log file
         if 'LOG_FILE' in settings:

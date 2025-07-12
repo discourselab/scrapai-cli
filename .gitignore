@@ -9,6 +9,8 @@ __pycache__/
 # Project-specific directories
 archives/
 data/
+*/outputs/
+outputs/
 
 .DS_Store
 

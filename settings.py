@@ -27,7 +27,7 @@ USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36
 
 # Configure item pipelines
 ITEM_PIPELINES = {
-    'scrapers.pipelines.ScrapaiPipeline': 300,
+    'pipelines.ScrapaiPipeline': 300,
 }
 
 # Enable and configure HTTP caching

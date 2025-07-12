@@ -49,7 +49,7 @@ class ConfigLoader:
             'HTTPCACHE_ENABLED': True,
             'HTTPCACHE_EXPIRATION_SECS': 3600,
             'ITEM_PIPELINES': {
-                'scrapers.pipelines.ScrapaiPipeline': 300,
+                'pipelines.ScrapaiPipeline': 300,
             }
         }
         

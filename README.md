@@ -27,9 +27,9 @@ User: "Create a project called BrownU and add politifact.com to it"
 
 **Claude Code automatically handles:**
 
-1. **Creates the project**
+1. **Creates the project first**
    ```bash
-   ./scrapai projects create --name BrownU --spiders politifact
+   ./scrapai projects create --name BrownU --spiders ""
    ```
 
 2. **Analyzes the site structure**
@@ -37,17 +37,28 @@ User: "Create a project called BrownU and add politifact.com to it"
    bin/inspector --url https://politifact.com
    ```
 
-3. **Generates custom spider**
+3. **Generates custom spider code**
    - Create `spiders/politifact.py` extending `BaseSpider`
    - Use real selectors from HTML analysis
    - Implement site-specific extraction logic
+   - Save the working spider file
 
 4. **Tests the spider**
    ```bash
    ./scrapai test --project BrownU politifact --limit 5
    ```
 
-5. **Provides ready-to-use commands**
+5. **Fixes any issues found during testing**
+   - Update selectors if needed
+   - Fix extraction logic
+   - Re-test until working
+
+6. **Adds spider to project config**
+   - Edit `projects/BrownU/config.yaml`
+   - Add `politifact` to the spiders list
+   - Now project knows about the spider
+
+7. **Provides ready-to-use commands**
    ```bash
    # Run 100 articles
    ./scrapai crawl --project BrownU politifact --limit 100
@@ -228,10 +239,13 @@ html = browser.get_rendered_html('https://example.com')
 
 ### Project Management
 ```bash
-# Create project
-./scrapai projects create --name client-team-a --spiders politifact,snopes
+# Create project with spiders
+./scrapai projects create --name BrownU --spiders politifact,snopes
 
-# List projects
+# Create project without spiders (add later)
+./scrapai projects create --name ClientA --spiders ""
+
+# List all projects
 ./scrapai projects list
 
 # Project status
@@ -288,20 +302,38 @@ html = browser.get_rendered_html('https://example.com')
 ## Claude Code Decision Process
 
 ```
-User asks: "Add [website] to scrapai for project X"
+User asks: "Create project X and add [website] to it"
 │
-├─ Check if project exists, create if needed
-├─ Run inspector to analyze actual page structure
-│  └─ Inspector uses browser.py internally for JavaScript sites
-├─ Check for sitemaps with core/sitemap.py  
-├─ Generate CUSTOM spider code in spiders/ directory
-│  ├─ Extend BaseSpider class
-│  ├─ Analyze real selectors from HTML
-│  ├─ Create domain-specific extraction logic
-│  └─ Write spider tailored to this specific site
-├─ Add spider to project configuration
-├─ Test with ./scrapai test --project X [spider]
-└─ Validate extraction works properly
+├─ 1. CREATE PROJECT FIRST
+│  └─ ./scrapai projects create --name X --spiders ""
+│
+├─ 2. ANALYZE WEBSITE STRUCTURE  
+│  ├─ Run inspector: bin/inspector --url https://website.com
+│  └─ Check for sitemaps with core/sitemap.py
+│
+├─ 3. WRITE CUSTOM SPIDER CODE
+│  ├─ Create spiders/website.py extending BaseSpider
+│  ├─ Use real selectors from HTML analysis  
+│  ├─ Implement domain-specific extraction logic
+│  └─ Save the working spider file
+│
+├─ 4. TEST THE SPIDER
+│  ├─ ./scrapai test --project X website --limit 5
+│  └─ Verify data extraction works correctly
+│
+├─ 5. FIX ANY ISSUES
+│  ├─ Update selectors if extraction fails
+│  ├─ Fix extraction logic problems
+│  └─ Re-test until working properly
+│
+├─ 6. ADD SPIDER TO PROJECT CONFIG
+│  ├─ Edit projects/X/config.yaml
+│  ├─ Add "website" to spiders list  
+│  └─ Now project can use the spider
+│
+└─ 7. PROVIDE USAGE COMMANDS
+   ├─ ./scrapai crawl --project X website --limit 100
+   └─ Ready for production use
 ```
 
 ## Benefits of Project System
