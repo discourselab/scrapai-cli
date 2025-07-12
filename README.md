@@ -52,7 +52,7 @@ PHASE 2: SPIDER CREATION & DISCOVERY TESTING
 │
 ├─ 5. TEST DISCOVERY
 │  ├─ source .venv/bin/activate  # ALWAYS activate venv first
-│  ├─ ./scrapai test --project X website --limit 20
+│  ├─ ./scrapai test --project X website --limit 10
 │  ├─ Check what URLs were discovered
 │  └─ Are most URLs actual articles? Or mostly navigation pages?
 │
@@ -74,7 +74,7 @@ PHASE 3: CONTENT EXTRACTION & VALIDATION
 │
 ├─ 8. TEST CONTENT EXTRACTION
 │  ├─ source .venv/bin/activate  # ALWAYS activate venv first
-│  ├─ ./scrapai test --project X website --limit 25
+│  ├─ ./scrapai test --project X website --limit 10
 │  ├─ Check extraction success rate and content quality
 │  └─ Validate titles, content length, metadata extraction
 │
@@ -90,7 +90,7 @@ PHASE 4: PRODUCTION DEPLOYMENT
 │
 ├─ 10. PRODUCTION TESTING
 │  ├─ source .venv/bin/activate  # ALWAYS activate venv first
-│  ├─ ./scrapai test --project X website --limit 100
+│  ├─ ./scrapai test --project X website --limit 10
 │  ├─ Verify performance at scale
 │  ├─ Check for blocking or rate limiting issues
 │  └─ Confirm quality remains consistent
@@ -102,7 +102,7 @@ PHASE 4: PRODUCTION DEPLOYMENT
 │
 └─ 12. DEPLOY
    ├─ source .venv/bin/activate  # ALWAYS activate venv first
-   ├─ ./scrapai crawl --project X website --limit 500
+   ├─ ./scrapai crawl --project X website --limit 10
    └─ Monitor initial production run
 ```
 
@@ -248,7 +248,7 @@ settings:
 ```bash
 # After testing discovery:
 source .venv/bin/activate
-./scrapai test --project X website --limit 20
+./scrapai test --project X website --limit 10
 # Check: Are >80% of URLs actual articles?
 # If no: Add deny patterns for navigation pages
 # If yes: Proceed to Phase 3
@@ -259,7 +259,7 @@ source .venv/bin/activate
 ```bash
 # Check extraction results:
 source .venv/bin/activate
-./scrapai test --project X website --limit 25
+./scrapai test --project X website --limit 10
 # Title extraction: >95% success
 # Content extraction: >85% success
 # Content length: >200 chars average
@@ -271,7 +271,7 @@ source .venv/bin/activate
 ```bash
 # Production scale validation:
 source .venv/bin/activate
-./scrapai test --project X website --limit 100
+./scrapai test --project X website --limit 10
 # Consistent quality at 100+ articles
 # No blocking or rate limiting
 # Reasonable crawl performance
@@ -331,10 +331,10 @@ spiders:
 source .venv/bin/activate  # ALWAYS activate first
 
 # Development testing
-./scrapai test --project ClientA website --limit 20
+./scrapai test --project ClientA website --limit 10
 
 # Production crawling
-./scrapai crawl --project ClientA website --limit 1000
+./scrapai crawl --project ClientA website --limit 10
 ```
 
 ## Error Handling
@@ -403,5 +403,10 @@ source .venv/bin/activate  # ALWAYS activate first
 4. **Add content parsing** - Use newspaper4k with proxies
 5. **Validate quality** - Meet success criteria before scaling
 6. **Use proxies always** - Especially for production crawling
+
+## Final Instructions
+
+1. **Never use internal claude code tools** - only use the repo tools available to you
+2. **Extensive testing** - We did an extensive test of the system and it works well. all the tools needed are available to you in the repo. Glance at the README.md file for more information at any point.
 
 The goal is reliable, quality article extraction at scale with proper proxy usage to avoid blocking.

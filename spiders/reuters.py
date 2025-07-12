@@ -4,25 +4,16 @@ from scrapy.spiders import CrawlSpider, Rule
 from .base_spider import BaseSpider
 from utils.newspaper_parser import parse_article
 
-
-class SnopesSpider(BaseSpider):
-    name = 'snopes'
-    allowed_domains = ['snopes.com', 'www.snopes.com']
-    start_urls = [
-        'https://www.snopes.com/fact-check/',
-        'https://www.snopes.com/'
-    ]
+class ReutersSpider(BaseSpider):
+    name = 'reuters'
+    allowed_domains = ['reuters.com', 'www.reuters.com']
+    start_urls = ['https://www.reuters.com/sustainability/']
 
     rules = (
-        # Focus on fact-check articles and news articles
+        # Follow all links but deny obvious navigation pages
         Rule(LinkExtractor(
-            allow=r'/(fact-check|news)/',
-            deny=r'/(about|contact|privacy|terms|advertise|support|newsletter|donate|author|rating|sitemap|game|collections|factbot|dmca)/?'
+            deny=r'/(about|contact|privacy|terms|login|register|search|tag|author|topic|section)/?$'
         ), callback='parse_article', follow=True),
-        # Also allow following from main pages to discover articles
-        Rule(LinkExtractor(
-            deny=r'/(about|contact|privacy|terms|advertise|support|newsletter|donate|author|rating|sitemap|game|collections|factbot|dmca)/?'
-        ), follow=True),
     )
 
     def parse_article(self, response):
@@ -50,13 +41,12 @@ class SnopesSpider(BaseSpider):
         if len(title.strip()) < 10:
             return False
 
-        # Skip obvious navigation pages
+        # Check if URL pattern suggests it's an article
         url = response.url.lower()
-        skip_patterns = ['/tag/', '/category/', '/archive/', '/page/', '/search/', '/author/']
-        if any(pattern in url for pattern in skip_patterns):
-            return False
+        if any(x in url for x in ['/sustainability/', '/business/', '/world/', '/technology/']):
+            return True
 
-        return True
+        return False
 
     def _validate_content(self, article_data):
         """Validate extracted content quality"""

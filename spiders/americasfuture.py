@@ -4,25 +4,16 @@ from scrapy.spiders import CrawlSpider, Rule
 from .base_spider import BaseSpider
 from utils.newspaper_parser import parse_article
 
-
-class SnopesSpider(BaseSpider):
-    name = 'snopes'
-    allowed_domains = ['snopes.com', 'www.snopes.com']
-    start_urls = [
-        'https://www.snopes.com/fact-check/',
-        'https://www.snopes.com/'
-    ]
+class AmericasfutureSpider(BaseSpider):
+    name = 'americasfuture'
+    allowed_domains = ['americasfuture.org', 'www.americasfuture.org']
+    start_urls = ['https://americasfuture.org/commentary/']
 
     rules = (
-        # Focus on fact-check articles and news articles
+        # Focus on commentary articles - use broader patterns to catch actual articles
         Rule(LinkExtractor(
-            allow=r'/(fact-check|news)/',
-            deny=r'/(about|contact|privacy|terms|advertise|support|newsletter|donate|author|rating|sitemap|game|collections|factbot|dmca)/?'
+            deny=r'/(about|contact|privacy|terms|mission|staff|board|job-openings|faq|events|media|tag|category|page|author|opportunities|wp-content)/?'
         ), callback='parse_article', follow=True),
-        # Also allow following from main pages to discover articles
-        Rule(LinkExtractor(
-            deny=r'/(about|contact|privacy|terms|advertise|support|newsletter|donate|author|rating|sitemap|game|collections|factbot|dmca)/?'
-        ), follow=True),
     )
 
     def parse_article(self, response):
@@ -50,10 +41,10 @@ class SnopesSpider(BaseSpider):
         if len(title.strip()) < 10:
             return False
 
-        # Skip obvious navigation pages
-        url = response.url.lower()
-        skip_patterns = ['/tag/', '/category/', '/archive/', '/page/', '/search/', '/author/']
-        if any(pattern in url for pattern in skip_patterns):
+        # Check if it looks like an article page based on content structure
+        # Looking for post content or article content
+        article_content = response.css('article.post, .entry-content, .post-content').get()
+        if not article_content:
             return False
 
         return True
