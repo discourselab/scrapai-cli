@@ -16,6 +16,8 @@ outputs/
 
 *.json
 
+workspace.ipynb
+
 # Distribution / packaging
 .Python
 build/
