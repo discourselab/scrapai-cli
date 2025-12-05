@@ -9,95 +9,300 @@ Project-based Scrapy spider management for large-scale web scraping. Built for C
 **When asked to add any website, follow this Database-First Workflow:**
 
 ### 1. Setup (First Time Only)
+
+#### Virtual Environment Setup
+**CRITICAL: Always use virtual environment for all CLI commands.**
+```bash
+# Create virtual environment if it doesn't exist
+if [ ! -d ".venv" ]; then
+    python3 -m venv .venv
+fi
+
+# Activate virtual environment (required for all operations)
+source .venv/bin/activate
+
+# Install/update requirements
+pip install -r requirements.txt
+```
+
+#### Database Initialization
 Ensure the database is initialized with migrations:
 ```bash
 # Check .env for DB credentials, then run migrations
+source .venv/bin/activate
 ./init_db.py
 ```
 
 **Database Management:**
-- `./scrapai db migrate` - Run pending migrations
-- `./scrapai db current` - Show current migration state  
+- `source .venv/bin/activate && ./scrapai db migrate` - Run pending migrations
+- `source .venv/bin/activate && ./scrapai db current` - Show current migration state  
 - All schema changes are handled safely via Alembic migrations
 
 ### 2. Workflow
 
-#### Phase 1: Analysis
-Inspect the site structure to understand how to extract content.
-```bash
-source .venv/bin/activate
-bin/inspector --url https://website.com/
-```
--   Look for article URL patterns (e.g., `/article/`, `/2024/`).
--   Identify navigation elements to follow or ignore.
--   Determine CSS selectors for content (though `newspaper4k` handles most).
+#### Phase 1: Analysis & Section Documentation
+**CRITICAL: Perform thorough multi-page analysis and create comprehensive section documentation.**
 
-#### Phase 2: Definition (JSON Payload)
-Construct a JSON payload defining the spider. **Do not create Python files.**
+**Step 1A: Homepage Analysis**
+Inspect the site structure to understand how to extract content:
+```bash
+# Always activate virtual environment first
+source .venv/bin/activate
+# Start with homepage analysis
+bin/inspector --url https://website.com/
+# Read page.html and analysis.json immediately
+```
+
+**Step 1B: Create Section Documentation**
+After homepage analysis, create a comprehensive section map:
+```bash
+# Create sections.md to document all discovered sections
+# This file will track sections, URL patterns, and rule requirements
+```
+
+**Step 1C: Sequential Section Analysis**
+```bash
+# Always ensure virtual environment is active
+source .venv/bin/activate
+# IMPORTANT: Run inspectors SEQUENTIALLY, not in parallel
+# Each inspector overwrites the same analysis files
+bin/inspector --url https://website.com/section1
+# Read analysis, update sections.md, create section_rules_section1.json
+bin/inspector --url https://website.com/section2  
+# Read analysis, update sections.md, create section_rules_section2.json
+bin/inspector --url https://website.com/actual-article-url
+# Read analysis, update sections.md for content validation
+```
+
+**Enhanced Analysis Workflow:**
+1. **Homepage Analysis** - Run inspector on main page, read `page.html` and `analysis.json`
+2. **Create `sections.md`** - Document all discovered sections with:
+   - Section name and URL
+   - URL patterns found in that section
+   - Content type (navigation vs articles)
+   - Rule requirements (allow/deny patterns)
+3. **Section-by-Section Analysis** - For each section:
+   - Run inspector on section URL
+   - Read and analyze results immediately
+   - Update `sections.md` with findings
+   - Create `section_rules_[name].json` with specific rules for that section
+4. **Article Validation** - Test actual article URLs from each section
+5. **Consolidate Rules** - Combine all section rule files into final spider JSON
+
+**File Structure Created:**
+```
+data/website/analysis/
+├── page.html           (preserved - homepage HTML)
+├── analysis.json       (preserved - homepage analysis)
+├── sections.md         (NEW - comprehensive section documentation)
+├── section_rules_news.json     (NEW - rules for news section)
+├── section_rules_climate.json  (NEW - rules for climate section)
+├── section_rules_research.json (NEW - rules for research section)
+└── final_spider.json   (NEW - consolidated rules from all sections)
+```
+
+**Key Analysis Steps:**
+1. **Start with homepage analysis** - Inspect the main page first to identify ALL major sections
+2. **Document ALL sections** - Create `sections.md` with every major content section found
+3. **Section-specific analysis** - Visit and analyze each section page SEQUENTIALLY
+4. **Create modular rules** - Generate individual JSON rule files for each section
+5. **Preserve all analysis** - Keep `page.html`, `analysis.json`, and all new documentation
+6. **Extract URL patterns per section** - Use `grep` to find article URLs in each section:
+   ```bash
+   grep -o 'href="[^"]*"' data/website/analysis/page.html | head -20
+   ```
+7. **Test actual article pages** - Ensure content extraction works on real articles from each section
+8. **Consolidate comprehensive rules** - Combine all section rules into final spider configuration
+
+**Common Pitfalls to Avoid:**
+- Don't assume homepage analysis is sufficient
+- Don't create rules based only on navigation pages
+- **NEVER run multiple inspectors in parallel** - They overwrite the same analysis files
+- **ALWAYS read and document analysis immediately** after each inspector run
+- **NEVER delete analysis files** - Keep `page.html`, `analysis.json`, `sections.md`, and all rule files
+- Always test on actual article URLs first
+- Create section-specific rules before consolidating
+
+#### Phase 2: Section-Based Rule Generation
+Generate comprehensive rules using section documentation. **Do not create Python files.**
+
+**Step 2A: Use sections.md for Rule Creation**
+Read the complete `sections.md` file to understand:
+- All sections discovered during analysis
+- URL patterns for each section
+- Content types (navigation vs articles)
+- Specific requirements for each section
+
+**Step 2B: Create Individual Section Rule Files**
+For each section documented in `sections.md`, create specific rule files:
+```json
+// section_rules_news.json
+{
+  "section": "news",
+  "rules": [
+    {
+      "allow": ["/news/.*", "/breaking/.*"],
+      "deny": ["/news/live/.*", "/news/.*#comments"],
+      "callback": "parse_article",
+      "follow": false,
+      "priority": 100
+    },
+    {
+      "allow": ["/news/?$", "/breaking/?$"],
+      "callback": null,
+      "follow": true,
+      "priority": 50
+    }
+  ]
+}
+```
+
+**Step 2C: Consolidate into Final Spider JSON**
+Combine all section rule files into a comprehensive spider definition:
+
+#### Phase 2D: Final JSON Payload Structure
 
 **Payload Structure:**
 ```json
 {
   "name": "website_name",
   "allowed_domains": ["website.com"],
-  "start_urls": ["https://www.website.com/"],
+  "start_urls": [
+    "https://www.website.com/",
+    "https://www.website.com/section1",
+    "https://www.website.com/section2"
+  ],
   "rules": [
     {
-      "allow": ["/article/.*", "/2024/.*"],
-      "deny": ["/login", "/signup"],
+      "allow": ["/articles/.*"],
+      "deny": ["/articles/.*#comments", "/articles/.*\\?.*"],
       "callback": "parse_article",
-      "follow": true,
-      "priority": 10
+      "follow": false,
+      "priority": 100
     },
     {
-      "restrict_css": [".nav-links", ".pagination"],
-      "follow": true
+      "allow": ["/section/.*", "/topics/.*"],
+      "deny": ["/live/.*", "/videos/.*", ".*page=.*"],
+      "callback": null,
+      "follow": true,
+      "priority": 50
+    },
+    {
+      "deny": ["/login", "/signup", "/search", "/profile"],
+      "callback": null,
+      "follow": false,
+      "priority": 0
     }
   ],
   "settings": {
-    "DOWNLOAD_DELAY": 2,
+    "DOWNLOAD_DELAY": 3,
     "CONCURRENT_REQUESTS": 2,
     "EXTRACTOR_ORDER": ["newspaper", "trafilatura", "playwright"]
   }
 }
 ```
 
+**Rule Design Principles:**
+- **Extraction rules** (`callback`: `"parse_article"`) - Only for actual content pages
+- **Navigation rules** (`follow`: `true`) - For discovering article links
+- **Block rules** (`deny`) - Prevent unwanted content extraction
+- **Priority matters** - Higher priority rules are evaluated first
+- **Be restrictive** - Only extract what you actually want
+
 #### Phase 3: Import
-Import the JSON payload directly into the database via stdin.
+**Import JSON payload directly via stdin to avoid temporary files.**
+
 ```bash
-echo '{...json content...}' | ./scrapai spiders import -
+# Always activate virtual environment and import spider definition directly via stdin
+source .venv/bin/activate
+cat << 'EOF' | ./scrapai spiders import -
+{
+  "name": "website_name",
+  "allowed_domains": ["website.com"],
+  "start_urls": [
+    "https://www.website.com/"
+  ],
+  "rules": [
+    {
+      "allow": ["/articles/.*"],
+      "deny": ["/articles/.*#comments", "/articles/.*\\?.*"],
+      "callback": "parse_article",
+      "follow": false,
+      "priority": 100
+    }
+  ],
+  "settings": {
+    "DOWNLOAD_DELAY": 3,
+    "CONCURRENT_REQUESTS": 2,
+    "EXTRACTOR_ORDER": ["newspaper", "trafilatura", "playwright"]
+  }
+}
+EOF
 ```
 
+**Why this approach:**
+- No temporary files to create and delete
+- Direct import via stdin using `-` 
+- Clean single-command operation
+- No file permission issues
+- Easier to debug JSON syntax errors
+
 #### Phase 4: Execution & Verification
-Run the spider directly from the database.
+**Always test with limited items first:**
 ```bash
+source .venv/bin/activate
 ./scrapai crawl website_name --limit 10
 ```
--   **Verify Data**: Data is saved directly to the `scraped_items` table in the database.
--   **Check Logs**: Ensure no extraction errors occurred.
--   If adjustments are needed, update the JSON payload and re-import (it will update the existing spider).
+
+**Verification Checklist:**
+1. **Check extracted content quality**:
+   ```bash
+   source .venv/bin/activate
+   ./scrapai show website_name --limit 5
+   ```
+2. **Verify article vs navigation extraction**:
+   - Look for actual article titles (not "Latest News" or section names)
+   - Confirm substantial content length (not just navigation snippets)
+   - Check for proper metadata (author, date, etc.)
+
+3. **If spider extracts wrong content**:
+   - **DELETE the spider**: `source .venv/bin/activate && echo "y" | ./scrapai spiders delete website_name`
+   - **Re-analyze the site structure** (Phase 1)
+   - **Refine the rules** (Phase 2)
+   - **Re-import and test** (Phases 3-4)
+
+4. **Common fixes for wrong extraction**:
+   - Make extraction rules more restrictive
+   - Add more comprehensive deny patterns
+   - Ensure `callback: "parse_article"` only on actual content URLs
+   - Use `follow: true` without callbacks for navigation pages only
 
 ### 3. CLI Reference
 
+**IMPORTANT: All CLI commands require virtual environment activation:**
+```bash
+source .venv/bin/activate
+```
+
 **Spider Management:**
--   `./scrapai spiders list` - List all spiders in the DB.
--   `./scrapai spiders import <file>` - Import/Update a spider from JSON.
--   `./scrapai spiders delete <name>` - Delete a spider.
+-   `source .venv/bin/activate && ./scrapai spiders list` - List all spiders in the DB.
+-   `source .venv/bin/activate && ./scrapai spiders import <file>` - Import/Update a spider from JSON.
+-   `source .venv/bin/activate && ./scrapai spiders delete <name>` - Delete a spider.
 
 **Crawling:**
--   `./scrapai crawl <name>` - Run a specific spider.
--   `./scrapai crawl <name> --limit 10` - Test with a limit.
+-   `source .venv/bin/activate && ./scrapai crawl <name>` - Run a specific spider.
+-   `source .venv/bin/activate && ./scrapai crawl <name> --limit 10` - Test with a limit.
 
 **Database Management:**
--   `./scrapai db migrate` - Run database migrations.
--   `./scrapai db current` - Show current migration revision.
+-   `source .venv/bin/activate && ./scrapai db migrate` - Run database migrations.
+-   `source .venv/bin/activate && ./scrapai db current` - Show current migration revision.
 
 **Data Inspection:**
--   `./scrapai show <spider_name>` - Show recent articles from spider (default: 5).
--   `./scrapai show <spider_name> --limit 10` - Show specific number of articles.
--   `./scrapai show <spider_name> --url pattern` - Filter by URL pattern (case-insensitive).
--   `./scrapai show <spider_name> --text "climate"` - Search title or content for text (case-insensitive).
--   `./scrapai show <spider_name> --title "climate"` - Search only article titles (case-insensitive).
+-   `source .venv/bin/activate && ./scrapai show <spider_name>` - Show recent articles from spider (default: 5).
+-   `source .venv/bin/activate && ./scrapai show <spider_name> --limit 10` - Show specific number of articles.
+-   `source .venv/bin/activate && ./scrapai show <spider_name> --url pattern` - Filter by URL pattern (case-insensitive).
+-   `source .venv/bin/activate && ./scrapai show <spider_name> --text "climate"` - Search title or content for text (case-insensitive).
+-   `source .venv/bin/activate && ./scrapai show <spider_name> --title "climate"` - Search only article titles (case-insensitive).
 
 ## Extractor Options
 
