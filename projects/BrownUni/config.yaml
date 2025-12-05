@@ -1,8 +1,0 @@
-output_format: json
-project_name: BrownUni
-settings:
-  concurrent_requests: 4
-  concurrent_requests_per_domain: 2
-  download_delay: 1
-spiders:
-  - americasfuture

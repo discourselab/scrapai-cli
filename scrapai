@@ -59,7 +59,7 @@ def main():
     
     # crawl command
     crawl_parser = subparsers.add_parser('crawl', help='Run a spider')
-    crawl_parser.add_argument('--project', required=True, help='Project name')
+    crawl_parser.add_argument('--project', help='Project name (optional for DB spiders)')
     crawl_parser.add_argument('spider', help='Spider name to run')
     crawl_parser.add_argument('--output', '-o', help='Output file path (optional, uses project config)')
     crawl_parser.add_argument('--limit', '-l', type=int, help='Limit number of items')
@@ -83,20 +83,55 @@ def main():
     status_parser = subparsers.add_parser('status', help='Show project status')
     status_parser.add_argument('--project', required=True, help='Project name')
     
-    # logs command
-    logs_parser = subparsers.add_parser('logs', help='Show project logs')
-    logs_parser.add_argument('--project', required=True, help='Project name')
-    logs_parser.add_argument('--spider', help='Specific spider logs (optional)')
+    # spiders command
+    spiders_parser = subparsers.add_parser('spiders', help='Spider management')
+    spiders_subparsers = spiders_parser.add_subparsers(dest='spiders_command', help='Spider commands')
     
+    # spiders list
+    spiders_subparsers.add_parser('list', help='List all spiders in DB')
+    
+    # spiders import
+    import_parser = spiders_subparsers.add_parser('import', help='Import spider from JSON')
+    import_parser.add_argument('file', help='JSON file containing spider definition (use "-" to read from stdin)')
+    
+    # spiders delete
+    delete_parser = spiders_subparsers.add_parser('delete', help='Delete a spider')
+    delete_parser.add_argument('name', help='Spider name')
+    delete_parser.add_argument('--force', '-f', action='store_true', help='Skip confirmation prompt')
+
+    # db command for database operations
+    db_parser = subparsers.add_parser('db', help='Database management')
+    db_subparsers = db_parser.add_subparsers(dest='db_command', help='Database commands')
+    
+    # db migrate
+    db_subparsers.add_parser('migrate', help='Run database migrations')
+    
+    # db current
+    db_subparsers.add_parser('current', help='Show current migration revision')
+
+    # show command
+    show_parser = subparsers.add_parser('show', help='Show scraped articles from database')
+    show_parser.add_argument('spider_name', help='Spider name to show articles from')
+    show_parser.add_argument('--limit', '-l', type=int, default=5, help='Number of articles to show (default: 5)')
+    show_parser.add_argument('--url', help='Show only articles containing this URL pattern')
+    show_parser.add_argument('--text', '-t', help='Show only articles containing this text in title or content')
+    show_parser.add_argument('--title', help='Show only articles containing this text in title')
+
     args = parser.parse_args()
     
     if not args.command:
         parser.print_help()
         return
     
-    # Handle project management commands
+    # Handle commands
     if args.command == 'projects':
         handle_projects_command(args)
+    elif args.command == 'spiders':
+        handle_spiders_command(args)
+    elif args.command == 'db':
+        handle_db_command(args)
+    elif args.command == 'show':
+        handle_show_command(args)
     elif args.command == 'crawl':
         run_spider(args.project, args.spider, args.output, args.limit)
     elif args.command == 'crawl-all':
@@ -109,6 +144,200 @@ def main():
         show_project_status(args.project)
     elif args.command == 'logs':
         show_project_logs(args.project, args.spider)
+
+def handle_spiders_command(args):
+    """Handle spider management commands"""
+    from core.db import get_db
+    from core.models import Spider, SpiderRule, SpiderSetting
+    import json
+    
+    db = next(get_db())
+    
+    if args.spiders_command == 'list':
+        spiders = db.query(Spider).all()
+        if spiders:
+            print("📋 Available Spiders (DB):")
+            for s in spiders:
+                created = s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else 'Unknown'
+                updated = s.updated_at.strftime('%Y-%m-%d %H:%M') if hasattr(s, 'updated_at') and s.updated_at else created
+                print(f"  • {s.name} (Active: {s.active}) - Created: {created}, Updated: {updated}")
+        else:
+            print("No spiders found in database.")
+            
+    elif args.spiders_command == 'import':
+        try:
+            if args.file == '-':
+                # Read from stdin
+                import sys
+                data = json.load(sys.stdin)
+            else:
+                # Read from file
+                with open(args.file, 'r') as f:
+                    data = json.load(f)
+            
+            # Check if spider exists
+            existing = db.query(Spider).filter(Spider.name == data['name']).first()
+            if existing:
+                print(f"⚠️  Spider '{data['name']}' already exists. Updating...")
+                # Simple update: delete and recreate (or just update fields)
+                # For now, let's just update the main fields and replace rules
+                existing.allowed_domains = data['allowed_domains']
+                existing.start_urls = data['start_urls']
+                
+                # Clear old rules and settings
+                db.query(SpiderRule).filter(SpiderRule.spider_id == existing.id).delete()
+                db.query(SpiderSetting).filter(SpiderSetting.spider_id == existing.id).delete()
+                spider = existing
+            else:
+                spider = Spider(
+                    name=data['name'],
+                    allowed_domains=data['allowed_domains'],
+                    start_urls=data['start_urls']
+                )
+                db.add(spider)
+                db.flush() # Get ID
+            
+            # Add Rules
+            for r_data in data.get('rules', []):
+                rule = SpiderRule(
+                    spider_id=spider.id,
+                    allow_patterns=r_data.get('allow'),
+                    deny_patterns=r_data.get('deny'),
+                    restrict_xpaths=r_data.get('restrict_xpaths'),
+                    restrict_css=r_data.get('restrict_css'),
+                    callback=r_data.get('callback', 'parse_article'),
+                    follow=r_data.get('follow', True),
+                    priority=r_data.get('priority', 0)
+                )
+                db.add(rule)
+            
+            # Add Settings
+            for k, v in data.get('settings', {}).items():
+                setting = SpiderSetting(
+                    spider_id=spider.id,
+                    key=k,
+                    value=str(v),
+                    type=type(v).__name__
+                )
+                db.add(setting)
+            
+            db.commit()
+            print(f"✅ Spider '{spider.name}' imported successfully!")
+            
+        except Exception as e:
+            db.rollback()
+            print(f"❌ Error importing spider: {e}")
+            
+    elif args.spiders_command == 'delete':
+        spider = db.query(Spider).filter(Spider.name == args.name).first()
+        if spider:
+            if not args.force:
+                confirm = input(f"Are you sure you want to delete spider '{args.name}'? (y/N): ")
+                if confirm.lower() != 'y':
+                    print("❌ Delete cancelled")
+                    return
+            
+            db.delete(spider)
+            db.commit()
+            print(f"🗑️  Spider '{args.name}' deleted!")
+        else:
+            print(f"❌ Spider '{args.name}' not found.")
+
+def handle_db_command(args):
+    """Handle database management commands"""
+    import subprocess
+    import sys
+    import os
+    
+    if args.db_command == 'migrate':
+        print("🔄 Running database migrations...")
+        try:
+            result = subprocess.run([
+                sys.executable, '-m', 'alembic', 'upgrade', 'head'
+            ], cwd=os.path.dirname(os.path.abspath(__file__)))
+            if result.returncode == 0:
+                print("✅ Migrations completed successfully!")
+            else:
+                print("❌ Migration failed!")
+        except Exception as e:
+            print(f"❌ Error running migrations: {e}")
+            
+    elif args.db_command == 'current':
+        try:
+            subprocess.run([
+                sys.executable, '-m', 'alembic', 'current'
+            ], cwd=os.path.dirname(os.path.abspath(__file__)))
+        except Exception as e:
+            print(f"❌ Error checking current revision: {e}")
+
+def handle_show_command(args):
+    """Show scraped articles from database"""
+    from core.db import get_db
+    from core.models import Spider, ScrapedItem
+    from datetime import datetime
+    
+    db = next(get_db())
+    
+    # Find spider by name
+    spider = db.query(Spider).filter(Spider.name == args.spider_name).first()
+    if not spider:
+        print(f"❌ Spider '{args.spider_name}' not found in database.")
+        return
+    
+    # Build query
+    query = db.query(ScrapedItem).filter(ScrapedItem.spider_id == spider.id)
+    
+    # Apply filters
+    filters_applied = []
+    if args.url:
+        query = query.filter(ScrapedItem.url.ilike(f'%{args.url}%'))
+        filters_applied.append(f"URL contains '{args.url}'")
+    
+    if args.title:
+        query = query.filter(ScrapedItem.title.ilike(f'%{args.title}%'))
+        filters_applied.append(f"title contains '{args.title}'")
+    
+    if args.text:
+        from sqlalchemy import or_
+        text_filter = or_(
+            ScrapedItem.title.ilike(f'%{args.text}%'),
+            ScrapedItem.content.ilike(f'%{args.text}%')
+        )
+        query = query.filter(text_filter)
+        filters_applied.append(f"title or content contains '{args.text}'")
+    
+    # Get items ordered by most recent first
+    items = query.order_by(ScrapedItem.scraped_at.desc()).limit(args.limit).all()
+    
+    if not items:
+        print(f"📭 No articles found for spider '{args.spider_name}'")
+        if filters_applied:
+            print(f"   (with filters: {', '.join(filters_applied)})")
+        return
+    
+    print(f"📰 Showing {len(items)} articles from '{args.spider_name}':")
+    if filters_applied:
+        print(f"   (filtered by: {', '.join(filters_applied)})")
+    print()
+    
+    for i, item in enumerate(items, 1):
+        # Format date nicely
+        scraped_date = item.scraped_at.strftime('%Y-%m-%d %H:%M') if item.scraped_at else 'Unknown'
+        pub_date = item.published_date.strftime('%Y-%m-%d') if item.published_date else 'Unknown'
+        
+        print(f"🔸 [{i}] {item.title or 'No Title'}")
+        print(f"   📅 Published: {pub_date} | Scraped: {scraped_date}")
+        print(f"   🔗 {item.url}")
+        if item.author:
+            print(f"   ✍️  {item.author}")
+        
+        # Show content preview (first 150 chars)
+        if item.content:
+            content_preview = item.content[:150].replace('\n', ' ').strip()
+            if len(item.content) > 150:
+                content_preview += "..."
+            print(f"   📝 {content_preview}")
+        print()
 
 def handle_projects_command(args):
     """Handle project management commands"""
@@ -143,20 +372,55 @@ def handle_projects_command(args):
             print("❌ Delete cancelled")
 
 def run_spider(project_name, spider_name, output_file=None, limit=None):
-    """Run a Scrapy spider for a specific project"""
+    """Run a Scrapy spider (DB or File-based)"""
+    # Try to find spider in DB first
+    from core.db import get_db
+    from core.models import Spider
+    
+    db = next(get_db())
+    db_spider = db.query(Spider).filter(Spider.name == spider_name).first()
+    
+    if db_spider:
+        print(f"🚀 Running DB spider: {spider_name}")
+        import sys
+        cmd = [sys.executable, '-m', 'scrapy', 'crawl', 'database_spider', '-a', f'spider_name={spider_name}']
+        
+        # Add settings from DB (handled inside DatabaseSpider, but we can pass overrides here if needed)
+        # Note: DatabaseSpider loads its own settings, but we might want to pass CLI overrides
+        
+        # For database spiders, data is saved via DatabasePipeline
+        # Only add JSON output if explicitly requested
+        if output_file:
+            cmd.extend(['-o', output_file])
+            print(f"📄 Output will also be saved to: {output_file}")
+        
+        print(f"💾 Data will be saved to database via DatabasePipeline")
+            
+        if limit:
+            cmd.extend(['-s', f'CLOSESPIDER_ITEMCOUNT={limit}'])
+            
+        subprocess.run(cmd)
+        return
+
+    # Fallback to legacy file-based project system
+    if not project_name:
+        print(f"❌ Spider '{spider_name}' not found in DB. To run legacy file-based spider, please provide --project.")
+        return
+
     config_loader = ConfigLoader()
     
     try:
         # Validate project and spider
         if not config_loader.validate_spider_for_project(project_name, spider_name):
-            print(f"❌ Spider '{spider_name}' not found or not configured for project '{project_name}'")
+            print(f"❌ Spider '{spider_name}' not found in DB and not configured for project '{project_name}'")
             return
         
         # Get project settings
         settings = config_loader.get_spider_settings(project_name, spider_name)
         
         # Build scrapy command
-        cmd = ['scrapy', 'crawl', spider_name]
+        import sys
+        cmd = [sys.executable, '-m', 'scrapy', 'crawl', spider_name]
         
         # Add settings (only simple ones that can be passed via command line)
         for key, value in settings.items():

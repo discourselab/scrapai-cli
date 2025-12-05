@@ -11,10 +11,19 @@ archives/
 data/
 */outputs/
 outputs/
+projects/*/outputs/
+projects/*/logs/
 
 .DS_Store
 
+# Output files (but keep example configs)
 *.json
+!alembic/versions/*.py
+# Allow version control of alembic migration files
+
+# Temporary spider configs
+spider_config.json
+temp_*.json
 
 workspace.ipynb
 
@@ -203,5 +212,4 @@ cython_debug/
 #  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
-.cursorindexingignore# Environment variables
-.env
+.cursorindexingignore
