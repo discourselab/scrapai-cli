@@ -12,8 +12,18 @@ from pathlib import Path
 # Add current directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from core.project_manager import ProjectManager
-from core.config_loader import ConfigLoader
+# Only import dependencies if not running setup command or if dependencies are available
+try:
+    from core.project_manager import ProjectManager
+    from core.config_loader import ConfigLoader
+except ImportError:
+    if len(sys.argv) <= 1 or (sys.argv[1] not in ['setup', 'verify', '--help', '-h']):
+        # If it's not setup/verify/help command and imports fail, show error
+        print("❌ Dependencies not installed. Run './scrapai setup' first.")
+        sys.exit(1)
+    # For setup/verify/help command, continue without imports
+    ProjectManager = None
+    ConfigLoader = None
 
 def check_venv():
     """Check if we're in a virtual environment, warn if not"""
@@ -31,8 +41,12 @@ def check_venv():
     return True
 
 def main():
-    if not check_venv():
-        sys.exit(1)
+    # Skip venv check for setup and verify commands
+    if len(sys.argv) > 1 and sys.argv[1] in ['setup', 'verify', '--help', '-h']:
+        pass  # Allow setup/verify/help commands to run without venv
+    else:
+        if not check_venv():
+            sys.exit(1)
     
     parser = argparse.ArgumentParser(description='Run Scrapy spiders with project support')
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
@@ -117,6 +131,12 @@ def main():
     show_parser.add_argument('--text', '-t', help='Show only articles containing this text in title or content')
     show_parser.add_argument('--title', help='Show only articles containing this text in title')
 
+    # setup command
+    subparsers.add_parser('setup', help='Setup virtual environment and database')
+
+    # verify command
+    subparsers.add_parser('verify', help='Verify environment setup (no installations)')
+
     args = parser.parse_args()
     
     if not args.command:
@@ -124,7 +144,11 @@ def main():
         return
     
     # Handle commands
-    if args.command == 'projects':
+    if args.command == 'setup':
+        handle_setup_command()
+    elif args.command == 'verify':
+        handle_verify_command()
+    elif args.command == 'projects':
         handle_projects_command(args)
     elif args.command == 'spiders':
         handle_spiders_command(args)
@@ -144,6 +168,145 @@ def main():
         show_project_status(args.project)
     elif args.command == 'logs':
         show_project_logs(args.project, args.spider)
+
+def handle_setup_command():
+    """Handle setup command - automated virtual environment and database setup"""
+    import subprocess
+    import sys
+    from pathlib import Path
+    
+    print("🚀 Setting up ScrapAI environment...")
+    
+    # Check if virtual environment exists
+    venv_path = Path('.venv')
+    if not venv_path.exists():
+        print("📦 Creating virtual environment...")
+        try:
+            subprocess.run([sys.executable, '-m', 'venv', '.venv'], check=True)
+            print("✅ Virtual environment created")
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Failed to create virtual environment: {e}")
+            sys.exit(1)
+    else:
+        print("✅ Virtual environment already exists")
+    
+    # Check if we're in a virtual environment
+    if not hasattr(sys, 'real_prefix') and not (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
+        print("⚠️  Virtual environment not activated")
+        print("🔄 Run: source .venv/bin/activate")
+        print("🔄 Then run: ./scrapai setup")
+        return
+    
+    # Install requirements if needed
+    requirements_path = Path('requirements.txt')
+    if requirements_path.exists():
+        print("📋 Installing requirements...")
+        try:
+            subprocess.run([sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt'], check=True)
+            print("✅ Requirements installed")
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Failed to install requirements: {e}")
+            sys.exit(1)
+    else:
+        print("⚠️  requirements.txt not found")
+    
+    # Check database setup
+    print("🗄️  Checking database setup...")
+    try:
+        # Try to check current migration state
+        result = subprocess.run(['./scrapai', 'db', 'current'], capture_output=True, text=True)
+        if result.returncode == 0 and 'head' in result.stdout:
+            print("✅ Database already initialized")
+        else:
+            print("🔧 Initializing database...")
+            subprocess.run(['python', './init_db.py'], check=True)
+            print("✅ Database initialized")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Database setup failed: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ Setup error: {e}")
+        sys.exit(1)
+    
+    print("🎉 ScrapAI setup complete!")
+    print("📝 You can now:")
+    print("   • List spiders: ./scrapai spiders list")
+    print("   • Import spiders: ./scrapai spiders import <file>")
+    print("   • Run crawls: ./scrapai crawl <spider_name>")
+
+def handle_verify_command():
+    """Verify environment setup without installing anything"""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    print("🔍 Verifying ScrapAI environment...\n")
+
+    all_good = True
+
+    # Check if virtual environment exists
+    venv_path = Path('.venv')
+    if not venv_path.exists():
+        print("❌ Virtual environment not found")
+        print("   Run: ./scrapai setup")
+        all_good = False
+    else:
+        print("✅ Virtual environment exists")
+
+    # Check if we're in a virtual environment
+    if not hasattr(sys, 'real_prefix') and not (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
+        print("❌ Virtual environment not activated")
+        print("   Run: source .venv/bin/activate")
+        all_good = False
+    else:
+        print("✅ Virtual environment activated")
+
+        # Check if key dependencies are installed (only if venv is activated)
+        try:
+            import scrapy
+            import sqlalchemy
+            import alembic
+            print("✅ Core dependencies installed")
+        except ImportError as e:
+            print(f"❌ Missing dependencies: {e}")
+            print("   Run: source .venv/bin/activate && ./scrapai setup")
+            all_good = False
+
+    # Check database setup (only if venv is activated and dependencies exist)
+    if all_good:
+        try:
+            result = subprocess.run(
+                [sys.executable, '-m', 'alembic', 'current'],
+                capture_output=True,
+                text=True,
+                cwd=os.path.dirname(os.path.abspath(__file__))
+            )
+            if result.returncode == 0:
+                if 'head' in result.stdout or result.stdout.strip():
+                    print("✅ Database initialized")
+                else:
+                    print("❌ Database not initialized")
+                    print("   Run: source .venv/bin/activate && ./scrapai setup")
+                    all_good = False
+            else:
+                print("❌ Unable to check database status")
+                print("   Run: source .venv/bin/activate && ./scrapai setup")
+                all_good = False
+        except Exception as e:
+            print(f"❌ Error checking database: {e}")
+            print("   Run: source .venv/bin/activate && ./scrapai setup")
+            all_good = False
+
+    print()
+    if all_good:
+        print("🎉 Environment is ready!")
+        print("📝 You can now:")
+        print("   • List spiders: ./scrapai spiders list")
+        print("   • Import spiders: ./scrapai spiders import <file>")
+        print("   • Run crawls: ./scrapai crawl <spider_name>")
+    else:
+        print("⚠️  Environment setup incomplete")
+        print("   Run: ./scrapai setup")
 
 def handle_spiders_command(args):
     """Handle spider management commands"""
@@ -205,7 +368,7 @@ def handle_spiders_command(args):
                     deny_patterns=r_data.get('deny'),
                     restrict_xpaths=r_data.get('restrict_xpaths'),
                     restrict_css=r_data.get('restrict_css'),
-                    callback=r_data.get('callback', 'parse_article'),
+                    callback=r_data.get('callback'),
                     follow=r_data.get('follow', True),
                     priority=r_data.get('priority', 0)
                 )
