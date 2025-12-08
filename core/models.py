@@ -30,8 +30,8 @@ class SpiderRule(Base):
     deny_patterns = Column(JSON, nullable=True)   # List of regex strings
     restrict_xpaths = Column(JSON, nullable=True) # List of xpath strings
     restrict_css = Column(JSON, nullable=True)    # List of css strings
-    
-    callback = Column(String, default='parse_article')
+
+    callback = Column(String, nullable=True, default=None)
     follow = Column(Boolean, default=True)
     priority = Column(Integer, default=0)
     

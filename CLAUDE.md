@@ -10,27 +10,29 @@ Project-based Scrapy spider management for large-scale web scraping. Built for C
 
 ### 1. Setup (First Time Only)
 
-#### Virtual Environment Setup
+#### Virtual Environment & Database Setup
 **CRITICAL: Always use virtual environment for all CLI commands.**
+
+**Step 1: Check Environment Status**
 ```bash
-# Create virtual environment if it doesn't exist
-if [ ! -d ".venv" ]; then
-    python3 -m venv .venv
-fi
-
-# Activate virtual environment (required for all operations)
-source .venv/bin/activate
-
-# Install/update requirements
-pip install -r requirements.txt
+# ALWAYS run verify first to check if setup is needed
+./scrapai verify
 ```
 
-#### Database Initialization
-Ensure the database is initialized with migrations:
+**Step 2: Setup (Only if verify fails)**
 ```bash
-# Check .env for DB credentials, then run migrations
+# Only run setup if verify shows issues
+./scrapai setup
+# Then activate the virtual environment
 source .venv/bin/activate
-./init_db.py
+# Run verify again to confirm
+./scrapai verify
+```
+
+**Step 3: Activate Virtual Environment**
+```bash
+# If verify passes, just activate and proceed
+source .venv/bin/activate
 ```
 
 **Database Management:**
@@ -41,7 +43,13 @@ source .venv/bin/activate
 ### 2. Workflow
 
 #### Phase 1: Analysis & Section Documentation
-**CRITICAL: Perform thorough multi-page analysis and create comprehensive section documentation.**
+**CRITICAL: Identify site structure and article URL patterns. DO NOT inspect individual articles.**
+
+**Key Principle:** Smart extractors (newspaper, trafilatura, playwright) automatically handle content extraction. Your job is to:
+- Understand site navigation structure
+- Identify URL patterns for articles vs. navigation pages
+- Create rules to follow navigation and extract articles
+- Let extractors handle the actual content extraction
 
 **Step 1A: Homepage Analysis**
 Inspect the site structure to understand how to extract content:
@@ -60,18 +68,19 @@ After homepage analysis, create a comprehensive section map:
 # This file will track sections, URL patterns, and rule requirements
 ```
 
-**Step 1C: Sequential Section Analysis**
+**Step 1C: Sequential Section Analysis (If Needed)**
 ```bash
 # Always ensure virtual environment is active
 source .venv/bin/activate
 # IMPORTANT: Run inspectors SEQUENTIALLY, not in parallel
 # Each inspector overwrites the same analysis files
+# ONLY inspect sections/subsections to find where articles are listed
 bin/inspector --url https://website.com/section1
-# Read analysis, update sections.md, create section_rules_section1.json
-bin/inspector --url https://website.com/section2  
-# Read analysis, update sections.md, create section_rules_section2.json
-bin/inspector --url https://website.com/actual-article-url
-# Read analysis, update sections.md for content validation
+# Read analysis, update sections.md, identify article URL patterns
+bin/inspector --url https://website.com/section2
+# Read analysis, update sections.md, identify article URL patterns
+# STOP when you find article listings - DO NOT inspect actual articles
+# Extractors (newspaper/trafilatura/playwright) handle content extraction
 ```
 
 **Enhanced Analysis Workflow:**
@@ -81,13 +90,14 @@ bin/inspector --url https://website.com/actual-article-url
    - URL patterns found in that section
    - Content type (navigation vs articles)
    - Rule requirements (allow/deny patterns)
-3. **Section-by-Section Analysis** - For each section:
-   - Run inspector on section URL
+3. **Section-by-Section Analysis (If Needed)** - For sections that need deeper inspection:
+   - Run inspector on section URL to see article listings
    - Read and analyze results immediately
+   - Identify article URL patterns from the listings
    - Update `sections.md` with findings
+   - DO NOT inspect individual articles - extractors handle content extraction
    - Create `section_rules_[name].json` with specific rules for that section
-4. **Article Validation** - Test actual article URLs from each section
-5. **Consolidate Rules** - Combine all section rule files into final spider JSON
+4. **Consolidate Rules** - Combine all section rule files into final spider JSON
 
 **File Structure Created:**
 ```
@@ -104,23 +114,25 @@ data/website/analysis/
 **Key Analysis Steps:**
 1. **Start with homepage analysis** - Inspect the main page first to identify ALL major sections
 2. **Document ALL sections** - Create `sections.md` with every major content section found
-3. **Section-specific analysis** - Visit and analyze each section page SEQUENTIALLY
-4. **Create modular rules** - Generate individual JSON rule files for each section
-5. **Preserve all analysis** - Keep `page.html`, `analysis.json`, and all new documentation
-6. **Extract URL patterns per section** - Use `grep` to find article URLs in each section:
+3. **Extract URL patterns from homepage** - Use `grep` to find article URLs:
    ```bash
-   grep -o 'href="[^"]*"' data/website/analysis/page.html | head -20
+   grep -o 'href="[^"]*"' data/website/analysis/page.html | head -50
    ```
-7. **Test actual article pages** - Ensure content extraction works on real articles from each section
-8. **Consolidate comprehensive rules** - Combine all section rules into final spider configuration
+4. **Identify article URL patterns** - Look for patterns like `/articles/.*`, `/news/.*`, `/analysis-.*`
+5. **Section-specific analysis (if needed)** - Only inspect sections/subsections if homepage isn't sufficient
+6. **STOP at article listings** - DO NOT inspect individual articles, extractors handle that
+7. **Create modular rules** - Generate individual JSON rule files based on URL patterns
+8. **Preserve all analysis** - Keep `page.html`, `analysis.json`, `sections.md`, and rule files
+9. **Consolidate comprehensive rules** - Combine all section rules into final spider configuration
 
 **Common Pitfalls to Avoid:**
-- Don't assume homepage analysis is sufficient
-- Don't create rules based only on navigation pages
+- Don't assume homepage analysis is sufficient - inspect sections if needed to find article patterns
+- Don't create rules without understanding URL patterns
+- **DO NOT inspect individual articles** - Extractors (newspaper/trafilatura) handle content extraction
 - **NEVER run multiple inspectors in parallel** - They overwrite the same analysis files
 - **ALWAYS read and document analysis immediately** after each inspector run
 - **NEVER delete analysis files** - Keep `page.html`, `analysis.json`, `sections.md`, and all rule files
-- Always test on actual article URLs first
+- Focus on URL patterns, not content structure - that's the extractor's job
 - Create section-specific rules before consolidating
 
 #### Phase 2: Section-Based Rule Generation
@@ -210,42 +222,19 @@ Combine all section rule files into a comprehensive spider definition:
 - **Be restrictive** - Only extract what you actually want
 
 #### Phase 3: Import
-**Import JSON payload directly via stdin to avoid temporary files.**
+**Import the final spider JSON file that was created in Phase 2.**
 
 ```bash
-# Always activate virtual environment and import spider definition directly via stdin
+# Always activate virtual environment and import from the final_spider.json file
 source .venv/bin/activate
-cat << 'EOF' | ./scrapai spiders import -
-{
-  "name": "website_name",
-  "allowed_domains": ["website.com"],
-  "start_urls": [
-    "https://www.website.com/"
-  ],
-  "rules": [
-    {
-      "allow": ["/articles/.*"],
-      "deny": ["/articles/.*#comments", "/articles/.*\\?.*"],
-      "callback": "parse_article",
-      "follow": false,
-      "priority": 100
-    }
-  ],
-  "settings": {
-    "DOWNLOAD_DELAY": 3,
-    "CONCURRENT_REQUESTS": 2,
-    "EXTRACTOR_ORDER": ["newspaper", "trafilatura", "playwright"]
-  }
-}
-EOF
+./scrapai spiders import data/website/analysis/final_spider.json
 ```
 
-**Why this approach:**
-- No temporary files to create and delete
-- Direct import via stdin using `-` 
-- Clean single-command operation
-- No file permission issues
-- Easier to debug JSON syntax errors
+**Why import from file:**
+- Uses the consolidated JSON created during analysis
+- Preserves the spider configuration for future reference
+- Easy to review and modify before importing
+- Can re-import same config if needed
 
 #### Phase 4: Execution & Verification
 **Always test with limited items first:**
@@ -279,7 +268,11 @@ source .venv/bin/activate
 
 ### 3. CLI Reference
 
-**IMPORTANT: All CLI commands require virtual environment activation:**
+**Environment Setup:**
+-   `./scrapai verify` - Verify environment setup (no installations, just checks status)
+-   `./scrapai setup` - Setup virtual environment and initialize database (run first)
+
+**IMPORTANT: All other CLI commands require virtual environment activation:**
 ```bash
 source .venv/bin/activate
 ```
