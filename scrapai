@@ -131,6 +131,16 @@ def main():
     show_parser.add_argument('--text', '-t', help='Show only articles containing this text in title or content')
     show_parser.add_argument('--title', help='Show only articles containing this text in title')
 
+    # export command
+    export_parser = subparsers.add_parser('export', help='Export scraped articles from database')
+    export_parser.add_argument('spider_name', help='Spider name to export articles from')
+    export_parser.add_argument('--format', '-f', choices=['csv', 'json', 'jsonl', 'parquet'], required=True, help='Export format (csv, json, jsonl, or parquet)')
+    export_parser.add_argument('--output', '-o', help='Output file path (default: data/<spider_name>_export.<format>)')
+    export_parser.add_argument('--limit', '-l', type=int, help='Limit number of articles to export')
+    export_parser.add_argument('--url', help='Export only articles containing this URL pattern')
+    export_parser.add_argument('--text', '-t', help='Export only articles containing this text in title or content')
+    export_parser.add_argument('--title', help='Export only articles containing this text in title')
+
     # setup command
     subparsers.add_parser('setup', help='Setup virtual environment and database')
 
@@ -156,6 +166,8 @@ def main():
         handle_db_command(args)
     elif args.command == 'show':
         handle_show_command(args)
+    elif args.command == 'export':
+        handle_export_command(args)
     elif args.command == 'crawl':
         run_spider(args.project, args.spider, args.output, args.limit)
     elif args.command == 'crawl-all':
@@ -438,28 +450,28 @@ def handle_show_command(args):
     from core.db import get_db
     from core.models import Spider, ScrapedItem
     from datetime import datetime
-    
+
     db = next(get_db())
-    
+
     # Find spider by name
     spider = db.query(Spider).filter(Spider.name == args.spider_name).first()
     if not spider:
         print(f"❌ Spider '{args.spider_name}' not found in database.")
         return
-    
+
     # Build query
     query = db.query(ScrapedItem).filter(ScrapedItem.spider_id == spider.id)
-    
+
     # Apply filters
     filters_applied = []
     if args.url:
         query = query.filter(ScrapedItem.url.ilike(f'%{args.url}%'))
         filters_applied.append(f"URL contains '{args.url}'")
-    
+
     if args.title:
         query = query.filter(ScrapedItem.title.ilike(f'%{args.title}%'))
         filters_applied.append(f"title contains '{args.title}'")
-    
+
     if args.text:
         from sqlalchemy import or_
         text_filter = or_(
@@ -468,32 +480,32 @@ def handle_show_command(args):
         )
         query = query.filter(text_filter)
         filters_applied.append(f"title or content contains '{args.text}'")
-    
+
     # Get items ordered by most recent first
     items = query.order_by(ScrapedItem.scraped_at.desc()).limit(args.limit).all()
-    
+
     if not items:
         print(f"📭 No articles found for spider '{args.spider_name}'")
         if filters_applied:
             print(f"   (with filters: {', '.join(filters_applied)})")
         return
-    
+
     print(f"📰 Showing {len(items)} articles from '{args.spider_name}':")
     if filters_applied:
         print(f"   (filtered by: {', '.join(filters_applied)})")
     print()
-    
+
     for i, item in enumerate(items, 1):
         # Format date nicely
         scraped_date = item.scraped_at.strftime('%Y-%m-%d %H:%M') if item.scraped_at else 'Unknown'
         pub_date = item.published_date.strftime('%Y-%m-%d') if item.published_date else 'Unknown'
-        
+
         print(f"🔸 [{i}] {item.title or 'No Title'}")
         print(f"   📅 Published: {pub_date} | Scraped: {scraped_date}")
         print(f"   🔗 {item.url}")
         if item.author:
             print(f"   ✍️  {item.author}")
-        
+
         # Show content preview (first 150 chars)
         if item.content:
             content_preview = item.content[:150].replace('\n', ' ').strip()
@@ -501,6 +513,123 @@ def handle_show_command(args):
                 content_preview += "..."
             print(f"   📝 {content_preview}")
         print()
+
+def handle_export_command(args):
+    """Export scraped articles from database to various formats"""
+    from core.db import get_db
+    from core.models import Spider, ScrapedItem
+    from pathlib import Path
+    import csv
+    import json
+
+    db = next(get_db())
+
+    # Find spider by name
+    spider = db.query(Spider).filter(Spider.name == args.spider_name).first()
+    if not spider:
+        print(f"❌ Spider '{args.spider_name}' not found in database.")
+        return
+
+    # Build query
+    query = db.query(ScrapedItem).filter(ScrapedItem.spider_id == spider.id)
+
+    # Apply filters
+    filters_applied = []
+    if args.url:
+        query = query.filter(ScrapedItem.url.ilike(f'%{args.url}%'))
+        filters_applied.append(f"URL contains '{args.url}'")
+
+    if args.title:
+        query = query.filter(ScrapedItem.title.ilike(f'%{args.title}%'))
+        filters_applied.append(f"title contains '{args.title}'")
+
+    if args.text:
+        from sqlalchemy import or_
+        text_filter = or_(
+            ScrapedItem.title.ilike(f'%{args.text}%'),
+            ScrapedItem.content.ilike(f'%{args.text}%')
+        )
+        query = query.filter(text_filter)
+        filters_applied.append(f"title or content contains '{args.text}'")
+
+    # Get items ordered by most recent first
+    if args.limit:
+        items = query.order_by(ScrapedItem.scraped_at.desc()).limit(args.limit).all()
+    else:
+        items = query.order_by(ScrapedItem.scraped_at.desc()).all()
+
+    if not items:
+        print(f"📭 No articles found for spider '{args.spider_name}'")
+        if filters_applied:
+            print(f"   (with filters: {', '.join(filters_applied)})")
+        return
+
+    # Determine output file path
+    if args.output:
+        output_path = Path(args.output)
+    else:
+        # Create data directory if it doesn't exist
+        from datetime import datetime
+        data_dir = Path('data')
+        data_dir.mkdir(exist_ok=True)
+        timestamp = datetime.now().strftime('%d%m%Y_%H%M%S')
+        output_path = data_dir / f"{args.spider_name}_export_{timestamp}.{args.format}"
+
+    # Ensure parent directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Convert items to list of dicts
+    items_data = []
+    for item in items:
+        item_dict = {
+            'id': item.id,
+            'url': item.url,
+            'title': item.title,
+            'content': item.content,
+            'author': item.author,
+            'published_date': item.published_date.isoformat() if item.published_date else None,
+            'scraped_at': item.scraped_at.isoformat() if item.scraped_at else None,
+            'metadata': item.metadata_json
+        }
+        items_data.append(item_dict)
+
+    try:
+        # Export based on format
+        if args.format == 'csv':
+            with open(output_path, 'w', newline='', encoding='utf-8') as f:
+                if items_data:
+                    writer = csv.DictWriter(f, fieldnames=items_data[0].keys())
+                    writer.writeheader()
+                    writer.writerows(items_data)
+            print(f"✅ Exported {len(items_data)} articles to CSV: {output_path}")
+
+        elif args.format == 'json':
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(items_data, f, indent=2, ensure_ascii=False)
+            print(f"✅ Exported {len(items_data)} articles to JSON: {output_path}")
+
+        elif args.format == 'jsonl':
+            with open(output_path, 'w', encoding='utf-8') as f:
+                for item in items_data:
+                    f.write(json.dumps(item, ensure_ascii=False) + '\n')
+            print(f"✅ Exported {len(items_data)} articles to JSONL: {output_path}")
+
+        elif args.format == 'parquet':
+            try:
+                import pandas as pd
+                df = pd.DataFrame(items_data)
+                df.to_parquet(output_path, index=False)
+                print(f"✅ Exported {len(items_data)} articles to Parquet: {output_path}")
+            except ImportError:
+                print("❌ Parquet export requires pandas and pyarrow libraries.")
+                print("   Run: pip install pandas pyarrow")
+                return
+
+        if filters_applied:
+            print(f"   (filtered by: {', '.join(filters_applied)})")
+
+    except Exception as e:
+        print(f"❌ Error exporting data: {e}")
 
 def handle_projects_command(args):
     """Handle project management commands"""
