@@ -297,6 +297,42 @@ source .venv/bin/activate
 -   `source .venv/bin/activate && ./scrapai show <spider_name> --text "climate"` - Search title or content for text (case-insensitive).
 -   `source .venv/bin/activate && ./scrapai show <spider_name> --title "climate"` - Search only article titles (case-insensitive).
 
+**Data Export:**
+
+**IMPORTANT: Only export data when the user EXPLICITLY requests it. Never export proactively.**
+
+When the user requests an export:
+1. **Ask which format they want**: CSV, JSON, JSONL, or Parquet
+2. **Run the export command** with the chosen format
+3. **Provide the full file path** to the user after export completes
+
+Available export formats:
+-   **CSV** - Comma-separated values (universal, works with Excel)
+-   **JSON** - Pretty-printed JSON array (human-readable)
+-   **JSONL** - JSON Lines format (one object per line, streaming-friendly)
+-   **Parquet** - Columnar format (efficient for large datasets, works with pandas/data analysis tools)
+
+Export commands:
+-   `source .venv/bin/activate && ./scrapai export <spider_name> --format csv` - Export to CSV
+-   `source .venv/bin/activate && ./scrapai export <spider_name> --format json --limit 100` - Export limited records
+-   `source .venv/bin/activate && ./scrapai export <spider_name> --format parquet --title "climate"` - Export with filters
+-   `source .venv/bin/activate && ./scrapai export <spider_name> --format jsonl --output /path/to/file.jsonl` - Custom output path
+
+Export behavior:
+-   Default location: `data/<spider_name>_export_<timestamp>.<format>` (timestamp format: ddmmyyyy_HHMMSS)
+-   Custom location: Use `--output` to specify any path
+-   Filters work with export: `--url`, `--title`, `--text`, `--limit`
+-   Each export gets a unique timestamped filename (no overwrites)
+
+Example workflow:
+```
+User: "Can you export the climate data?"
+Assistant: "What format would you like? CSV, JSON, JSONL, or Parquet?"
+User: "CSV please"
+Assistant: [runs export command and provides file path]
+"✅ Exported to: data/climate_spider_export_10122025_153045.csv"
+```
+
 ## Extractor Options
 
 The system uses a **Smart Extractor** that tries multiple strategies in order. You can configure the order via `EXTRACTOR_ORDER` in settings.
