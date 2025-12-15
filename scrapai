@@ -113,13 +113,60 @@ def main():
     delete_parser.add_argument('name', help='Spider name')
     delete_parser.add_argument('--force', '-f', action='store_true', help='Skip confirmation prompt')
 
+    # queue command for queue management
+    queue_parser = subparsers.add_parser('queue', help='Queue management')
+    queue_subparsers = queue_parser.add_subparsers(dest='queue_command', help='Queue commands')
+
+    # queue add
+    add_parser = queue_subparsers.add_parser('add', help='Add website to queue')
+    add_parser.add_argument('url', help='Website URL to add to queue')
+    add_parser.add_argument('-m', '--message', dest='custom_instruction', help='Custom instruction for processing')
+    add_parser.add_argument('--priority', type=int, default=5, help='Priority (higher = sooner, default: 5)')
+    add_parser.add_argument('--project', default='default', help='Project name (default: default)')
+
+    # queue list
+    list_parser = queue_subparsers.add_parser('list', help='List queue items (excludes failed/completed by default)')
+    list_parser.add_argument('--project', default='default', help='Project name (default: default)')
+    list_parser.add_argument('--status', help='Filter by status (pending, processing, completed, failed)')
+    list_parser.add_argument('--limit', type=int, default=5, help='Limit number of items to show (default: 5)')
+    list_parser.add_argument('--all', action='store_true', help='Show all items including failed and completed')
+
+    # queue next
+    next_parser = queue_subparsers.add_parser('next', help='Get next item from queue (atomic claim)')
+    next_parser.add_argument('--project', default='default', help='Project name (default: default)')
+
+    # queue complete
+    complete_parser = queue_subparsers.add_parser('complete', help='Mark item as completed')
+    complete_parser.add_argument('id', type=int, help='Queue item ID')
+
+    # queue fail
+    fail_parser = queue_subparsers.add_parser('fail', help='Mark item as failed')
+    fail_parser.add_argument('id', type=int, help='Queue item ID')
+    fail_parser.add_argument('-m', '--message', dest='error_message', help='Error message')
+
+    # queue retry
+    retry_parser = queue_subparsers.add_parser('retry', help='Retry a failed item')
+    retry_parser.add_argument('id', type=int, help='Queue item ID')
+
+    # queue remove
+    remove_parser = queue_subparsers.add_parser('remove', help='Remove item from queue')
+    remove_parser.add_argument('id', type=int, help='Queue item ID')
+
+    # queue cleanup
+    cleanup_parser = queue_subparsers.add_parser('cleanup', help='Bulk cleanup queue items')
+    cleanup_parser.add_argument('--completed', action='store_true', help='Remove all completed items')
+    cleanup_parser.add_argument('--failed', action='store_true', help='Remove all failed items')
+    cleanup_parser.add_argument('--all', action='store_true', help='Remove all completed and failed items')
+    cleanup_parser.add_argument('--project', default='default', help='Project name (default: default)')
+    cleanup_parser.add_argument('--force', '-f', action='store_true', help='Skip confirmation prompt')
+
     # db command for database operations
     db_parser = subparsers.add_parser('db', help='Database management')
     db_subparsers = db_parser.add_subparsers(dest='db_command', help='Database commands')
-    
+
     # db migrate
     db_subparsers.add_parser('migrate', help='Run database migrations')
-    
+
     # db current
     db_subparsers.add_parser('current', help='Show current migration revision')
 
@@ -162,6 +209,8 @@ def main():
         handle_projects_command(args)
     elif args.command == 'spiders':
         handle_spiders_command(args)
+    elif args.command == 'queue':
+        handle_queue_command(args)
     elif args.command == 'db':
         handle_db_command(args)
     elif args.command == 'show':
@@ -417,6 +466,248 @@ def handle_spiders_command(args):
             print(f"🗑️  Spider '{args.name}' deleted!")
         else:
             print(f"❌ Spider '{args.name}' not found.")
+
+def handle_queue_command(args):
+    """Handle queue management commands"""
+    from core.db import get_db
+    from core.models import CrawlQueue
+    from datetime import datetime
+    import socket
+    import getpass
+    from sqlalchemy import text
+
+    db = next(get_db())
+
+    if args.queue_command == 'add':
+        # Add new item to queue
+        queue_item = CrawlQueue(
+            project_name=args.project,
+            website_url=args.url,
+            custom_instruction=args.custom_instruction,
+            priority=args.priority
+        )
+        db.add(queue_item)
+        db.commit()
+
+        print(f"✅ Added to queue (ID: {queue_item.id})")
+        print(f"   URL: {args.url}")
+        print(f"   Project: {args.project}")
+        print(f"   Priority: {args.priority}")
+        if args.custom_instruction:
+            print(f"   Instructions: {args.custom_instruction}")
+
+    elif args.queue_command == 'list':
+        # List queue items
+        query = db.query(CrawlQueue).filter(CrawlQueue.project_name == args.project)
+
+        if args.status:
+            # If status is explicitly specified, filter by that status
+            query = query.filter(CrawlQueue.status == args.status)
+        elif not args.all:
+            # By default, exclude failed and completed items (show only pending and processing)
+            query = query.filter(CrawlQueue.status.in_(['pending', 'processing']))
+
+        query = query.order_by(CrawlQueue.priority.desc(), CrawlQueue.created_at.asc())
+
+        if args.limit:
+            query = query.limit(args.limit)
+
+        items = query.all()
+
+        if not items:
+            status_msg = f" with status '{args.status}'" if args.status else ""
+            print(f"📋 No items in queue for project '{args.project}'{status_msg}")
+            return
+
+        print(f"📋 Queue for project '{args.project}':")
+        print()
+
+        for item in items:
+            status_emoji = {
+                'pending': '⏳',
+                'processing': '🔄',
+                'completed': '✅',
+                'failed': '❌'
+            }.get(item.status, '❓')
+
+            print(f"{status_emoji} [{item.id}] {item.website_url}")
+            print(f"   Status: {item.status} | Priority: {item.priority}")
+
+            if item.custom_instruction:
+                print(f"   Instructions: {item.custom_instruction}")
+
+            if item.processing_by:
+                locked_time = item.locked_at.strftime('%Y-%m-%d %H:%M') if item.locked_at else 'Unknown'
+                print(f"   Processing by: {item.processing_by} (since {locked_time})")
+
+            if item.error_message:
+                print(f"   Error: {item.error_message}")
+
+            if item.completed_at:
+                completed_time = item.completed_at.strftime('%Y-%m-%d %H:%M')
+                print(f"   Completed: {completed_time}")
+
+            print()
+
+    elif args.queue_command == 'next':
+        # Atomic claim next item using PostgreSQL FOR UPDATE SKIP LOCKED
+        processing_by = f"{getpass.getuser()}@{socket.gethostname()}"
+
+        # Use raw SQL for atomic operation
+        result = db.execute(text("""
+            UPDATE crawl_queue
+            SET
+                status = 'processing',
+                processing_by = :processing_by,
+                locked_at = NOW(),
+                updated_at = NOW()
+            WHERE id = (
+                SELECT id
+                FROM crawl_queue
+                WHERE status = 'pending'
+                  AND project_name = :project_name
+                ORDER BY priority DESC, created_at ASC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            )
+            RETURNING id, website_url, custom_instruction, priority
+        """), {
+            'processing_by': processing_by,
+            'project_name': args.project
+        })
+
+        db.commit()
+
+        row = result.fetchone()
+
+        if row:
+            print(f"🔄 Claimed item from queue:")
+            print(f"   ID: {row[0]}")
+            print(f"   URL: {row[1]}")
+            if row[2]:
+                print(f"   Instructions: {row[2]}")
+            print(f"   Priority: {row[3]}")
+            print(f"   Locked by: {processing_by}")
+        else:
+            print(f"📭 No pending items in queue for project '{args.project}'")
+
+    elif args.queue_command == 'complete':
+        # Mark item as completed
+        item = db.query(CrawlQueue).filter(CrawlQueue.id == args.id).first()
+
+        if not item:
+            print(f"❌ Queue item {args.id} not found")
+            return
+
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        item.status = 'completed'
+        item.completed_at = now
+        item.updated_at = now
+        db.commit()
+
+        print(f"✅ Item {args.id} marked as completed")
+        print(f"   URL: {item.website_url}")
+
+    elif args.queue_command == 'fail':
+        # Mark item as failed
+        item = db.query(CrawlQueue).filter(CrawlQueue.id == args.id).first()
+
+        if not item:
+            print(f"❌ Queue item {args.id} not found")
+            return
+
+        from datetime import timezone
+        item.status = 'failed'
+        item.error_message = args.error_message
+        item.updated_at = datetime.now(timezone.utc)
+        db.commit()
+
+        print(f"❌ Item {args.id} marked as failed")
+        print(f"   URL: {item.website_url}")
+        if args.error_message:
+            print(f"   Error: {args.error_message}")
+
+    elif args.queue_command == 'retry':
+        # Retry a failed item
+        item = db.query(CrawlQueue).filter(CrawlQueue.id == args.id).first()
+
+        if not item:
+            print(f"❌ Queue item {args.id} not found")
+            return
+
+        from datetime import timezone
+        item.status = 'pending'
+        item.retry_count += 1
+        item.error_message = None
+        item.processing_by = None
+        item.locked_at = None
+        item.updated_at = datetime.now(timezone.utc)
+        db.commit()
+
+        print(f"🔄 Item {args.id} reset to pending (retry count: {item.retry_count})")
+        print(f"   URL: {item.website_url}")
+
+    elif args.queue_command == 'remove':
+        # Remove item from queue
+        item = db.query(CrawlQueue).filter(CrawlQueue.id == args.id).first()
+
+        if not item:
+            print(f"❌ Queue item {args.id} not found")
+            return
+
+        url = item.website_url
+        db.delete(item)
+        db.commit()
+
+        print(f"🗑️  Item {args.id} removed from queue")
+        print(f"   URL: {url}")
+
+    elif args.queue_command == 'cleanup':
+        # Bulk cleanup queue items
+        query = db.query(CrawlQueue).filter(CrawlQueue.project_name == args.project)
+
+        if args.all:
+            # Remove all completed and failed items
+            query = query.filter(CrawlQueue.status.in_(['completed', 'failed']))
+        elif args.completed:
+            # Remove only completed items
+            query = query.filter(CrawlQueue.status == 'completed')
+        elif args.failed:
+            # Remove only failed items
+            query = query.filter(CrawlQueue.status == 'failed')
+        else:
+            print("❌ Please specify --completed, --failed, or --all")
+            return
+
+        items = query.all()
+
+        if not items:
+            status_filter = "all completed and failed" if args.all else ("completed" if args.completed else "failed")
+            print(f"📋 No {status_filter} items to cleanup in project '{args.project}'")
+            return
+
+        # Show what will be deleted
+        print(f"🗑️  Found {len(items)} items to remove:")
+        for item in items[:5]:  # Show first 5
+            status_emoji = '✅' if item.status == 'completed' else '❌'
+            print(f"   {status_emoji} [{item.id}] {item.website_url}")
+        if len(items) > 5:
+            print(f"   ... and {len(items) - 5} more")
+
+        # Confirm unless --force
+        if not args.force:
+            confirm = input(f"\nRemove {len(items)} items? (y/N): ")
+            if confirm.lower() != 'y':
+                print("❌ Cleanup cancelled")
+                return
+
+        # Delete items
+        for item in items:
+            db.delete(item)
+        db.commit()
+
+        print(f"✅ Removed {len(items)} items from queue")
 
 def handle_db_command(args):
     """Handle database management commands"""
