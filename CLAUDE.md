@@ -43,13 +43,67 @@ source .venv/bin/activate
 ### 2. Workflow
 
 #### Phase 1: Analysis & Section Documentation
-**CRITICAL: Identify site structure and article URL patterns. DO NOT inspect individual articles.**
+**CRITICAL: Complete FULL site analysis before creating ANY rules. DO NOT create rules prematurely.**
+
+**⚠️ WARNING: DO NOT RUSH TO RULE CREATION ⚠️**
+The most common mistake is creating spider rules without complete site analysis. This results in:
+- Missing entire content sections
+- Incomplete URL pattern understanding
+- Having to delete and recreate the spider
+- Wasted time and effort
+
+**MANDATORY: Follow this systematic analysis process COMPLETELY before Phase 2:**
+
+**Step 1: Extract ALL URLs from Homepage**
+```bash
+# Extract every single link from the homepage systematically
+grep -o 'href="[^"]*"' data/website/analysis/page.html | sort -u > data/website/analysis/all_urls.txt
+cat data/website/analysis/all_urls.txt
+```
+
+**Step 2: Categorize Every URL Type**
+Manually review ALL URLs and identify:
+- Content pages with actual articles
+- Navigation/listing pages
+- Utility pages to exclude
+- Any other URL patterns present
+
+**Step 3: Document Complete Site Structure**
+Create comprehensive `sections.md` documenting EVERY section type and URL pattern found on the site.
+
+**Step 4: Verify Nothing is Missed**
+Review the complete URL list again and confirm you understand the full site structure before proceeding.
+
+**ONLY AFTER COMPLETE ANALYSIS → Proceed to Phase 2 (Rule Creation)**
 
 **Key Principle:** Smart extractors (newspaper, trafilatura, playwright) automatically handle content extraction. Your job is to:
-- Understand site navigation structure
-- Identify URL patterns for articles vs. navigation pages
-- Create rules to follow navigation and extract articles
+- Understand COMPLETE site navigation structure
+- Identify ALL URL patterns for articles vs. navigation pages
+- Create comprehensive rules covering ALL content sections
 - Let extractors handle the actual content extraction
+
+**Default Content Focus (CRITICAL):**
+**By default, ONLY focus on content sections. Ignore navigation and utility pages.**
+
+**Include:**
+- Articles, news, blog posts, research papers, analysis, reports
+- Any pages with substantive written content
+
+**Exclude:**
+- About, contact, donate, support pages
+- Login, signup, account, profile, settings pages
+- Legal/policy pages (privacy, terms, cookies)
+- Search, sitemap pages
+- Tag/category index pages (unless they contain article listings)
+- Author profile pages (unless explicitly content pages)
+- Newsletter, subscription, advertising pages
+- Social sharing links, comments sections, print versions
+- Media galleries (unless site is specifically about media content)
+
+Create appropriate allow/deny rules based on the URL patterns you discover during analysis.
+
+**IMPORTANT: User explicit instructions ALWAYS override these defaults.**
+If user requests specific sections (e.g., "include author pages"), create rules to include them.
 
 **Step 1A: Homepage Analysis**
 Inspect the site structure to understand how to extract content:
@@ -68,71 +122,65 @@ After homepage analysis, create a comprehensive section map:
 # This file will track sections, URL patterns, and rule requirements
 ```
 
-**Step 1C: Sequential Section Analysis (If Needed)**
+**Step 1C: Iterative Section Drilling**
 ```bash
 # Always ensure virtual environment is active
 source .venv/bin/activate
 # IMPORTANT: Run inspectors SEQUENTIALLY, not in parallel
 # Each inspector overwrites the same analysis files
-# ONLY inspect sections/subsections to find where articles are listed
-bin/inspector --url https://website.com/section1
-# Read analysis, update sections.md, identify article URL patterns
-bin/inspector --url https://website.com/section2
-# Read analysis, update sections.md, identify article URL patterns
-# STOP when you find article listings - DO NOT inspect actual articles
-# Extractors (newspaper/trafilatura/playwright) handle content extraction
+
+# Iteratively drill down through sections/subsections
+bin/inspector --url <section_url>
+# Read analysis, update sections.md
+# If this page has subsections, inspect those next
+bin/inspector --url <subsection_url>
+# Continue drilling until you find pages that LINK TO final content
+# Document the URL patterns of those final content pages
+# STOP: Do NOT inspect the final content pages themselves
+# Extractors handle content extraction
 ```
 
-**Enhanced Analysis Workflow:**
+**Iterative Analysis Workflow:**
 1. **Homepage Analysis** - Run inspector on main page, read `page.html` and `analysis.json`
-2. **Create `sections.md`** - Document all discovered sections with:
-   - Section name and URL
-   - URL patterns found in that section
-   - Content type (navigation vs articles)
-   - Rule requirements (allow/deny patterns)
-3. **Section-by-Section Analysis (If Needed)** - For sections that need deeper inspection:
-   - Run inspector on section URL to see article listings
-   - Read and analyze results immediately
-   - Identify article URL patterns from the listings
-   - Update `sections.md` with findings
-   - DO NOT inspect individual articles - extractors handle content extraction
-   - Create `section_rules_[name].json` with specific rules for that section
-4. **Consolidate Rules** - Combine all section rule files into final spider JSON
+2. **Extract ALL URLs** - Get complete URL list from homepage
+3. **Identify Section URLs** - Find URLs that appear to be sections/navigation
+4. **Drill Down Systematically**:
+   - Visit each section URL with inspector
+   - Check if it contains subsections or links to final content
+   - If subsections exist, visit those next
+   - Continue drilling until you find final content URL patterns
+   - Document the patterns but DO NOT inspect the content pages
+5. **Document Everything** - Update `sections.md` with complete navigation hierarchy and URL patterns
+6. **Create Section Rules** - Generate rule files for each discovered section
+7. **Consolidate** - Combine all rules into final spider JSON
 
 **File Structure Created:**
 ```
 data/website/analysis/
 ├── page.html           (preserved - homepage HTML)
 ├── analysis.json       (preserved - homepage analysis)
-├── sections.md         (NEW - comprehensive section documentation)
-├── section_rules_news.json     (NEW - rules for news section)
-├── section_rules_climate.json  (NEW - rules for climate section)
-├── section_rules_research.json (NEW - rules for research section)
-└── final_spider.json   (NEW - consolidated rules from all sections)
+├── all_urls.txt        (all URLs extracted from homepage)
+├── sections.md         (comprehensive section documentation with hierarchy)
+├── section_rules_*.json (rule files for each section)
+└── final_spider.json   (consolidated rules from all sections)
 ```
 
-**Key Analysis Steps:**
-1. **Start with homepage analysis** - Inspect the main page first to identify ALL major sections
-2. **Document ALL sections** - Create `sections.md` with every major content section found
-3. **Extract URL patterns from homepage** - Use `grep` to find article URLs:
-   ```bash
-   grep -o 'href="[^"]*"' data/website/analysis/page.html | head -50
-   ```
-4. **Identify article URL patterns** - Look for patterns like `/articles/.*`, `/news/.*`, `/analysis-.*`
-5. **Section-specific analysis (if needed)** - Only inspect sections/subsections if homepage isn't sufficient
-6. **STOP at article listings** - DO NOT inspect individual articles, extractors handle that
-7. **Create modular rules** - Generate individual JSON rule files based on URL patterns
-8. **Preserve all analysis** - Keep `page.html`, `analysis.json`, `sections.md`, and rule files
-9. **Consolidate comprehensive rules** - Combine all section rules into final spider configuration
+**Key Analysis Principles:**
+1. **Extract complete URL list** - Get every link from homepage
+2. **Drill down systematically** - Visit sections, then subsections, iteratively
+3. **Stop at content discovery** - When you find final content URL patterns, document and stop
+4. **Never inspect content** - Don't analyze individual content pages
+5. **Document hierarchy** - Record the full navigation structure
+6. **Preserve everything** - Keep all analysis files for reference
 
 **Common Pitfalls to Avoid:**
-- Don't assume homepage analysis is sufficient - inspect sections if needed to find article patterns
-- Don't create rules without understanding URL patterns
-- **DO NOT inspect individual articles** - Extractors (newspaper/trafilatura) handle content extraction
+- Don't assume homepage analysis is sufficient
+- Don't create rules without understanding complete URL patterns
+- **DO NOT inspect individual content pages** - Extractors handle content extraction
 - **NEVER run multiple inspectors in parallel** - They overwrite the same analysis files
 - **ALWAYS read and document analysis immediately** after each inspector run
-- **NEVER delete analysis files** - Keep `page.html`, `analysis.json`, `sections.md`, and all rule files
-- Focus on URL patterns, not content structure - that's the extractor's job
+- **NEVER delete analysis files** - Keep all analysis artifacts
+- Focus on URL patterns and navigation hierarchy, not content structure
 - Create section-specific rules before consolidating
 
 #### Phase 2: Section-Based Rule Generation
@@ -146,69 +194,46 @@ Read the complete `sections.md` file to understand:
 - Specific requirements for each section
 
 **Step 2B: Create Individual Section Rule Files**
-For each section documented in `sections.md`, create specific rule files:
-```json
-// section_rules_news.json
-{
-  "section": "news",
-  "rules": [
-    {
-      "allow": ["/news/.*", "/breaking/.*"],
-      "deny": ["/news/live/.*", "/news/.*#comments"],
-      "callback": "parse_article",
-      "follow": false,
-      "priority": 100
-    },
-    {
-      "allow": ["/news/?$", "/breaking/?$"],
-      "callback": null,
-      "follow": true,
-      "priority": 50
-    }
-  ]
-}
-```
+For each section documented in `sections.md`, create specific rule files based on discovered URL patterns.
 
 **Step 2C: Consolidate into Final Spider JSON**
-Combine all section rule files into a comprehensive spider definition:
+Combine all section rule files into a comprehensive spider definition.
 
 #### Phase 2D: Final JSON Payload Structure
 
 **Payload Structure:**
 ```json
 {
-  "name": "website_name",
-  "allowed_domains": ["website.com"],
+  "name": "spider_name",
+  "allowed_domains": ["domain.com"],
   "start_urls": [
-    "https://www.website.com/",
-    "https://www.website.com/section1",
-    "https://www.website.com/section2"
+    "URL patterns discovered during analysis"
   ],
   "rules": [
     {
-      "allow": ["/articles/.*"],
-      "deny": ["/articles/.*#comments", "/articles/.*\\?.*"],
+      "allow": ["patterns for final content pages"],
+      "deny": ["patterns to exclude from content extraction"],
       "callback": "parse_article",
       "follow": false,
       "priority": 100
     },
     {
-      "allow": ["/section/.*", "/topics/.*"],
-      "deny": ["/live/.*", "/videos/.*", ".*page=.*"],
+      "allow": ["patterns for navigation/listing pages"],
+      "deny": ["patterns to avoid following"],
       "callback": null,
       "follow": true,
       "priority": 50
     },
     {
-      "deny": ["/login", "/signup", "/search", "/profile"],
+      "deny": ["patterns for utility pages to block completely"],
       "callback": null,
       "follow": false,
       "priority": 0
     }
   ],
   "settings": {
-    "DOWNLOAD_DELAY": 3,
-    "CONCURRENT_REQUESTS": 2,
+    "DOWNLOAD_DELAY": 2,
+    "CONCURRENT_REQUESTS": 3,
     "EXTRACTOR_ORDER": ["newspaper", "trafilatura", "playwright"]
   }
 }
@@ -266,6 +291,121 @@ source .venv/bin/activate
    - Ensure `callback: "parse_article"` only on actual content URLs
    - Use `follow: true` without callbacks for navigation pages only
 
+### 2.5. Queue System (Optional)
+
+**The queue system is OPTIONAL. Use it when the user explicitly requests it.**
+
+#### When to Use Queue vs Direct Processing
+
+**Direct Processing (Default):**
+```
+User: "Add this website: https://example.com"
+Claude Code: [Immediately processes: analyze → rules → import → test]
+```
+
+**Queue Mode (When User Requests):**
+```
+User: "Add climate.news to the queue"
+Claude Code: [Adds to queue for later processing]
+
+User: "Process the next one in the queue"
+Claude Code: [Gets next item, then processes it]
+```
+
+#### Queue CLI Commands
+
+**Add to Queue:**
+```bash
+source .venv/bin/activate && ./scrapai queue add <url> [-m "custom instruction"] [--priority N] [--project NAME]
+```
+
+**List Queue:**
+```bash
+# By default: shows 5 pending/processing items (excludes failed/completed)
+source .venv/bin/activate && ./scrapai queue list
+
+# Show more items
+source .venv/bin/activate && ./scrapai queue list --limit 20
+
+# Show all items including failed and completed
+source .venv/bin/activate && ./scrapai queue list --all --limit 50
+
+# Filter by specific status
+source .venv/bin/activate && ./scrapai queue list --status pending
+source .venv/bin/activate && ./scrapai queue list --status completed --limit 10
+```
+
+**Claim Next Item (Atomic - Safe for Concurrent Use):**
+```bash
+source .venv/bin/activate && ./scrapai queue next [--project NAME]
+# Returns: ID, URL, custom_instruction, priority
+```
+
+**Update Status:**
+```bash
+source .venv/bin/activate && ./scrapai queue complete <id>
+source .venv/bin/activate && ./scrapai queue fail <id> [-m "error message"]
+source .venv/bin/activate && ./scrapai queue retry <id>
+source .venv/bin/activate && ./scrapai queue remove <id>
+```
+
+**Bulk Cleanup:**
+```bash
+source .venv/bin/activate && ./scrapai queue cleanup --completed --force  # Remove all completed
+source .venv/bin/activate && ./scrapai queue cleanup --failed --force     # Remove all failed
+source .venv/bin/activate && ./scrapai queue cleanup --all --force        # Remove all completed and failed
+```
+
+#### Queue Workflow for Claude Code
+
+**When user says "Add X to queue":**
+1. Run `./scrapai queue add <url> -m "custom instruction if provided" --priority N`
+2. Confirm addition with queue ID
+3. Do NOT process immediately
+
+**When user says "Process next in queue":**
+1. Run `./scrapai queue next` to claim next item
+2. Note the ID, URL, and custom_instruction from output
+3. **If custom_instruction exists**: Use it to override CLAUDE.md defaults during analysis
+4. Follow the full workflow (Phases 1-4):
+   - Analysis & Section Documentation
+   - Rule Generation
+   - Import Spider
+   - Test & Verify
+5. **If successful**: `./scrapai queue complete <id>`
+6. **If failed**: `./scrapai queue fail <id> -m "error description"`
+
+#### Queue Features
+
+- **Project Isolation**: Multiple projects can have separate queues (default: "default")
+- **Priority System**: Higher priority items processed first (default: 5)
+- **Custom Instructions**: Per-site instructions override CLAUDE.md defaults
+- **Concurrent Safe**: Multiple team members can work simultaneously without conflicts
+- **Atomic Claiming**: `queue next` uses PostgreSQL locking to prevent duplicate work
+- **Audit Trail**: Tracks who's processing what, when completed/failed
+
+#### Example: Queue with Custom Instructions
+
+```
+User: "Add climate.news to the queue and focus only on research articles"
+Claude Code runs:
+  ./scrapai queue add https://climate.news -m "Focus only on research articles" --priority 10
+
+Later...
+
+User: "Process the next one"
+Claude Code runs:
+  ./scrapai queue next
+  # Output: ID: 1, URL: https://climate.news, Instructions: Focus only on research articles
+
+  # During analysis, Claude Code remembers:
+  # "USER INSTRUCTION: Focus only on research articles"
+  # This overrides the default content focus rules
+
+  # After successful processing:
+  ./scrapai queue complete 1
+```
+
 ### 3. CLI Reference
 
 **Environment Setup:**
@@ -289,6 +429,18 @@ source .venv/bin/activate
 **Database Management:**
 -   `source .venv/bin/activate && ./scrapai db migrate` - Run database migrations.
 -   `source .venv/bin/activate && ./scrapai db current` - Show current migration revision.
+
+**Queue Management (Optional):**
+-   `source .venv/bin/activate && ./scrapai queue add <url> [-m "instruction"] [--priority N]` - Add website to queue.
+-   `source .venv/bin/activate && ./scrapai queue list [--status pending|processing|completed|failed]` - List queue items.
+-   `source .venv/bin/activate && ./scrapai queue next` - Claim next pending item (atomic).
+-   `source .venv/bin/activate && ./scrapai queue complete <id>` - Mark item as completed.
+-   `source .venv/bin/activate && ./scrapai queue fail <id> [-m "error"]` - Mark item as failed.
+-   `source .venv/bin/activate && ./scrapai queue retry <id>` - Retry a failed item.
+-   `source .venv/bin/activate && ./scrapai queue remove <id>` - Remove item from queue.
+-   `source .venv/bin/activate && ./scrapai queue cleanup --completed --force` - Remove all completed items.
+-   `source .venv/bin/activate && ./scrapai queue cleanup --failed --force` - Remove all failed items.
+-   `source .venv/bin/activate && ./scrapai queue cleanup --all --force` - Remove all completed and failed items.
 
 **Data Inspection:**
 -   `source .venv/bin/activate && ./scrapai show <spider_name>` - Show recent articles from spider (default: 5).

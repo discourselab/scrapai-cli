@@ -54,7 +54,7 @@ class ScrapedItem(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     spider_id = Column(Integer, ForeignKey('spiders.id'), nullable=False)
-    
+
     url = Column(String, unique=True, index=True, nullable=False)
     title = Column(String, nullable=True)
     content = Column(Text, nullable=True)
@@ -62,5 +62,22 @@ class ScrapedItem(Base):
     author = Column(String, nullable=True)
     scraped_at = Column(DateTime, default=datetime.utcnow)
     metadata_json = Column(JSON, nullable=True) # Renamed to avoid conflict with metadata attribute
-    
+
     spider = relationship("Spider", back_populates="items")
+
+class CrawlQueue(Base):
+    __tablename__ = 'crawl_queue'
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_name = Column(String(255), nullable=False, default='default')
+    website_url = Column(Text, nullable=False)
+    custom_instruction = Column(Text, nullable=True)
+    status = Column(String(50), nullable=False, default='pending')
+    priority = Column(Integer, nullable=False, default=5)
+    processing_by = Column(String(255), nullable=True)
+    locked_at = Column(DateTime, nullable=True)
+    error_message = Column(Text, nullable=True)
+    retry_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
