@@ -188,6 +188,11 @@ def main():
     export_parser.add_argument('--text', '-t', help='Export only articles containing this text in title or content')
     export_parser.add_argument('--title', help='Export only articles containing this text in title')
 
+    # extract-urls command
+    extract_urls_parser = subparsers.add_parser('extract-urls', help='Extract all URLs from an HTML file')
+    extract_urls_parser.add_argument('--file', type=str, required=True, help='Path to HTML file')
+    extract_urls_parser.add_argument('--output', '-o', type=str, help='Output file path (optional, prints to stdout if not specified)')
+
     # setup command
     subparsers.add_parser('setup', help='Setup virtual environment and database')
 
@@ -217,6 +222,8 @@ def main():
         handle_show_command(args)
     elif args.command == 'export':
         handle_export_command(args)
+    elif args.command == 'extract-urls':
+        handle_extract_urls_command(args)
     elif args.command == 'crawl':
         run_spider(args.project, args.spider, args.output, args.limit)
     elif args.command == 'crawl-all':
@@ -921,6 +928,26 @@ def handle_export_command(args):
 
     except Exception as e:
         print(f"❌ Error exporting data: {e}")
+
+def handle_extract_urls_command(args):
+    """Extract all URLs from an HTML file"""
+    from utils.url_extractor import extract_urls_from_html
+
+    try:
+        urls = extract_urls_from_html(args.file, args.output)
+
+        # If no output file specified, print to stdout
+        if not args.output:
+            print('\n'.join(urls))
+        else:
+            print(f"✅ Extracted {len(urls)} URLs to {args.output}")
+
+    except FileNotFoundError as e:
+        print(f"❌ {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        sys.exit(1)
 
 def handle_projects_command(args):
     """Handle project management commands"""

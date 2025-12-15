@@ -57,7 +57,8 @@ The most common mistake is creating spider rules without complete site analysis.
 **Step 1: Extract ALL URLs from Homepage**
 ```bash
 # Extract every single link from the homepage systematically
-grep -o 'href="[^"]*"' data/website/analysis/page.html | sort -u > data/website/analysis/all_urls.txt
+source .venv/bin/activate
+./scrapai extract-urls --file data/website/analysis/page.html --output data/website/analysis/all_urls.txt
 cat data/website/analysis/all_urls.txt
 ```
 
