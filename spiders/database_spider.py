@@ -12,9 +12,14 @@ class DatabaseSpider(CrawlSpider):
     name = "database_spider"
     
     def __init__(self, spider_name=None, *args, **kwargs):
+        # Support both direct instantiation and dynamic class generation
+        if not spider_name:
+            # Check if this is a dynamically generated class with _spider_name
+            spider_name = getattr(self.__class__, '_spider_name', None)
+
         if not spider_name:
             raise ValueError("spider_name argument is required")
-            
+
         self.spider_name = spider_name
         self._load_config()
         super().__init__(*args, **kwargs)
