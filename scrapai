@@ -1012,9 +1012,11 @@ def run_spider(project_name, spider_name, output_file=None, limit=None):
             # Add default output file if not specified
             if not output_file:
                 import os
-                output_dir = f'data/{spider_name}'
+                now = datetime.now()
+                date_folder = now.strftime('%Y-%m-%d')
+                output_dir = f'data/{spider_name}/{date_folder}'
                 os.makedirs(output_dir, exist_ok=True)
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                timestamp = now.strftime('%H%M%S')
                 output_file = f'{output_dir}/crawl_{timestamp}.jsonl'
 
             cmd.extend(['-o', output_file])
