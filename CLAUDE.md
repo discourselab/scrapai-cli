@@ -263,11 +263,36 @@ source .venv/bin/activate
 - Can re-import same config if needed
 
 #### Phase 4: Execution & Verification
-**Always test with limited items first:**
+
+**IMPORTANT: Storage Mode Selection**
+
+The `--limit` flag controls where data is saved:
+- **With `--limit`**: Saves to database (for testing/verification with `show` command)
+- **Without `--limit`**: Exports to files only (production mode, avoids database costs)
+
+**Testing Mode (with --limit):**
 ```bash
+# Test with limited items - saves to database
 source .venv/bin/activate
 ./scrapai crawl website_name --limit 10
 ```
+
+This will:
+- Save data to database for quick verification
+- Use `./scrapai show website_name` to check results
+- Ideal for testing spider rules and content extraction
+
+**Production Mode (without --limit):**
+```bash
+# Full scrape - exports to files, no database cost
+source .venv/bin/activate
+./scrapai crawl website_name
+```
+
+This will:
+- Export to `data/website_name/crawl_TIMESTAMP.jsonl`
+- Skip database to avoid storage costs
+- Ideal for large-scale production scrapes
 
 **Verification Checklist:**
 1. **Check extracted content quality**:
@@ -424,8 +449,10 @@ source .venv/bin/activate
 -   `source .venv/bin/activate && ./scrapai spiders delete <name>` - Delete a spider.
 
 **Crawling:**
--   `source .venv/bin/activate && ./scrapai crawl <name>` - Run a specific spider.
--   `source .venv/bin/activate && ./scrapai crawl <name> --limit 10` - Test with a limit.
+-   `source .venv/bin/activate && ./scrapai crawl <name>` - Production scrape (exports to files, no DB cost).
+-   `source .venv/bin/activate && ./scrapai crawl <name> --limit 10` - Test mode (saves to DB for verification).
+    - **With `--limit`**: Saves to database, use `show` command to verify results
+    - **Without `--limit`**: Exports to `data/<name>/crawl_TIMESTAMP.jsonl`, skips database
 
 **Database Management:**
 -   `source .venv/bin/activate && ./scrapai db migrate` - Run database migrations.
