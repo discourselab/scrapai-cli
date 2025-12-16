@@ -993,22 +993,38 @@ def run_spider(project_name, spider_name, output_file=None, limit=None):
     if db_spider:
         print(f"🚀 Running DB spider: {spider_name}")
         import sys
+        from datetime import datetime
         cmd = [sys.executable, '-m', 'scrapy', 'crawl', 'database_spider', '-a', f'spider_name={spider_name}']
-        
-        # Add settings from DB (handled inside DatabaseSpider, but we can pass overrides here if needed)
-        # Note: DatabaseSpider loads its own settings, but we might want to pass CLI overrides
-        
-        # For database spiders, data is saved via DatabasePipeline
-        # Only add JSON output if explicitly requested
-        if output_file:
-            cmd.extend(['-o', output_file])
-            print(f"📄 Output will also be saved to: {output_file}")
-        
-        print(f"💾 Data will be saved to database via DatabasePipeline")
-            
+
+        # Smart storage logic based on --limit flag
         if limit:
+            # Testing mode: Save to database for verification with `show` command
+            print(f"🧪 Test mode: Saving to database (limit: {limit} items)")
+            print(f"   Use './scrapai show {spider_name}' to verify results")
             cmd.extend(['-s', f'CLOSESPIDER_ITEMCOUNT={limit}'])
-            
+        else:
+            # Production mode: Export to files, disable database to save costs
+            print(f"📁 Production mode: Exporting to files (database disabled)")
+
+            # Disable DatabasePipeline to avoid DB costs
+            cmd.extend(['-s', 'ITEM_PIPELINES={"pipelines.ScrapaiPipeline": 300}'])
+
+            # Add default output file if not specified
+            if not output_file:
+                import os
+                output_dir = f'data/{spider_name}'
+                os.makedirs(output_dir, exist_ok=True)
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                output_file = f'{output_dir}/crawl_{timestamp}.jsonl'
+
+            cmd.extend(['-o', output_file])
+            print(f"   Output: {output_file}")
+
+        # Add explicit output file if provided
+        if output_file and limit:
+            cmd.extend(['-o', output_file])
+            print(f"   Also saving to: {output_file}")
+
         subprocess.run(cmd)
         return
 
