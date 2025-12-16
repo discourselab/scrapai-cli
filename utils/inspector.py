@@ -17,6 +17,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 
 from utils.browser import BrowserClient
+from core.config import DATA_DIR
 
 async def inspect_page_async(url, output_dir=None, proxy_type="auto", save_html=True):
     """
@@ -35,21 +36,39 @@ async def inspect_page_async(url, output_dir=None, proxy_type="auto", save_html=
     
     # Extract domain for folder name if output_dir is not specified
     if output_dir is None:
-        domain = urlparse(url).netloc.replace("www.", "")
-        # Map domain to source_id
-        source_id_mapping = {
-            "politifact.com": "politifact",
-            "factcheck.org": "factcheck_org",
-            "fullfact.org": "full_fact",
-            "science.feedback.org": "science_feedback",
-            "factcheck.afp.com": "afp",
-            "carbonbrief.org": "carbon_brief",
-            "climatefactchecks.org": "climate_fact_checks",
-            "desmog.blog": "desmog"
-        }
-        
-        source_id = source_id_mapping.get(domain, domain.replace(".", "_"))
-        output_dir = f"data/{source_id}/analysis"
+        parsed_url = urlparse(url)
+        domain = parsed_url.netloc.replace("www.", "")
+
+        # Check if this is a Wayback Machine URL
+        if domain == "web.archive.org":
+            # Parse Wayback Machine URL structure:
+            # https://web.archive.org/web/YYYYMMDDHHMMSS/http://original-domain.com/path
+            import re
+            wayback_pattern = r'/web/(\d{8})\d*/(?:https?://)?(?:www\.)?([^/]+)'
+            match = re.search(wayback_pattern, url)
+
+            if match:
+                timestamp = match.group(1)  # 8-digit date (YYYYMMDD)
+                original_domain = match.group(2).replace(".", "_").replace(":", "_")
+                output_dir = f"{DATA_DIR}/web_archive_org/{original_domain}/{timestamp}/analysis"
+            else:
+                # Fallback if pattern doesn't match
+                output_dir = f"{DATA_DIR}/web_archive_org/analysis"
+        else:
+            # Map domain to source_id for regular sites
+            source_id_mapping = {
+                "politifact.com": "politifact",
+                "factcheck.org": "factcheck_org",
+                "fullfact.org": "full_fact",
+                "science.feedback.org": "science_feedback",
+                "factcheck.afp.com": "afp",
+                "carbonbrief.org": "carbon_brief",
+                "climatefactchecks.org": "climate_fact_checks",
+                "desmog.blog": "desmog"
+            }
+
+            source_id = source_id_mapping.get(domain, domain.replace(".", "_"))
+            output_dir = f"{DATA_DIR}/{source_id}/analysis"
     
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
