@@ -8,6 +8,27 @@ Project-based Scrapy spider management for large-scale web scraping. Built for C
 
 **When asked to add any website, follow this Database-First Workflow:**
 
+### IMPORTANT: Process Websites Sequentially
+
+**CRITICAL: Process ONE website at a time unless the user explicitly requests parallel processing.**
+
+- By default, claim queue items one at a time using `./scrapai queue next`
+- Complete the full workflow (analyze → rules → import → test → mark complete) for each website before moving to the next
+- Only use parallel processing (multiple Task agents with `run_in_background=true`) if the user explicitly says "in parallel" or "do all in parallel"
+- Sequential processing is more reliable, easier to debug, and provides better visibility into progress
+
+**Example - Sequential (DEFAULT):**
+```
+User: "Process the queue"
+Claude: [Claims one item, processes it completely, then moves to next]
+```
+
+**Example - Parallel (ONLY when requested):**
+```
+User: "Process all queue items in parallel"
+Claude: [Launches multiple background agents simultaneously]
+```
+
 ### 1. Setup (First Time Only)
 
 #### Virtual Environment & Database Setup
