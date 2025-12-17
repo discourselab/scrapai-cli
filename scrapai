@@ -486,6 +486,27 @@ def handle_queue_command(args):
     db = next(get_db())
 
     if args.queue_command == 'add':
+        # Check if URL already exists in queue for this project
+        existing = db.query(CrawlQueue).filter(
+            CrawlQueue.project_name == args.project,
+            CrawlQueue.website_url == args.url
+        ).first()
+
+        if existing:
+            status_emoji = {
+                'pending': '⏳',
+                'processing': '🔄',
+                'completed': '✅',
+                'failed': '❌'
+            }.get(existing.status, '❓')
+
+            print(f"⚠️  URL already exists in queue")
+            print(f"   {status_emoji} ID: {existing.id}")
+            print(f"   Status: {existing.status}")
+            print(f"   URL: {existing.website_url}")
+            print(f"   Skipping duplicate...")
+            return
+
         # Add new item to queue
         queue_item = CrawlQueue(
             project_name=args.project,
