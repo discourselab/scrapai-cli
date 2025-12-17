@@ -263,7 +263,65 @@ This is not the only valid approach to web scraping at scale, but it represents 
 
 ScrapAI is operated through Claude Code, an AI coding agent that orchestrates the analysis and configuration workflow.
 
-Refer to CLAUDE.md for detailed setup procedures and workflow documentation. Site addition and configuration is handled by scrapAI through Claude Code interaction as documented in that file.
+### Setup
+
+1. **Install Claude Code**
+
+   Follow the installation guide at [code.claude.com/docs/en/setup](https://code.claude.com/docs/en/setup)
+
+2. **Clone the repository**
+
+   ```bash
+   git clone https://github.com/discourselab/scrapai-cli.git
+   cd scrapai-cli
+   ```
+
+3. **Create and activate virtual environment**
+
+   **Linux/Mac:**
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+
+   **Windows (Command Prompt):**
+   ```cmd
+   python -m venv .venv
+   .venv\Scripts\activate.bat
+   ```
+
+   **Windows (PowerShell):**
+   ```powershell
+   python -m venv .venv
+   .venv\Scripts\Activate.ps1
+   ```
+
+4. **Install Python dependencies**
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+5. **Start using scrapAI**
+
+   Run Claude Code in the repository directory and start asking questions or requesting tasks:
+
+   ```bash
+   claude
+   ```
+
+   Example prompts:
+   - "Add this website: https://example.com"
+   - "Show me what's in the database"
+   - "Process the next item in the queue"
+
+### Detailed Workflow Documentation
+
+Refer to [CLAUDE.md](CLAUDE.md) for comprehensive workflow documentation, including:
+- Database-first setup procedures
+- Website analysis and spider generation
+- Queue system usage
+- CLI command reference
 
 ## Management Interface
 
