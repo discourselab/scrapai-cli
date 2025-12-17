@@ -1,10 +1,12 @@
 # ScrapAI-CLI
 
+**scrapAI** (pronounced scrape-eye)
+
 AI-driven orchestration layer for Scrapy web scraping at scale.
 
 ## TL;DR
 
-ScrapAI uses AI to analyze website structure once, generating database-stored configuration rules that enable deterministic scraping without ongoing AI costs. Instead of maintaining hundreds of Python spider files or paying per-page AI extraction fees, you get one-time setup ($0.50-1.00 per site, 1-2 minutes) followed by standard Scrapy execution. Developed to manage a personal use case of monitoring 2,000 websites. Best suited for continuous monitoring of multiple sites where setup time and systematic management matter.
+ScrapAI uses an AI coding agent to analyze website structure once, generating database-stored configuration rules that enable deterministic scraping without ongoing AI costs. Instead of maintaining hundreds of Python spider files or paying per-page AI extraction fees, you get one-time setup ($0.50-1.00 per site, 1-2 minutes) followed by standard Scrapy execution. Developed to manage a personal use case of monitoring 2,000 websites. Best suited for continuous monitoring of multiple sites where setup time and systematic management matter.
 
 ## Table of Contents
 
@@ -237,7 +239,7 @@ Websites where each page has unique structure cannot be handled with unified ext
 
 ### AI Orchestration Dependency
 
-Initial setup requires Claude Code for site analysis. The tool is not a standalone CLI installable via pip. The setup costs mentioned previously ($0.50-1.00 per site) reflect Claude API consumption during analysis; no separate subscription beyond API usage is required. The multi-phase workflow (inspection, verification, import, testing) is handled by the AI agent rather than requiring user expertise. Organizations preferring self-contained tools without external AI dependencies should evaluate this architectural choice carefully.
+ScrapAI requires an AI coding agent (currently Claude Code) for site analysis and orchestration. The tool is not a standalone CLI installable via pip. The setup costs mentioned previously ($0.50-1.00 per site) reflect Claude API consumption during scrapAI's analysis phase; no separate subscription beyond API usage is required. The multi-phase workflow (inspection, verification, import, testing) is orchestrated by scrapAI through the AI agent rather than requiring user expertise. Organizations preferring self-contained tools without external AI dependencies should evaluate this architectural choice carefully.
 
 ### Queue System Database Requirements
 
@@ -245,7 +247,7 @@ Queue operations require PostgreSQL for atomic locking primitives (FOR UPDATE SK
 
 ### AI Analysis Accuracy
 
-Claude Code can misclassify page types, particularly distinguishing content pages from navigation or listing pages. Common errors include extracting category listings as articles, missing subsections during exploration, incorrectly scoping URL patterns, or including author biography pages in content extraction. All AI-generated configurations require human verification through limited test crawls before production deployment.
+ScrapAI's AI-driven analysis (via Claude Code) can misclassify page types, particularly when distinguishing content pages from navigation or listing pages. Common errors include extracting category listings as articles, missing subsections during exploration, incorrectly scoping URL patterns, or including author biography pages in content extraction. All AI-generated configurations require human verification through limited test crawls before production deployment.
 
 ### Redesign Response Time
 
@@ -259,7 +261,9 @@ This is not the only valid approach to web scraping at scale, but it represents 
 
 ## Getting Started
 
-Refer to CLAUDE.md for detailed setup procedures and workflow documentation. Site addition and configuration occurs through Claude Code interaction as documented in that file.
+ScrapAI is operated through Claude Code, an AI coding agent that orchestrates the analysis and configuration workflow.
+
+Refer to CLAUDE.md for detailed setup procedures and workflow documentation. Site addition and configuration is handled by scrapAI through Claude Code interaction as documented in that file.
 
 ## Management Interface
 
