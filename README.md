@@ -6,6 +6,35 @@ AI-driven orchestration layer for Scrapy web scraping at scale.
 
 ScrapAI uses AI to analyze website structure once, generating database-stored configuration rules that enable deterministic scraping without ongoing AI costs. Instead of maintaining hundreds of Python spider files or paying per-page AI extraction fees, you get one-time setup ($0.50-1.00 per site, 1-2 minutes) followed by standard Scrapy execution. Developed to manage a personal use case of monitoring 2,000 websites. Best suited for continuous monitoring of multiple sites where setup time and systematic management matter.
 
+## Table of Contents
+
+- [Overview](#overview)
+- [The Problem](#the-problem)
+  - [Cost Comparison](#cost-comparison)
+- [Solution Architecture](#solution-architecture)
+  - [Analysis Phase: AI-Driven](#analysis-phase-ai-driven)
+  - [Execution Phase: Deterministic](#execution-phase-deterministic)
+  - [Database-First Configuration](#database-first-configuration)
+- [Performance Characteristics](#performance-characteristics)
+- [Queue System](#queue-system)
+- [Storage Modes](#storage-modes)
+- [Use Cases](#use-cases)
+- [Limitations](#limitations)
+  - [Anti-Scraping Countermeasures](#anti-scraping-countermeasures)
+  - [Structural Brittleness](#structural-brittleness)
+  - [JavaScript Rendering Overhead](#javascript-rendering-overhead)
+  - [Limited Extraction Scope](#limited-extraction-scope)
+  - [Current Extraction Capabilities](#current-extraction-capabilities)
+  - [Structural Inconsistency](#structural-inconsistency)
+  - [AI Orchestration Dependency](#ai-orchestration-dependency)
+  - [Queue System Database Requirements](#queue-system-database-requirements)
+  - [AI Analysis Accuracy](#ai-analysis-accuracy)
+  - [Redesign Response Time](#redesign-response-time)
+- [Philosophy](#philosophy)
+- [Getting Started](#getting-started)
+- [Management Interface](#management-interface)
+- [Project Status](#project-status)
+
 ## Overview
 
 ScrapAI addresses the fundamental challenge of managing web scraping infrastructure across hundreds or thousands of websites. Rather than maintaining individual spider files or relying on per-page AI extraction, ScrapAI uses AI to perform comprehensive upfront analysis of website structure, then executes deterministic scraping operations through a database-driven configuration system.
