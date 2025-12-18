@@ -16,15 +16,16 @@ class BaseExtractor(ABC):
     """Abstract base class for content extractors"""
     
     @abstractmethod
-    def extract(self, url: str, html: str, title_hint: str = None) -> Optional[ScrapedArticle]:
+    def extract(self, url: str, html: str, title_hint: str = None, include_html: bool = False) -> Optional[ScrapedArticle]:
         """
         Extract content from HTML.
-        
+
         Args:
             url: The URL of the page
             html: The raw HTML content
             title_hint: Optional title extracted from other sources (e.g. metadata)
-            
+            include_html: Whether to include raw HTML in output (for JSONL exports)
+
         Returns:
             ScrapedArticle object or None if extraction fails
         """
@@ -32,24 +33,24 @@ class BaseExtractor(ABC):
 
 class NewspaperExtractor(BaseExtractor):
     """Extractor using newspaper4k"""
-    
-    def extract(self, url: str, html: str, title_hint: str = None) -> Optional[ScrapedArticle]:
+
+    def extract(self, url: str, html: str, title_hint: str = None, include_html: bool = False) -> Optional[ScrapedArticle]:
         try:
             # newspaper4k usually fetches itself, but we can pass html
             article = newspaper.Article(url)
             article.download(input_html=html)
             article.parse()
-            
+
             # Use hint if newspaper failed to find title
             title = article.title
             if not title and title_hint:
                 title = title_hint.strip()
-            
+
             # Basic validation before creating model
             if not title or not article.text:
                 logger.warning(f"NewspaperExtractor validation failed: title='{title}', text_len={len(article.text) if article.text else 0}")
                 return None
-                
+
             return ScrapedArticle(
                 url=url,
                 title=title,
@@ -61,7 +62,8 @@ class NewspaperExtractor(BaseExtractor):
                     'top_image': article.top_image,
                     'keywords': article.keywords,
                     'summary': article.summary
-                }
+                },
+                html=html if include_html else None
             )
         except Exception as e:
             logger.debug(f"NewspaperExtractor failed for {url}: {e}")
@@ -69,15 +71,15 @@ class NewspaperExtractor(BaseExtractor):
 
 class TrafilaturaExtractor(BaseExtractor):
     """Extractor using trafilatura"""
-    
-    def extract(self, url: str, html: str, title_hint: str = None) -> Optional[ScrapedArticle]:
+
+    def extract(self, url: str, html: str, title_hint: str = None, include_html: bool = False) -> Optional[ScrapedArticle]:
         try:
             # trafilatura.bare_extraction returns a Document object or dict
             extracted = trafilatura.bare_extraction(html, url=url)
-            
+
             if not extracted:
                 return None
-                
+
             # Convert to dict if it's a Document object
             if hasattr(extracted, 'as_dict'):
                 data = extracted.as_dict()
@@ -88,18 +90,18 @@ class TrafilaturaExtractor(BaseExtractor):
 
             if not data.get('text'):
                 return None
-            
+
             # Use hint if trafilatura failed to find title
             title = data.get('title')
             if not title and title_hint:
                 title = title_hint.strip()
-                
+
             return ScrapedArticle(
                 url=url,
                 title=title or '',
                 content=data.get('text'),
                 author=data.get('author'),
-                published_date=data.get('date'), 
+                published_date=data.get('date'),
                 source='trafilatura',
                 metadata={
                     'description': data.get('description'),
@@ -108,7 +110,8 @@ class TrafilaturaExtractor(BaseExtractor):
                     'tags': data.get('tags'),
                     'fingerprint': data.get('fingerprint'),
                     'license': data.get('license')
-                }
+                },
+                html=html if include_html else None
             )
         except Exception as e:
             logger.debug(f"TrafilaturaExtractor failed for {url}: {e}")
@@ -126,7 +129,7 @@ class SmartExtractor:
     def __init__(self, strategies: List[str] = None):
         self.strategies = strategies or ['newspaper', 'trafilatura', 'playwright']
         
-    def extract(self, url: str, html: str, title_hint: str = None) -> Optional[ScrapedArticle]:
+    def extract(self, url: str, html: str, title_hint: str = None, include_html: bool = False) -> Optional[ScrapedArticle]:
         """
         Attempt extraction using configured strategies.
         """
@@ -134,26 +137,26 @@ class SmartExtractor:
             try:
                 result = None
                 if strategy == 'newspaper':
-                    result = NewspaperExtractor().extract(url, html, title_hint)
+                    result = NewspaperExtractor().extract(url, html, title_hint, include_html)
                 elif strategy == 'trafilatura':
-                    result = TrafilaturaExtractor().extract(url, html, title_hint)
+                    result = TrafilaturaExtractor().extract(url, html, title_hint, include_html)
                 elif strategy == 'playwright':
                     # Only try playwright if we haven't succeeded yet
                     logger.info(f"Falling back to Playwright for {url}")
-                    result = self._extract_with_playwright(url, title_hint)
-                
+                    result = self._extract_with_playwright(url, title_hint, include_html)
+
                 if result:
                     logger.info(f"Successfully extracted {url} using {strategy}")
                     return result
-                    
+
             except Exception as e:
                 logger.warning(f"Strategy {strategy} failed for {url}: {e}")
                 continue
-                
+
         logger.error(f"All extraction strategies failed for {url}")
         return None
 
-    async def extract_async(self, url: str, html: str, title_hint: str = None) -> Optional[ScrapedArticle]:
+    async def extract_async(self, url: str, html: str, title_hint: str = None, include_html: bool = False) -> Optional[ScrapedArticle]:
         """
         Async version of extract method.
         """
@@ -163,29 +166,29 @@ class SmartExtractor:
                 result = None
                 if strategy == 'newspaper':
                     # Run sync extractors in thread pool to avoid blocking loop
-                    result = await asyncio.to_thread(NewspaperExtractor().extract, url, html, title_hint)
+                    result = await asyncio.to_thread(NewspaperExtractor().extract, url, html, title_hint, include_html)
                 elif strategy == 'trafilatura':
-                    result = await asyncio.to_thread(TrafilaturaExtractor().extract, url, html, title_hint)
+                    result = await asyncio.to_thread(TrafilaturaExtractor().extract, url, html, title_hint, include_html)
                 elif strategy == 'playwright':
                     logger.info(f"Falling back to Playwright for {url}")
-                    result = await self._extract_with_playwright_async(url, title_hint)
-                
+                    result = await self._extract_with_playwright_async(url, title_hint, include_html)
+
                 if result:
                     logger.info(f"Successfully extracted {url} using {strategy}")
                     return result
                 else:
                     logger.warning(f"Strategy {strategy} returned None for {url}")
-                    
+
             except Exception as e:
                 logger.warning(f"Strategy {strategy} failed for {url}: {e}")
                 import traceback
                 logger.warning(traceback.format_exc())
                 continue
-                
+
         logger.error(f"All extraction strategies failed for {url}")
         return None
 
-    async def _extract_with_playwright_async(self, url: str, title_hint: str = None) -> Optional[ScrapedArticle]:
+    async def _extract_with_playwright_async(self, url: str, title_hint: str = None, include_html: bool = False) -> Optional[ScrapedArticle]:
         """Fetch via Playwright (async) and extract using Trafilatura"""
         try:
             logger.info(f"Starting Playwright fetch for {url}")
@@ -198,7 +201,7 @@ class SmartExtractor:
                     logger.info(f"Got HTML from browser: {len(html)} bytes")
                     if html:
                         # Try Trafilatura on rendered HTML
-                        return await asyncio.to_thread(TrafilaturaExtractor().extract, url, html, title_hint)
+                        return await asyncio.to_thread(TrafilaturaExtractor().extract, url, html, title_hint, include_html)
                 else:
                     logger.warning("Browser navigation failed")
         except Exception as e:
@@ -207,7 +210,7 @@ class SmartExtractor:
             logger.error(traceback.format_exc())
         return None
 
-    def _extract_with_playwright(self, url: str, title_hint: str = None) -> Optional[ScrapedArticle]:
+    def _extract_with_playwright(self, url: str, title_hint: str = None, include_html: bool = False) -> Optional[ScrapedArticle]:
         """Fetch via Playwright and extract using Trafilatura"""
         try:
             # Define async task
@@ -215,13 +218,13 @@ class SmartExtractor:
                 if await browser.goto(url):
                     return await browser.get_html()
                 return None
-            
+
             # Run sync
             html = asyncio.run(run_browser_task(fetch_task))
-            
+
             if html:
                 # Try Trafilatura on rendered HTML
-                return TrafilaturaExtractor().extract(url, html, title_hint)
+                return TrafilaturaExtractor().extract(url, html, title_hint, include_html)
         except Exception as e:
             logger.error(f"Playwright fetch failed: {e}")
         return None

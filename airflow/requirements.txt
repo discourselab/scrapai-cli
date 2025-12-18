@@ -1,0 +1,33 @@
+# ScrapAI dependencies for Airflow containers
+
+# Database
+psycopg2-binary==2.9.9
+sqlalchemy>=1.4.0,<2.0.0
+alembic>=1.7.0,<2.0.0
+
+# Scraping
+scrapy>=2.11.0
+requests>=2.28.0
+beautifulsoup4>=4.11.0
+lxml>=4.9.0
+playwright>=1.40.0
+
+# Content extraction
+newspaper4k
+trafilatura
+
+# Utilities
+python-dotenv>=1.0.0
+tqdm>=4.64.0
+pyyaml>=6.0.1
+jsonschema>=4.18.0
+jinja2>=3.1.2
+python-dateutil>=2.8.2
+pydantic
+
+# Data export
+pandas>=2.0.0
+pyarrow>=14.0.0
+
+# S3 Storage
+boto3>=1.34.0

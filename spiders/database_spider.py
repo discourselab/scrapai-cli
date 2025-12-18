@@ -124,14 +124,17 @@ class DatabaseSpider(CrawlSpider):
         
         from core.extractors import SmartExtractor
         extractor = SmartExtractor(strategies=strategies)
-        
+
         # Extract
         logger.info(f"Processing {response.url} (Length: {len(response.text)})")
         title_hint = response.css('title::text').get()
         logger.info(f"Title tag: {title_hint}")
-        
+
+        # Check if HTML should be included in output (for JSONL exports)
+        include_html = self.settings.getbool('INCLUDE_HTML_IN_OUTPUT', False)
+
         # Use async extraction
-        article = await extractor.extract_async(response.url, response.text, title_hint=title_hint)
+        article = await extractor.extract_async(response.url, response.text, title_hint=title_hint, include_html=include_html)
 
         if article:
             # Convert Pydantic model to dict
