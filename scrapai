@@ -27,6 +27,10 @@ except ImportError:
 
 def check_venv():
     """Check if we're in a virtual environment, warn if not"""
+    # Skip venv check if running in Docker/containerized environment
+    if os.getenv('SKIP_VENV_CHECK') or os.getenv('AIRFLOW_HOME'):
+        return True
+
     if not hasattr(sys, 'real_prefix') and not (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
         venv_path = Path('.venv')
         if venv_path.exists():
@@ -1023,12 +1027,17 @@ def run_spider(project_name, spider_name, output_file=None, limit=None):
             print(f"🧪 Test mode: Saving to database (limit: {limit} items)")
             print(f"   Use './scrapai show {spider_name}' to verify results")
             cmd.extend(['-s', f'CLOSESPIDER_ITEMCOUNT={limit}'])
+            # Don't include HTML in test mode (saves DB storage)
+            cmd.extend(['-s', 'INCLUDE_HTML_IN_OUTPUT=False'])
         else:
             # Production mode: Export to files, disable database to save costs
             print(f"📁 Production mode: Exporting to files (database disabled)")
 
             # Disable DatabasePipeline to avoid DB costs
             cmd.extend(['-s', 'ITEM_PIPELINES={"pipelines.ScrapaiPipeline": 300}'])
+
+            # Include HTML in JSONL output for full scraping
+            cmd.extend(['-s', 'INCLUDE_HTML_IN_OUTPUT=True'])
 
             # Add default output file if not specified
             if not output_file:
@@ -1041,7 +1050,7 @@ def run_spider(project_name, spider_name, output_file=None, limit=None):
                 output_file = f'{output_dir}/crawl_{timestamp}.jsonl'
 
             cmd.extend(['-o', output_file])
-            print(f"   Output: {output_file}")
+            print(f"   Output: {output_file} (includes HTML)")
 
         # Add explicit output file if provided
         if output_file and limit:

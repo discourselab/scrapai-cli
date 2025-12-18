@@ -15,6 +15,7 @@ class ScrapedArticle(BaseModel):
     source: str
     extracted_at: datetime = Field(default_factory=datetime.utcnow)
     metadata: Optional[Dict[str, Any]] = {}
+    html: Optional[str] = None  # Raw HTML (only included in JSONL exports, not DB)
 
     @validator('content')
     def content_must_be_long_enough(cls, v):
