@@ -156,9 +156,22 @@ class SmartExtractor:
         logger.error(f"All extraction strategies failed for {url}")
         return None
 
-    async def extract_async(self, url: str, html: str, title_hint: str = None, include_html: bool = False) -> Optional[ScrapedArticle]:
+    async def extract_async(self, url: str, html: str, title_hint: str = None, include_html: bool = False,
+                           wait_for_selector: str = None, additional_delay: float = 0,
+                           enable_scroll: bool = False, max_scrolls: int = 5, scroll_delay: float = 1.0) -> Optional[ScrapedArticle]:
         """
         Async version of extract method.
+
+        Args:
+            url: The URL of the page
+            html: The raw HTML content
+            title_hint: Optional title extracted from other sources
+            include_html: Whether to include raw HTML in output
+            wait_for_selector: CSS selector to wait for when using Playwright
+            additional_delay: Additional seconds to wait after page load when using Playwright
+            enable_scroll: Whether to perform infinite scroll when using Playwright
+            max_scrolls: Maximum number of scrolls to perform
+            scroll_delay: Delay between scrolls in seconds
         """
         for strategy in self.strategies:
             logger.info(f"Trying strategy: {strategy} for {url}")
@@ -171,7 +184,9 @@ class SmartExtractor:
                     result = await asyncio.to_thread(TrafilaturaExtractor().extract, url, html, title_hint, include_html)
                 elif strategy == 'playwright':
                     logger.info(f"Falling back to Playwright for {url}")
-                    result = await self._extract_with_playwright_async(url, title_hint, include_html)
+                    result = await self._extract_with_playwright_async(url, title_hint, include_html,
+                                                                       wait_for_selector, additional_delay,
+                                                                       enable_scroll, max_scrolls, scroll_delay)
 
                 if result:
                     logger.info(f"Successfully extracted {url} using {strategy}")
@@ -188,14 +203,35 @@ class SmartExtractor:
         logger.error(f"All extraction strategies failed for {url}")
         return None
 
-    async def _extract_with_playwright_async(self, url: str, title_hint: str = None, include_html: bool = False) -> Optional[ScrapedArticle]:
-        """Fetch via Playwright (async) and extract using Trafilatura"""
+    async def _extract_with_playwright_async(self, url: str, title_hint: str = None, include_html: bool = False,
+                                            wait_for_selector: str = None, additional_delay: float = 0,
+                                            enable_scroll: bool = False, max_scrolls: int = 5, scroll_delay: float = 1.0) -> Optional[ScrapedArticle]:
+        """
+        Fetch via Playwright (async) and extract using Trafilatura
+
+        Args:
+            url: The URL to fetch
+            title_hint: Optional title hint
+            include_html: Whether to include raw HTML in output
+            wait_for_selector: CSS selector to wait for after navigation
+            additional_delay: Additional seconds to wait after page load
+            enable_scroll: Whether to perform infinite scroll
+            max_scrolls: Maximum number of scrolls to perform
+            scroll_delay: Delay between scrolls in seconds
+        """
         try:
             logger.info(f"Starting Playwright fetch for {url}")
+            if wait_for_selector:
+                logger.info(f"Will wait for selector: {wait_for_selector}")
+            if additional_delay > 0:
+                logger.info(f"Will wait additional {additional_delay} seconds")
+            if enable_scroll:
+                logger.info(f"Will perform infinite scroll: {max_scrolls} scrolls with {scroll_delay}s delay")
+
             from utils.browser import BrowserClient
             async with BrowserClient() as browser:
                 logger.info("BrowserClient started")
-                if await browser.goto(url):
+                if await browser.goto(url, wait_for_selector, additional_delay, enable_scroll, max_scrolls, scroll_delay):
                     logger.info("Browser navigated")
                     html = await browser.get_html()
                     logger.info(f"Got HTML from browser: {len(html)} bytes")

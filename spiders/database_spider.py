@@ -96,6 +96,14 @@ class DatabaseSpider(CrawlSpider):
                 
                 self.custom_settings[s.key] = val
 
+    def parse_start_url(self, response):
+        """
+        Override CrawlSpider's parse_start_url to process start URLs with parse_article.
+        This allows single-page sites (like infinite scroll) to extract from the start URL itself.
+        """
+        logger.info(f"Processing start URL: {response.url}")
+        return self.parse_article(response)
+
     async def parse_article(self, response):
         """
         Parse article page.
@@ -121,7 +129,7 @@ class DatabaseSpider(CrawlSpider):
             strategies = default_strategies
             
         logger.info(f"Using strategies: {strategies}")
-        
+
         from core.extractors import SmartExtractor
         extractor = SmartExtractor(strategies=strategies)
 
@@ -133,8 +141,35 @@ class DatabaseSpider(CrawlSpider):
         # Check if HTML should be included in output (for JSONL exports)
         include_html = self.settings.getbool('INCLUDE_HTML_IN_OUTPUT', False)
 
-        # Use async extraction
-        article = await extractor.extract_async(response.url, response.text, title_hint=title_hint, include_html=include_html)
+        # Get Playwright wait configuration from spider settings
+        wait_for_selector = self.custom_settings.get('PLAYWRIGHT_WAIT_SELECTOR')
+        wait_delay = self.custom_settings.get('PLAYWRIGHT_DELAY', 0)
+
+        # Get infinite scroll configuration from spider settings
+        enable_scroll = self.custom_settings.get('INFINITE_SCROLL', False)
+        max_scrolls = self.custom_settings.get('MAX_SCROLLS', 5)
+        scroll_delay = self.custom_settings.get('SCROLL_DELAY', 1.0)
+
+        # Log wait configuration if present
+        if wait_for_selector:
+            logger.info(f"Playwright will wait for selector: {wait_for_selector}")
+        if wait_delay and float(wait_delay) > 0:
+            logger.info(f"Playwright will wait additional {wait_delay} seconds")
+        if enable_scroll:
+            logger.info(f"Infinite scroll enabled: {max_scrolls} scrolls with {scroll_delay}s delay")
+
+        # Use async extraction with wait configuration
+        article = await extractor.extract_async(
+            response.url,
+            response.text,
+            title_hint=title_hint,
+            include_html=include_html,
+            wait_for_selector=wait_for_selector,
+            additional_delay=float(wait_delay) if wait_delay else 0,
+            enable_scroll=bool(enable_scroll),
+            max_scrolls=int(max_scrolls) if max_scrolls else 5,
+            scroll_delay=float(scroll_delay) if scroll_delay else 1.0
+        )
 
         if article:
             # Convert Pydantic model to dict

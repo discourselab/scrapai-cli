@@ -693,6 +693,91 @@ The system uses a **Smart Extractor** that tries multiple strategies in order. Y
 
 **Default Order:** `["newspaper", "trafilatura", "playwright"]`
 
+### Choosing Extractor Order
+
+**IMPORTANT: You should configure extractor order based on site characteristics identified during analysis.**
+
+**Default (Static HTML Sites):** `["newspaper", "trafilatura", "playwright"]`
+- Use for traditional websites with content in static HTML
+- Fast extractors first, slow browser rendering as last resort
+- Most news sites, blogs, and article-based sites
+
+**JS-Rendered Sites:** `["playwright", "trafilatura", "newspaper"]`
+- **Use when content is loaded via JavaScript**
+- Playwright first since static extractors will fail on empty HTML
+- Static extractors won't work as fallbacks - they'll see the same empty page
+- Examples: SPAs (Single Page Apps), dynamic content sites
+
+**How to Identify JS-Rendered Sites During Analysis:**
+1. **Check page.html after inspector run** - If it has minimal/empty content
+2. **Look for content in `<script>` tags** - Data embedded as JavaScript arrays/objects
+3. **Look for "Loading..." placeholders** - Empty containers that JS fills in
+4. **Check if browser rendering is needed** - Inspector will use browser if needed
+
+**Example JS-Rendered Indicators:**
+```html
+<!-- Empty container that JS will fill -->
+<div id="app"></div>
+
+<!-- Content as JavaScript data -->
+<script>
+  var data = [
+    {"title": "Article 1", "content": "..."},
+    {"title": "Article 2", "content": "..."}
+  ];
+</script>
+```
+
+**Configuration in Spider Settings:**
+```json
+{
+  "settings": {
+    "EXTRACTOR_ORDER": ["playwright", "trafilatura", "newspaper"]
+  }
+}
+```
+
+### Playwright Wait Configuration
+
+**For sites with JavaScript delays or dynamic content**, you can configure Playwright to wait for specific elements or add extra delays:
+
+**Available Settings:**
+- `PLAYWRIGHT_WAIT_SELECTOR`: CSS selector to wait for after page load (max 30 seconds)
+- `PLAYWRIGHT_DELAY`: Additional seconds to wait after page load (for JS that runs after network idle)
+
+**When to Use:**
+- **JS Delays**: Content loads via `setTimeout()` or delayed AJAX calls
+- **Dynamic Content**: Elements appear after initial page render
+- **Infinite Scroll**: Content loads as you scroll
+- **SPAs**: Single Page Apps that render content progressively
+
+**Example Configuration:**
+```json
+{
+  "name": "example_spider",
+  "settings": {
+    "EXTRACTOR_ORDER": ["playwright", "trafilatura", "newspaper"],
+    "PLAYWRIGHT_WAIT_SELECTOR": ".article-content",
+    "PLAYWRIGHT_DELAY": 5
+  }
+}
+```
+
+**How It Works:**
+1. Browser navigates to URL and waits for `networkidle`
+2. If `PLAYWRIGHT_WAIT_SELECTOR` is set, waits for that element to appear (up to 30s)
+3. If `PLAYWRIGHT_DELAY` is set, waits additional seconds before capturing HTML
+4. Then captures HTML and proceeds with extraction
+
+**Common Selectors to Wait For:**
+- `.article-content` - Main content container
+- `.quote` - Quote elements
+- `#posts` - Posts container
+- `.loaded` - Class added when content finishes loading
+- `[data-loaded="true"]` - Attribute indicating loaded state
+
+**Note:** These settings only affect Playwright extraction. If Playwright is not in your `EXTRACTOR_ORDER`, these settings are ignored.
+
 ## Core Principles
 -   **Database First**: All configuration lives in the database.
 -   **Agent Driven**: Agents use CLI tools to manage the DB.

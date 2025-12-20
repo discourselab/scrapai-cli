@@ -116,19 +116,66 @@ class BrowserClient:
         except Exception as e:
             logger.error(f"Error closing browser: {e}")
             
-    async def goto(self, url: str) -> bool:
+    async def goto(self, url: str, wait_for_selector: str = None, additional_delay: float = 0,
+                   enable_scroll: bool = False, max_scrolls: int = 5, scroll_delay: float = 1.0) -> bool:
         """
-        Navigate to a URL
-        
+        Navigate to a URL with optional wait conditions and infinite scroll support
+
         Args:
             url (str): URL to navigate to
-            
+            wait_for_selector (str, optional): CSS selector to wait for after navigation
+            additional_delay (float, optional): Additional seconds to wait after page load
+            enable_scroll (bool, optional): Whether to perform infinite scroll after loading
+            max_scrolls (int, optional): Maximum number of scrolls to perform
+            scroll_delay (float, optional): Delay between scrolls in seconds
+
         Returns:
             bool: True if navigation was successful
         """
         try:
             await self.page.goto(url, wait_until="networkidle", timeout=60000)
             logger.info(f"Navigated to {url}")
+
+            # Wait for specific selector if provided
+            if wait_for_selector:
+                try:
+                    await self.page.wait_for_selector(wait_for_selector, timeout=30000)
+                    logger.info(f"Selector '{wait_for_selector}' found on {url}")
+                except Exception as e:
+                    logger.warning(f"Timeout waiting for selector '{wait_for_selector}' on {url}: {e}")
+
+            # Additional delay for JS that runs after network idle
+            if additional_delay > 0:
+                logger.info(f"Waiting additional {additional_delay} seconds for JS to complete")
+                await asyncio.sleep(additional_delay)
+
+            # Perform infinite scroll if enabled
+            if enable_scroll:
+                logger.info(f"Starting infinite scroll: {max_scrolls} scrolls with {scroll_delay}s delay")
+                for i in range(max_scrolls):
+                    try:
+                        # Get current page height
+                        prev_height = await self.page.evaluate("document.body.scrollHeight")
+
+                        # Scroll to bottom
+                        await self.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                        logger.info(f"Scroll {i+1}/{max_scrolls} completed")
+
+                        # Wait for content to load
+                        await asyncio.sleep(scroll_delay)
+
+                        # Check if new content loaded (page height increased)
+                        new_height = await self.page.evaluate("document.body.scrollHeight")
+                        if new_height == prev_height:
+                            logger.info(f"No new content loaded after scroll {i+1}, stopping")
+                            break
+
+                    except Exception as e:
+                        logger.warning(f"Error during scroll {i+1}: {e}")
+                        break
+
+                logger.info(f"Infinite scroll completed")
+
             return True
         except Exception as e:
             logger.error(f"Error navigating to {url}: {e}")
