@@ -8,25 +8,49 @@ Project-based Scrapy spider management for large-scale web scraping. Built for C
 
 **When asked to add any website, follow this Database-First Workflow:**
 
-### IMPORTANT: Process Websites Sequentially
+### 🚨 CRITICAL: ALWAYS SEQUENTIAL, NEVER PARALLEL 🚨
 
-**CRITICAL: Process ONE website at a time unless the user explicitly requests parallel processing.**
+**ABSOLUTE REQUIREMENT: Process ONE website at a time. NEVER use subagents, background tasks, or parallel processing.**
 
-- By default, claim queue items one at a time using `./scrapai queue next`
-- Complete the full workflow (analyze → rules → import → test → mark complete) for each website before moving to the next
-- Only use parallel processing (multiple Task agents with `run_in_background=true`) if the user explicitly says "in parallel" or "do all in parallel"
-- Sequential processing is more reliable, easier to debug, and provides better visibility into progress
+**❌ FORBIDDEN - DO NOT USE:**
+- ❌ Task tool / subagents (`Task`, `subagent_type`, etc.)
+- ❌ Background tasks (`run_in_background=true`)
+- ❌ Parallel agents (multiple agents running simultaneously)
+- ❌ ANY form of concurrent processing
 
-**Example - Sequential (DEFAULT):**
+**✅ REQUIRED - ALWAYS DO THIS:**
+- ✅ Process one website at a time, start to finish
+- ✅ Claim queue items one at a time using `./scrapai queue next`
+- ✅ Complete the FULL workflow for each website before moving to next
+- ✅ All work done directly by Claude Code (no delegation to subagents)
+
+**Why Sequential Only:**
+- **Easier to debug** - Clear error messages and output
+- **Better visibility** - See exactly what's happening at each step
+- **No conflicts** - Avoid file overwrites and race conditions
+- **Simpler troubleshooting** - One thing at a time
+
+**Example - Processing Multiple Queue Items:**
 ```
-User: "Process the queue"
-Claude: [Claims one item, processes it completely, then moves to next]
+User: "Process the next 10 items in the queue"
+Claude Code:
+  1. Claims item 1 with `./scrapai queue next`
+  2. Completes full workflow (analyze → rules → import → test → mark complete)
+  3. Claims item 2 with `./scrapai queue next`
+  4. Completes full workflow (analyze → rules → import → test → mark complete)
+  5. ... continues one by one until all 10 are done
 ```
 
-**Example - Parallel (ONLY when requested):**
+**❌ WRONG - DO NOT DO THIS:**
 ```
-User: "Process all queue items in parallel"
-Claude: [Launches multiple background agents simultaneously]
+User: "Process the next 10 items"
+Claude Code: [Launches 10 Task agents in parallel] ← NEVER DO THIS
+```
+
+**✅ CORRECT - DO THIS:**
+```
+User: "Process the next 10 items"
+Claude Code: [Processes each item sequentially, one complete workflow at a time]
 ```
 
 ### 1. Setup (First Time Only)
@@ -63,6 +87,65 @@ source .venv/bin/activate
 
 ### 2. Workflow
 
+#### ⚠️ CRITICAL WORKFLOW RULES ⚠️
+
+**NEVER SKIP PHASES. NEVER RUSH. NEVER MARK STATUS PREMATURELY.**
+
+You MUST complete EVERY step of EVERY phase before proceeding to the next phase. Common mistakes to avoid:
+
+**COMMAND EXECUTION RULES:**
+- ❌ **NEVER chain multiple operations together** (except venv activation)
+- ❌ **NEVER use grep, pipes (`|`), or complex one-liners**
+- ✅ **ALWAYS run operations ONE AT A TIME in separate bash calls**
+- ✅ **OK to use: `source .venv/bin/activate && <single command>`** (venv + one command is acceptable)
+- ✅ **WAIT for each command to complete before running the next**
+- ✅ **READ the output of each command before proceeding**
+
+**Bad Example (DO NOT DO THIS):**
+```bash
+source .venv/bin/activate && bin/inspector --url https://example.com && ./scrapai extract-urls ... && cat file.txt | grep something
+```
+
+**Good Example (DO THIS):**
+```bash
+# Activate venv + single command is OK
+source .venv/bin/activate && bin/inspector --url https://example.com
+```
+```bash
+# Next operation - separate bash call
+source .venv/bin/activate && ./scrapai extract-urls --file data/site/page.html -o data/site/urls.txt
+```
+```bash
+# Next operation - separate bash call
+cat data/site/urls.txt
+```
+
+❌ **DO NOT:**
+- Skip analysis and jump straight to rule creation
+- Create rules without reading ALL URLs from the homepage
+- Mark queue items as complete before testing the spider
+- Rush through phases to "finish quickly"
+- Assume you know the site structure without full analysis
+- Skip verification steps
+
+✅ **DO:**
+- Complete Phase 1 (Analysis) ENTIRELY before starting Phase 2 (Rules)
+- Complete Phase 2 (Rules) ENTIRELY before starting Phase 3 (Import)
+- Complete Phase 3 (Import) ENTIRELY before starting Phase 4 (Test)
+- Only mark status as complete AFTER successful test verification
+- Take time to be thorough - quality over speed
+
+**STATUS MARKING RULE:**
+ONLY mark queue items as complete (`./scrapai queue complete <id>`) when:
+1. ✅ Phase 1: Full analysis documented in sections.md
+2. ✅ Phase 2: All section rules created and consolidated into final_spider.json
+3. ✅ Phase 3: Spider successfully imported to database
+4. ✅ Phase 4: Test crawl run and results verified with `./scrapai show`
+
+If ANY phase is incomplete or test fails, DO NOT mark as complete.
+
+---
+
 #### Phase 1: Analysis & Section Documentation
 **CRITICAL: Complete FULL site analysis before creating ANY rules. DO NOT create rules prematurely.**
 
@@ -84,11 +167,14 @@ cat data/website/analysis/all_urls.txt
 ```
 
 **Step 2: Categorize Every URL Type**
-Manually review ALL URLs and identify:
-- Content pages with actual articles
-- Navigation/listing pages
-- Utility pages to exclude
-- Any other URL patterns present
+**CRITICAL: Review the COMPLETE URL list - do not just search for keywords.**
+
+Manually review ALL URLs from `all_urls.txt` and identify:
+- **Content pages**: ANY substantive content (articles, blog posts, reports, publications, research papers, speeches, newsletters, policy briefs, etc.)
+- **Navigation/listing pages**: Pages that link to content
+- **Utility pages**: Pages to exclude (about, contact, etc.)
+- **PDF content**: Note if site has PDFs (we skip these for now, but acknowledge as content)
+- **Any other URL patterns**: Document everything you find
 
 **Step 3: Document Complete Site Structure**
 Create comprehensive `sections.md` documenting EVERY section type and URL pattern found on the site.
@@ -107,20 +193,40 @@ Review the complete URL list again and confirm you understand the full site stru
 **Default Content Focus (CRITICAL):**
 **By default, ONLY focus on content sections. Ignore navigation and utility pages.**
 
-**Include:**
-- Articles, news, blog posts, research papers, analysis, reports
-- Any pages with substantive written content
+**IMPORTANT: We're looking for ANY substantive HTML content, not just traditional blog articles.**
 
-**Exclude:**
-- About, contact, donate, support pages
-- Login, signup, account, profile, settings pages
-- Legal/policy pages (privacy, terms, cookies)
-- Search, sitemap pages
-- Tag/category index pages (unless they contain article listings)
-- Author profile pages (unless explicitly content pages)
-- Newsletter, subscription, advertising pages
-- Social sharing links, comments sections, print versions
-- Media galleries (unless site is specifically about media content)
+**CRITICAL PRINCIPLE: BE INCLUSIVE, NOT RESTRICTIVE**
+
+**When in doubt, INCLUDE IT.** We want to capture all substantive content. The extractors will handle the actual content extraction.
+
+**Include (HTML content only - ignore PDFs):**
+- Articles, blog posts, news items
+- Research papers, policy reports, white papers, analysis
+- Publications, newsletters (HTML versions)
+- Speeches, testimonies, transcripts
+- Case studies, briefs, commentaries
+- Legal case pages, litigation content
+- Policy analysis pages
+- Investigation reports
+- Educational content, tutorials
+- Video/audio content pages (with transcripts or descriptions)
+- **ANY pages with substantive written content that provides value**
+
+**ONLY Exclude (Minimal List):**
+- About/team/leadership pages (organizational info, not content)
+- Contact, donate, support pages
+- Login, signup, account pages
+- Privacy, terms, cookies pages
+- Author profile pages (bio pages, not articles)
+- Category/tag archive pages (`/category/`, `/tag/`)
+- Pagination pages (`/page/2/`, `/page/3/`)
+- Comment sections (`#respond`, `#comments`)
+- **PDF files** (ignore for now, but note their presence as potential content)
+
+**Rule of Thumb:**
+- If a page has a descriptive slug (e.g., `/climate-policy-analysis/`), INCLUDE it
+- If it's clearly navigation/utility (e.g., `/about/`, `/contact/`), EXCLUDE it
+- When uncertain, **ERR ON THE SIDE OF INCLUSION**
 
 Create appropriate allow/deny rules based on the URL patterns you discover during analysis.
 
@@ -145,19 +251,36 @@ After homepage analysis, create a comprehensive section map:
 ```
 
 **Step 1C: Iterative Section Drilling**
+
+⚠️ **CRITICAL: SEQUENTIAL PROCESSING ONLY** ⚠️
+- **NEVER run multiple inspectors in parallel**
+- Each inspector overwrites `page.html` and `analysis.json`
+- **ALWAYS complete this cycle for EACH section:**
+  1. Run ONE inspector
+  2. Read the output files immediately
+  3. Document findings in sections.md
+  4. Only then move to next section
+
 ```bash
 # Always ensure virtual environment is active
 source .venv/bin/activate
-# IMPORTANT: Run inspectors SEQUENTIALLY, not in parallel
-# Each inspector overwrites the same analysis files
 
-# Iteratively drill down through sections/subsections
-bin/inspector --url <section_url>
-# Read analysis, update sections.md
-# If this page has subsections, inspect those next
-bin/inspector --url <subsection_url>
-# Continue drilling until you find pages that LINK TO final content
-# Document the URL patterns of those final content pages
+# Example: Sequential section drilling (ONE at a time)
+# Step 1: Inspect first section
+bin/inspector --url https://example.com/news/
+# Step 2: IMMEDIATELY read and document before moving on
+cat data/example_com/analysis/analysis.json
+./scrapai extract-urls --file data/example_com/analysis/page.html --output data/example_com/analysis/news_urls.txt
+# Step 3: Update sections.md with findings
+
+# Step 4: Now inspect next section
+bin/inspector --url https://example.com/policy/
+# Step 5: IMMEDIATELY read and document
+cat data/example_com/analysis/analysis.json
+./scrapai extract-urls --file data/example_com/analysis/page.html --output data/example_com/analysis/policy_urls.txt
+# Step 6: Update sections.md with findings
+
+# Continue this pattern for each section
 # STOP: Do NOT inspect the final content pages themselves
 # Extractors handle content extraction
 ```
@@ -166,12 +289,14 @@ bin/inspector --url <subsection_url>
 1. **Homepage Analysis** - Run inspector on main page, read `page.html` and `analysis.json`
 2. **Extract ALL URLs** - Get complete URL list from homepage
 3. **Identify Section URLs** - Find URLs that appear to be sections/navigation
-4. **Drill Down Systematically**:
-   - Visit each section URL with inspector
+4. **Drill Down Systematically (ONE SECTION AT A TIME)**:
+   - Visit ONE section URL with inspector
+   - Read output files immediately and document findings
    - Check if it contains subsections or links to final content
-   - If subsections exist, visit those next
+   - If subsections exist, visit those next (one at a time)
    - Continue drilling until you find final content URL patterns
    - Document the patterns but DO NOT inspect the content pages
+   - **NEVER run multiple inspectors in parallel - they overwrite the same files**
 5. **Document Everything** - Update `sections.md` with complete navigation hierarchy and URL patterns
 6. **Create Section Rules** - Generate rule files for each discovered section
 7. **Consolidate** - Combine all rules into final spider JSON
@@ -199,8 +324,9 @@ data/website/analysis/
 - Don't assume homepage analysis is sufficient
 - Don't create rules without understanding complete URL patterns
 - **DO NOT inspect individual content pages** - Extractors handle content extraction
-- **NEVER run multiple inspectors in parallel** - They overwrite the same analysis files
-- **ALWAYS read and document analysis immediately** after each inspector run
+- **NEVER run multiple inspectors in parallel** - They ALL overwrite `page.html` and `analysis.json`
+- **Process sections sequentially**: Run inspector → Read files → Document → Next section
+- **ALWAYS read and document analysis immediately** after each inspector run (before next inspector)
 - **NEVER delete analysis files** - Keep all analysis artifacts
 - Focus on URL patterns and navigation hierarchy, not content structure
 - Create section-specific rules before consolidating
@@ -337,6 +463,28 @@ This will:
    - Add more comprehensive deny patterns
    - Ensure `callback: "parse_article"` only on actual content URLs
    - Use `follow: true` without callbacks for navigation pages only
+
+5. **⚠️ BEFORE MARKING QUEUE ITEM AS COMPLETE ⚠️**:
+
+   **STOP. Verify ALL of these are TRUE:**
+   - ✅ Phase 1 completed: Full analysis documented in `sections.md`
+   - ✅ Phase 2 completed: All rules created and consolidated in `final_spider.json`
+   - ✅ Phase 3 completed: Spider imported successfully to database
+   - ✅ Phase 4 completed: Test crawl run with `--limit 10`
+   - ✅ Results verified: Run `./scrapai show website_name` and confirmed quality content
+   - ✅ No errors: Spider extracted actual articles, not navigation pages
+
+   **ONLY IF ALL ABOVE ARE TRUE**, mark as complete:
+   ```bash
+   source .venv/bin/activate && ./scrapai queue complete <id>
+   ```
+
+   **If test fails or extraction is wrong:**
+   ```bash
+   # DO NOT mark as complete
+   # Instead, mark as failed with reason:
+   source .venv/bin/activate && ./scrapai queue fail <id> -m "Extraction failed: [specific reason]"
+   ```
 
 ### 2.5. Queue System (Optional)
 
