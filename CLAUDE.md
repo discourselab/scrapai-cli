@@ -778,6 +778,75 @@ The system uses a **Smart Extractor** that tries multiple strategies in order. Y
 
 **Note:** These settings only affect Playwright extraction. If Playwright is not in your `EXTRACTOR_ORDER`, these settings are ignored.
 
+### Infinite Scroll Support
+
+**For single-page sites with infinite scroll** (content loads dynamically as you scroll), configure the spider to automatically scroll and load all content:
+
+**Available Settings:**
+- `INFINITE_SCROLL`: Enable infinite scroll behavior (true/false)
+- `MAX_SCROLLS`: Maximum number of scrolls to perform (default: 5)
+- `SCROLL_DELAY`: Seconds to wait between scrolls for content to load (default: 1.0)
+
+**When to Use:**
+- **Infinite scroll pages**: Content loads via AJAX as user scrolls
+- **Single-page sites**: All content on one URL with no pagination links
+- **Dynamic feeds**: Social media feeds, quote collections, product listings
+- **No pagination**: Sites without "Next" buttons or page numbers
+
+**Example Configuration:**
+```json
+{
+  "name": "quotes_toscrape_scroll",
+  "allowed_domains": ["quotes.toscrape.com"],
+  "start_urls": ["https://quotes.toscrape.com/scroll"],
+  "rules": [
+    {
+      "allow": [],
+      "deny": [".*"],
+      "callback": null,
+      "follow": false,
+      "priority": 100
+    }
+  ],
+  "settings": {
+    "EXTRACTOR_ORDER": ["playwright", "trafilatura", "newspaper"],
+    "PLAYWRIGHT_WAIT_SELECTOR": ".quote",
+    "PLAYWRIGHT_DELAY": 2,
+    "INFINITE_SCROLL": true,
+    "MAX_SCROLLS": 10,
+    "SCROLL_DELAY": 2.0
+  }
+}
+```
+
+**How It Works:**
+1. Browser navigates to URL and waits for initial content
+2. If `PLAYWRIGHT_WAIT_SELECTOR` is set, waits for that element
+3. Scrolls to bottom of page and waits `SCROLL_DELAY` seconds
+4. Checks if page height increased (new content loaded)
+5. Repeats until `MAX_SCROLLS` reached or no new content detected
+6. Captures final HTML with all loaded content
+7. Extracts content using configured extractors
+
+**Smart Detection:**
+- Automatically stops scrolling when no new content loads
+- Prevents over-scrolling and wasted time
+- Detects when all content has been loaded
+
+**Use Cases:**
+- `quotes.toscrape.com/scroll` - Quote collections
+- Social media feeds (Twitter, Instagram timelines)
+- Product listings with infinite scroll
+- Search results that load on scroll
+- News feeds that auto-load articles
+
+**Important Notes:**
+- Requires `EXTRACTOR_ORDER` to include `"playwright"`
+- Works with single-page sites that have no pagination links
+- The `parse_start_url()` override ensures start URLs are processed
+- Set `follow: false` in rules to stay on the single page
+- Combine with `PLAYWRIGHT_WAIT_SELECTOR` for best results
+
 ## Core Principles
 -   **Database First**: All configuration lives in the database.
 -   **Agent Driven**: Agents use CLI tools to manage the DB.
