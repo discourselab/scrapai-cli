@@ -110,22 +110,33 @@ def upload_to_s3(spider_name: str, **context):
 
     print(f"📤 Uploading {relative_path} to S3...")
 
-    # Initialize S3 client
-    s3_client = boto3.client(
-        's3',
-        endpoint_url=s3_endpoint,
-        aws_access_key_id=s3_access_key,
-        aws_secret_access_key=s3_secret_key,
-    )
+    try:
+        # Initialize S3 client
+        s3_client = boto3.client(
+            's3',
+            endpoint_url=s3_endpoint,
+            aws_access_key_id=s3_access_key,
+            aws_secret_access_key=s3_secret_key,
+        )
 
-    # Upload compressed file
-    s3_client.upload_file(str(gz_path), s3_bucket, s3_key)
+        # Upload compressed file
+        s3_client.upload_file(str(gz_path), s3_bucket, s3_key)
 
-    print(f"✅ Uploaded to s3://{s3_bucket}/{s3_key}")
+        print(f"✅ Uploaded to s3://{s3_bucket}/{s3_key}")
 
-    # Clean up local .gz file (keep original .jsonl)
-    gz_path.unlink()
-    print(f"🧹 Cleaned up local compressed file")
+        # Clean up local files after successful upload
+        gz_path.unlink()
+        latest_path.unlink()
+        print(f"🧹 Cleaned up local files (original + compressed)")
+
+    except Exception as e:
+        # Keep files locally if upload fails
+        print(f"❌ Upload failed: {e}")
+        print(f"📁 Keeping local files for retry: {latest_path}")
+        # Clean up .gz file since upload failed
+        if gz_path.exists():
+            gz_path.unlink()
+        raise  # Re-raise to mark task as failed in Airflow
 
 
 def get_spiders_from_db():
