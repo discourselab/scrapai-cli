@@ -421,7 +421,7 @@ The `--limit` flag controls where data is saved:
 ```bash
 # Test with limited items - saves to database
 source .venv/bin/activate
-./scrapai crawl website_name --limit 10
+./scrapai crawl website_name --limit 5
 ```
 
 This will:
@@ -470,7 +470,7 @@ This will:
    - ✅ Phase 1 completed: Full analysis documented in `sections.md`
    - ✅ Phase 2 completed: All rules created and consolidated in `final_spider.json`
    - ✅ Phase 3 completed: Spider imported successfully to database
-   - ✅ Phase 4 completed: Test crawl run with `--limit 10`
+   - ✅ Phase 4 completed: Test crawl run with `--limit 5`
    - ✅ Results verified: Run `./scrapai show website_name` and confirmed quality content
    - ✅ No errors: Spider extracted actual articles, not navigation pages
 
@@ -619,7 +619,7 @@ source .venv/bin/activate
 
 **Crawling:**
 -   `source .venv/bin/activate && ./scrapai crawl <name>` - Production scrape (exports to files, no DB cost).
--   `source .venv/bin/activate && ./scrapai crawl <name> --limit 10` - Test mode (saves to DB for verification).
+-   `source .venv/bin/activate && ./scrapai crawl <name> --limit 5` - Test mode (saves to DB for verification).
     - **With `--limit`**: Saves to database, use `show` command to verify results
     - **Without `--limit`**: Exports to `data/<name>/crawl_TIMESTAMP.jsonl`, skips database
 
@@ -683,6 +683,49 @@ Assistant: [runs export command and provides file path]
 ```
 
 ## Extractor Options
+
+**🚨 CRITICAL: DEFAULT EXTRACTION APPROACH 🚨**
+
+**ALWAYS use simple extractors by default. NEVER use Playwright custom configuration unless explicitly requested.**
+
+**Default Behavior (Use This Unless User Says Otherwise):**
+- Use the standard extractor order: `["newspaper", "trafilatura", "playwright"]`
+- **DO NOT configure** `PLAYWRIGHT_WAIT_SELECTOR`, `PLAYWRIGHT_DELAY`, `INFINITE_SCROLL`, or other Playwright customizations
+- Let the smart extractors handle content automatically
+- Simple spiders with just URL rules (allow/deny patterns)
+
+**Only Use Playwright Custom Configuration When:**
+- User explicitly requests "wait for selector" or "add delay"
+- User explicitly requests "infinite scroll" or "scroll down"
+- User mentions JavaScript delays or specific elements to wait for
+- User says the site needs browser rendering with custom settings
+
+**Default Spider Structure (No Custom Extractors):**
+```json
+{
+  "name": "spider_name",
+  "allowed_domains": ["domain.com"],
+  "start_urls": ["https://domain.com"],
+  "rules": [
+    {
+      "allow": ["patterns for content"],
+      "deny": ["patterns to exclude"],
+      "callback": "parse_article",
+      "follow": false,
+      "priority": 100
+    }
+  ],
+  "settings": {
+    "DOWNLOAD_DELAY": 2,
+    "CONCURRENT_REQUESTS": 3,
+    "EXTRACTOR_ORDER": ["newspaper", "trafilatura", "playwright"]
+  }
+}
+```
+
+**Notice:** No `PLAYWRIGHT_WAIT_SELECTOR`, no `PLAYWRIGHT_DELAY`, no `INFINITE_SCROLL` - just simple rules!
+
+---
 
 The system uses a **Smart Extractor** that tries multiple strategies in order. You can configure the order via `EXTRACTOR_ORDER` in settings.
 
