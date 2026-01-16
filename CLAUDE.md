@@ -190,48 +190,40 @@ Review the complete URL list again and confirm you understand the full site stru
 - Create comprehensive rules covering ALL content sections
 - Let extractors handle the actual content extraction
 
-**Default Content Focus (CRITICAL):**
-**By default, ONLY focus on content sections. Ignore navigation and utility pages.**
-
-**IMPORTANT: We're looking for ANY substantive HTML content, not just traditional blog articles.**
-
 **CRITICAL PRINCIPLE: BE INCLUSIVE, NOT RESTRICTIVE**
 
-**When in doubt, INCLUDE IT.** We want to capture all substantive content. The extractors will handle the actual content extraction.
+**When in doubt, INCLUDE IT.** We want to capture ALL substantive content. The extractors will handle the actual content extraction.
 
-**Include (HTML content only - ignore PDFs):**
-- Articles, blog posts, news items
-- Research papers, policy reports, white papers, analysis
-- Publications, newsletters (HTML versions)
-- Speeches, testimonies, transcripts
-- Case studies, briefs, commentaries
-- Legal case pages, litigation content
-- Policy analysis pages
-- Investigation reports
-- Educational content, tutorials
-- Video/audio content pages (with transcripts or descriptions)
-- **ANY pages with substantive written content that provides value**
+**Exclusion Policy (MINIMAL LIST ONLY):**
 
-**ONLY Exclude (Minimal List):**
-- About/team/leadership pages (organizational info, not content)
-- Contact, donate, support pages
-- Login, signup, account pages
-- Privacy, terms, cookies pages
-- Author profile pages (bio pages, not articles)
-- Category/tag archive pages (`/category/`, `/tag/`)
-- Pagination pages (`/page/2/`, `/page/3/`)
-- Comment sections (`#respond`, `#comments`)
+ONLY exclude these specific sections and their subsections:
+- **About pages** (about, team, leadership, company info, history)
+- **Contact pages** (contact, email, phone, address, support)
+- **Donate pages** (donate, contribute, support, funding)
+- **Account pages** (login, signup, register, account, profile)
+- **Legal pages** (privacy, terms, cookies, legal)
+- **Search pages** (search functionality pages)
 - **PDF files** (ignore for now, but note their presence as potential content)
 
-**Rule of Thumb:**
-- If a page has a descriptive slug (e.g., `/climate-policy-analysis/`), INCLUDE it
-- If it's clearly navigation/utility (e.g., `/about/`, `/contact/`), EXCLUDE it
-- When uncertain, **ERR ON THE SIDE OF INCLUSION**
+**Everything else should be explored and considered for inclusion:**
+- News, articles, blog posts
+- Research, reports, publications, white papers
+- Policy documents, analysis, briefs
+- Educational content, tutorials, guides
+- Case studies, investigations
+- Speeches, testimonies, transcripts
+- Environmental reports, technical documentation
+- Shareholder information, financial reports
+- Industry analysis, market reports
+- **ANY section with substantive written content**
 
-Create appropriate allow/deny rules based on the URL patterns you discover during analysis.
+**Rule of Thumb:**
+- If it's clearly about/contact/donate/account/legal/search → EXCLUDE
+- Everything else → EXPLORE and likely INCLUDE
+- When uncertain → **ERR ON THE SIDE OF INCLUSION**
 
 **IMPORTANT: User explicit instructions ALWAYS override these defaults.**
-If user requests specific sections (e.g., "include author pages"), create rules to include them.
+If user requests specific sections, follow their instructions.
 
 **Step 1A: Homepage Analysis**
 Inspect the site structure to understand how to extract content:
