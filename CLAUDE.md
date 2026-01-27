@@ -384,7 +384,7 @@ Combine all section rule files into a comprehensive spider definition.
 - **Navigation rules** (`follow`: `true`) - For discovering article links
 - **Block rules** (`deny`) - Prevent unwanted content extraction
 - **Priority matters** - Higher priority rules are evaluated first
-- **Be restrictive** - Only extract what you actually want
+- **Keep deny lists minimal** - Only exclude about/contact/donate/privacy/terms
 
 #### Phase 3: Import
 **Import the final spider JSON file that was created in Phase 2.**
@@ -451,10 +451,9 @@ This will:
    - **Re-import and test** (Phases 3-4)
 
 4. **Common fixes for wrong extraction**:
-   - Make extraction rules more restrictive
-   - Add more comprehensive deny patterns
+   - Make the `allow` pattern more specific for articles (NOT the deny list)
    - Ensure `callback: "parse_article"` only on actual content URLs
-   - Use `follow: true` without callbacks for navigation pages only
+   - Keep deny list minimal - do NOT add more deny patterns
 
 5. **⚠️ BEFORE MARKING QUEUE ITEM AS COMPLETE ⚠️**:
 

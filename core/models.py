@@ -11,6 +11,7 @@ class Spider(Base):
     allowed_domains = Column(JSON, nullable=False)
     start_urls = Column(JSON, nullable=False)
     active = Column(Boolean, default=True)
+    project = Column(String(255), default='default')
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

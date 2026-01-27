@@ -202,9 +202,11 @@ def create_spider_dag(spider):
             task_id='crawl_spider',
             bash_command=f"""
             cd {SCRAPAI_PATH} && \
-            ./scrapai crawl {spider.name}
+            source .venv/bin/activate && \
+            ./scrapai crawl {spider.name} --timeout 28800
             """,
-            execution_timeout=timedelta(hours=2),  # Adjust based on your needs
+            # Graceful stop at 8h (28800s), hard kill at 9h as fallback
+            execution_timeout=timedelta(hours=9),
         )
 
         # Optional: Add a task to verify crawl results
@@ -234,10 +236,25 @@ def create_spider_dag(spider):
     return dag
 
 
+# Filter DAGs by project (set to None to show all projects)
+# Options: None (all), 'brown', 'default', or list like ['brown', 'default']
+AIRFLOW_PROJECT_FILTER = os.getenv('AIRFLOW_PROJECT_FILTER', 'brown')
+
+
 # Generate DAGs for all spiders
 def generate_dags():
     """Generate all DAGs from database spiders"""
     spiders = get_spiders_from_db()
+
+    # Apply project filter
+    if AIRFLOW_PROJECT_FILTER:
+        if isinstance(AIRFLOW_PROJECT_FILTER, str):
+            allowed_projects = [p.strip() for p in AIRFLOW_PROJECT_FILTER.split(',')]
+        else:
+            allowed_projects = AIRFLOW_PROJECT_FILTER
+
+        spiders = [s for s in spiders if getattr(s, 'project', 'default') in allowed_projects]
+        print(f"Project filter: {allowed_projects}")
 
     print(f"Generating DAGs for {len(spiders)} spiders...")
 
