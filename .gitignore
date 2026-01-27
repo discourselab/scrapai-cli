@@ -16,6 +16,15 @@ projects/*/logs/
 
 .DS_Store
 
+docs/
+skills/
+.agent/
+.agents/
+.claude/
+.gemini/
+.cursor/
+
+
 # Output files (but keep example configs)
 *.json
 !alembic/versions/*.py

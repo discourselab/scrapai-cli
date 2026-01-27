@@ -81,6 +81,7 @@ def main():
     crawl_parser.add_argument('spider', help='Spider name to run')
     crawl_parser.add_argument('--output', '-o', help='Output file path (optional, uses project config)')
     crawl_parser.add_argument('--limit', '-l', type=int, help='Limit number of items')
+    crawl_parser.add_argument('--timeout', '-t', type=int, help='Max runtime in seconds (graceful stop, e.g. 28800 for 8h)')
     
     # crawl-all command
     crawl_all_parser = subparsers.add_parser('crawl-all', help='Run all spiders in a project')
@@ -164,6 +165,12 @@ def main():
     cleanup_parser.add_argument('--project', default='default', help='Project name (default: default)')
     cleanup_parser.add_argument('--force', '-f', action='store_true', help='Skip confirmation prompt')
 
+    # queue bulk
+    bulk_parser = queue_subparsers.add_parser('bulk', help='Bulk add URLs from JSON file')
+    bulk_parser.add_argument('file', help='JSON file containing URLs (array of objects with "url" field)')
+    bulk_parser.add_argument('--project', default='default', help='Project name (default: default)')
+    bulk_parser.add_argument('--priority', type=int, default=5, help='Priority for all items (default: 5)')
+
     # db command for database operations
     db_parser = subparsers.add_parser('db', help='Database management')
     db_subparsers = db_parser.add_subparsers(dest='db_command', help='Database commands')
@@ -229,7 +236,7 @@ def main():
     elif args.command == 'extract-urls':
         handle_extract_urls_command(args)
     elif args.command == 'crawl':
-        run_spider(args.project, args.spider, args.output, args.limit)
+        run_spider(args.project, args.spider, args.output, args.limit, args.timeout)
     elif args.command == 'crawl-all':
         run_all_spiders(args.project, args.limit)
     elif args.command == 'list':
@@ -741,6 +748,62 @@ def handle_queue_command(args):
 
         print(f"✅ Removed {len(items)} items from queue")
 
+    elif args.queue_command == 'bulk':
+        # Bulk add URLs from JSON file
+        import json
+
+        try:
+            with open(args.file, 'r') as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            print(f"❌ File not found: {args.file}")
+            return
+        except json.JSONDecodeError as e:
+            print(f"❌ Invalid JSON: {e}")
+            return
+
+        if not isinstance(data, list):
+            print("❌ JSON file must contain an array of objects")
+            return
+
+        added = 0
+        skipped = 0
+
+        for item in data:
+            url = item.get('url')
+            if not url:
+                print(f"⚠️  Skipping item without URL: {item}")
+                skipped += 1
+                continue
+
+            # Check if URL already exists in queue for this project
+            existing = db.query(CrawlQueue).filter(
+                CrawlQueue.project_name == args.project,
+                CrawlQueue.website_url == url
+            ).first()
+
+            if existing:
+                skipped += 1
+                continue
+
+            # Add new item to queue
+            queue_item = CrawlQueue(
+                project_name=args.project,
+                website_url=url,
+                custom_instruction=item.get('name'),  # Use name as instruction if available
+                priority=args.priority
+            )
+            db.add(queue_item)
+            added += 1
+
+        db.commit()
+
+        print(f"✅ Bulk add complete:")
+        print(f"   Added: {added}")
+        print(f"   Skipped (duplicates/invalid): {skipped}")
+        print(f"   Project: {args.project}")
+        print(f"   Priority: {args.priority}")
+
 def handle_db_command(args):
     """Handle database management commands"""
     import subprocess
@@ -1006,15 +1069,15 @@ def handle_projects_command(args):
         else:
             print("❌ Delete cancelled")
 
-def run_spider(project_name, spider_name, output_file=None, limit=None):
+def run_spider(project_name, spider_name, output_file=None, limit=None, timeout=None):
     """Run a Scrapy spider (DB or File-based)"""
     # Try to find spider in DB first
     from core.db import get_db
     from core.models import Spider
-    
+
     db = next(get_db())
     db_spider = db.query(Spider).filter(Spider.name == spider_name).first()
-    
+
     if db_spider:
         print(f"🚀 Running DB spider: {spider_name}")
         import sys
@@ -1056,6 +1119,12 @@ def run_spider(project_name, spider_name, output_file=None, limit=None):
         if output_file and limit:
             cmd.extend(['-o', output_file])
             print(f"   Also saving to: {output_file}")
+
+        # Add graceful timeout if specified (CLOSESPIDER_TIMEOUT)
+        if timeout:
+            cmd.extend(['-s', f'CLOSESPIDER_TIMEOUT={timeout}'])
+            hours = timeout / 3600
+            print(f"⏱️  Max runtime: {hours:.1f} hours (graceful stop)")
 
         subprocess.run(cmd)
         return

@@ -33,6 +33,7 @@ x-airflow-common:
     AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
     AIRFLOW__WEBSERVER__RBAC: 'true'
+    AIRFLOW__WEBSERVER__WARN_DEPLOYMENT_EXPOSURE: 'false'  # Disabled - bound to localhost only
     # Concurrency limits based on 4 vCPU, 8GB RAM server (max 6 concurrent scrapers)
     AIRFLOW__CORE__PARALLELISM: 16                    # Max total tasks across all DAGs (6 scrapers + overhead)
     AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: 2        # Max tasks per DAG (crawl+verify overlap)
@@ -68,7 +69,7 @@ services:
     volumes:
       - postgres-airflow-db-volume:/var/lib/postgresql/data
     ports:
-      - "5433:5432"  # Different port to avoid conflict with your main DB
+      - "127.0.0.1:5433:5432"  # Localhost only, different port to avoid conflict
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "airflow"]
       interval: 10s
@@ -80,7 +81,7 @@ services:
     <<: *airflow-common
     command: webserver
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"  # Localhost only
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
       interval: 30s
