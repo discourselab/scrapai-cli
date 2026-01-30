@@ -393,7 +393,18 @@ Combine all section rule files into a comprehensive spider definition.
 # Always activate virtual environment and import from the final_spider.json file
 source .venv/bin/activate
 ./scrapai spiders import data/website/analysis/final_spider.json
+
+# When processing from a specific project queue (e.g., brown project):
+# IMPORTANT: Always use --project parameter to maintain project isolation
+source .venv/bin/activate
+./scrapai spiders import data/website/analysis/final_spider.json --project brown
 ```
+
+**Project Parameter:**
+- `--project <name>`: Assigns spider to specific project (default: "default")
+- **CRITICAL**: When processing queue items, ALWAYS use the queue's project name
+- This ensures spiders are properly isolated by project
+- Prevents duplicate spiders across projects
 
 **Why import from file:**
 - Uses the consolidated JSON created during analysis
@@ -550,16 +561,22 @@ source .venv/bin/activate && ./scrapai queue cleanup --all --force        # Remo
 3. Do NOT process immediately
 
 **When user says "Process next in queue":**
-1. Run `./scrapai queue next` to claim next item
-2. Note the ID, URL, and custom_instruction from output
+1. Run `./scrapai queue next --project <project_name>` to claim next item
+2. Note the ID, URL, project, and custom_instruction from output
 3. **If custom_instruction exists**: Use it to override CLAUDE.md defaults during analysis
 4. Follow the full workflow (Phases 1-4):
    - Analysis & Section Documentation
    - Rule Generation
-   - Import Spider
+   - Import Spider **with --project parameter matching the queue project**
    - Test & Verify
 5. **If successful**: `./scrapai queue complete <id>`
 6. **If failed**: `./scrapai queue fail <id> -m "error description"`
+
+**CRITICAL: Project Isolation**
+- Always import spiders with `--project <name>` matching the queue project
+- Example: Processing brown queue → `./scrapai spiders import file.json --project brown`
+- This prevents duplicate spiders across projects
+- Maintains clean project separation
 
 #### Queue Features
 
@@ -604,8 +621,10 @@ source .venv/bin/activate
 ```
 
 **Spider Management:**
--   `source .venv/bin/activate && ./scrapai spiders list` - List all spiders in the DB.
--   `source .venv/bin/activate && ./scrapai spiders import <file>` - Import/Update a spider from JSON.
+-   `source .venv/bin/activate && ./scrapai spiders list` - List all spiders in the DB (all projects).
+-   `source .venv/bin/activate && ./scrapai spiders list --project <name>` - List spiders in specific project.
+-   `source .venv/bin/activate && ./scrapai spiders import <file>` - Import/Update a spider (to default project).
+-   `source .venv/bin/activate && ./scrapai spiders import <file> --project <name>` - Import spider to specific project.
 -   `source .venv/bin/activate && ./scrapai spiders delete <name>` - Delete a spider.
 
 **Crawling:**

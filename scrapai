@@ -107,11 +107,13 @@ def main():
     spiders_subparsers = spiders_parser.add_subparsers(dest='spiders_command', help='Spider commands')
     
     # spiders list
-    spiders_subparsers.add_parser('list', help='List all spiders in DB')
+    list_spiders_parser = spiders_subparsers.add_parser('list', help='List all spiders in DB')
+    list_spiders_parser.add_argument('--project', help='Filter by project name (default: show all)')
     
     # spiders import
     import_parser = spiders_subparsers.add_parser('import', help='Import spider from JSON')
     import_parser.add_argument('file', help='JSON file containing spider definition (use "-" to read from stdin)')
+    import_parser.add_argument('--project', default='default', help='Project name (default: default)')
     
     # spiders delete
     delete_parser = spiders_subparsers.add_parser('delete', help='Delete a spider')
@@ -396,15 +398,25 @@ def handle_spiders_command(args):
     db = next(get_db())
     
     if args.spiders_command == 'list':
-        spiders = db.query(Spider).all()
+        query = db.query(Spider)
+        if hasattr(args, 'project') and args.project:
+            query = query.filter(Spider.project == args.project)
+            print(f"📋 Available Spiders (DB) - Project: {args.project}:")
+        else:
+            print("📋 Available Spiders (DB) - All Projects:")
+
+        spiders = query.all()
         if spiders:
-            print("📋 Available Spiders (DB):")
             for s in spiders:
                 created = s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else 'Unknown'
                 updated = s.updated_at.strftime('%Y-%m-%d %H:%M') if hasattr(s, 'updated_at') and s.updated_at else created
-                print(f"  • {s.name} (Active: {s.active}) - Created: {created}, Updated: {updated}")
+                project_tag = f"[{s.project}]" if hasattr(s, 'project') and s.project else "[default]"
+                print(f"  • {s.name} {project_tag} (Active: {s.active}) - Created: {created}, Updated: {updated}")
         else:
-            print("No spiders found in database.")
+            if hasattr(args, 'project') and args.project:
+                print(f"No spiders found in project '{args.project}'.")
+            else:
+                print("No spiders found in database.")
             
     elif args.spiders_command == 'import':
         try:
@@ -417,6 +429,9 @@ def handle_spiders_command(args):
                 with open(args.file, 'r') as f:
                     data = json.load(f)
             
+            # Get project name from args
+            project_name = args.project if hasattr(args, 'project') else 'default'
+
             # Check if spider exists
             existing = db.query(Spider).filter(Spider.name == data['name']).first()
             if existing:
@@ -425,7 +440,8 @@ def handle_spiders_command(args):
                 # For now, let's just update the main fields and replace rules
                 existing.allowed_domains = data['allowed_domains']
                 existing.start_urls = data['start_urls']
-                
+                existing.project = project_name
+
                 # Clear old rules and settings
                 db.query(SpiderRule).filter(SpiderRule.spider_id == existing.id).delete()
                 db.query(SpiderSetting).filter(SpiderSetting.spider_id == existing.id).delete()
@@ -434,7 +450,8 @@ def handle_spiders_command(args):
                 spider = Spider(
                     name=data['name'],
                     allowed_domains=data['allowed_domains'],
-                    start_urls=data['start_urls']
+                    start_urls=data['start_urls'],
+                    project=project_name
                 )
                 db.add(spider)
                 db.flush() # Get ID
