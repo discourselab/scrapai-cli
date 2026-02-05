@@ -16,9 +16,34 @@ echo -n "Virtual env: "
 echo -n "PostgreSQL: "
 which psql >/dev/null 2>&1 && echo "✅" || echo "⚠️  Optional (can use remote DB)"
 
-# Chrome
+# Chrome/Playwright
 echo -n "Chrome/Chromium: "
-which chromium >/dev/null 2>&1 && echo "✅" || which google-chrome >/dev/null 2>&1 && echo "✅" || echo "❌ Install chromium"
+# Check for Playwright browsers first (preferred)
+if [ -d ".venv" ]; then
+    PLAYWRIGHT_CHECK=$(source .venv/bin/activate 2>/dev/null && python3 -c "
+try:
+    from playwright.sync_api import sync_playwright
+    p = sync_playwright().start()
+    path = p.chromium.executable_path
+    p.stop()
+    print(path)
+except:
+    print('')
+" 2>/dev/null)
+
+    if [ -n "$PLAYWRIGHT_CHECK" ] && [ -f "$PLAYWRIGHT_CHECK" ]; then
+        echo "✅ (Playwright)"
+    elif which chromium >/dev/null 2>&1; then
+        echo "✅ (System)"
+    elif which google-chrome >/dev/null 2>&1; then
+        echo "✅ (System)"
+    else
+        echo "❌ Install: playwright install chromium"
+    fi
+else
+    # No venv, check system browsers only
+    which chromium >/dev/null 2>&1 && echo "✅ (System)" || which google-chrome >/dev/null 2>&1 && echo "✅ (System)" || echo "❌ Install chromium or playwright"
+fi
 
 # xvfb (for headless)
 echo -n "xvfb: "

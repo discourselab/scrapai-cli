@@ -33,7 +33,8 @@ class CloudflareBrowserClient:
         headless: bool = False,
         cf_max_retries: int = 5,
         cf_retry_interval: int = 1,
-        post_cf_delay: int = 5
+        post_cf_delay: int = 5,
+        page_timeout: int = 120000
     ):
         """Initialize the Cloudflare browser client.
 
@@ -42,6 +43,7 @@ class CloudflareBrowserClient:
             cf_max_retries: Maximum number of CF verification attempts
             cf_retry_interval: Seconds to wait between CF retry attempts
             post_cf_delay: Seconds to wait after successful CF verification
+            page_timeout: Page navigation timeout in milliseconds (default: 120000 = 2 minutes)
         """
         self.driver = None
         self.tab = None
@@ -50,6 +52,7 @@ class CloudflareBrowserClient:
         self.cf_max_retries = cf_max_retries
         self.cf_retry_interval = cf_retry_interval
         self.post_cf_delay = post_cf_delay
+        self.page_timeout = page_timeout
 
     async def start(self):
         """Start the browser instance."""
@@ -76,16 +79,22 @@ class CloudflareBrowserClient:
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
+            f'--timeout={self.page_timeout}',  # Set page load timeout
         ]
 
         try:
+            # Create config with page load timeout
+            config = uc.Config()
+            config.default_timeout = self.page_timeout / 1000  # Convert ms to seconds
+
             self.driver = await uc.start(
                 headless=self.headless,
                 browser_executable_path=browser_path if browser_path and os.path.exists(browser_path) else None,
                 browser_args=browser_args,
+                config=config,
                 sandbox=False  # Disable sandbox - required when running as root
             )
-            logger.info("Started nodriver browser for Cloudflare bypass")
+            logger.info(f"Started nodriver browser with {self.page_timeout}ms timeout")
         except Exception as e:
             logger.error(f"Failed to start nodriver browser: {e}")
             raise
@@ -103,7 +112,7 @@ class CloudflareBrowserClient:
             await self.start()
 
         try:
-            # Navigate to URL
+            # Navigate to URL (timeout set at browser config level)
             self.tab = await self.driver.get(url)
             logger.info(f"Navigating to {url} for Cloudflare verification")
 
@@ -134,7 +143,7 @@ class CloudflareBrowserClient:
             logger.error(f"Error during Cloudflare verification: {e}")
             return False
 
-    async def fetch(self, url: str) -> Optional[str]:
+    async def fetch(self, url: str, wait_selector: Optional[str] = None, wait_timeout: int = 10) -> Optional[str]:
         """Fetch a URL using the verified session.
 
         On first call, this will verify Cloudflare. Subsequent calls reuse
@@ -142,6 +151,8 @@ class CloudflareBrowserClient:
 
         Args:
             url: The URL to fetch
+            wait_selector: CSS selector to wait for before extracting HTML (e.g., 'h1.title-med-1')
+            wait_timeout: Maximum seconds to wait for selector (default: 10)
 
         Returns:
             HTML content as string, or None if fetch failed
@@ -155,14 +166,31 @@ class CloudflareBrowserClient:
             # Subsequent requests - reuse verified session
             logger.info(f"Fetching {url} using verified Cloudflare session")
             try:
+                # Navigate to URL (timeout set at browser config level)
                 await self.tab.get(url)
-                # Short delay for page load
-                await self.tab.sleep(1)
+
+                # If wait_selector provided, wait for it to appear
+                if wait_selector:
+                    logger.debug(f"Waiting for selector '{wait_selector}' to appear (timeout: {wait_timeout}s)")
+                    try:
+                        # Wait for the selector to be present in the DOM
+                        await self.tab.select(wait_selector, timeout=wait_timeout)
+                        logger.debug(f"Selector '{wait_selector}' found, extracting HTML immediately")
+                        # Small delay to ensure element is fully rendered
+                        await self.tab.sleep(0.5)
+                    except Exception as e:
+                        logger.warning(f"Timeout waiting for selector '{wait_selector}': {e}. Proceeding anyway.")
+                        # Still proceed with extraction even if selector not found
+                        await self.tab.sleep(1)
+                else:
+                    # No specific selector - just wait a bit for page load
+                    await self.tab.sleep(1)
+
             except Exception as e:
                 logger.error(f"Error navigating to {url}: {e}")
                 return None
 
-        # Get HTML content
+        # Get HTML content immediately after main content loads
         try:
             html = await self.tab.get_content()
             logger.debug(f"Fetched {len(html)} bytes from {url}")
