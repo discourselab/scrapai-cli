@@ -927,10 +927,18 @@ bin/inspector --url https://americafirstpolicy.com/issues/energy --cloudflare
   "start_urls": ["https://www.americafirstpolicy.com/issues/energy"],
   "rules": [
     {
-      "allow": ["/issues/.*"],
+      "allow": ["/issues/[^/]+$"],
+      "deny": ["/issues/ajax-feed", "/issues/energy-environment"],
       "callback": "parse_article",
-      "follow": true,
+      "follow": false,
       "priority": 100
+    },
+    {
+      "allow": ["/issues/"],
+      "deny": ["/issues/ajax-feed"],
+      "callback": null,
+      "follow": true,
+      "priority": 50
     }
   ],
   "settings": {
@@ -938,6 +946,9 @@ bin/inspector --url https://americafirstpolicy.com/issues/energy --cloudflare
     "CF_MAX_RETRIES": 5,
     "CF_RETRY_INTERVAL": 1,
     "CF_POST_DELAY": 5,
+    "CF_WAIT_SELECTOR": "h1.title-med-1",
+    "CF_WAIT_TIMEOUT": 30,
+    "CF_PAGE_TIMEOUT": 120000,
     "DOWNLOAD_DELAY": 2,
     "CONCURRENT_REQUESTS": 1
   }
@@ -949,12 +960,25 @@ bin/inspector --url https://americafirstpolicy.com/issues/energy --cloudflare
 - `CF_MAX_RETRIES`: Maximum CF verification attempts (default: 5)
 - `CF_RETRY_INTERVAL`: Seconds between retry attempts (default: 1)
 - `CF_POST_DELAY`: Seconds to wait after successful CF verification (default: 5)
+- `CF_WAIT_SELECTOR`: CSS selector to wait for before extracting (e.g., "h1.title-med-1")
+- `CF_WAIT_TIMEOUT`: Max seconds to wait for selector (default: 10)
+- `CF_PAGE_TIMEOUT`: Page navigation timeout in milliseconds (default: 120000 = 2 minutes)
 
 **How It Works:**
 1. Spider opens: Starts persistent nodriver browser (visible, not headless)
 2. First request: Navigates to URL and solves Cloudflare challenge
 3. Subsequent requests: Reuses verified session (no additional CF challenges)
-4. Spider closes: Closes browser and cleans up resources
+4. Content extraction: Waits for main content selector, then extracts HTML immediately
+5. Spider closes: Closes browser and cleans up resources
+
+**Preventing Title Contamination:**
+The persistent browser session can cause title mismatches if "Related Articles" sections load before HTML extraction. To prevent this:
+
+1. **Use `CF_WAIT_SELECTOR`** to wait for the main article title specifically
+2. **Extract HTML immediately** after main content loads (before related articles)
+3. **Example:** For a site with `<h1 class="article-title">`, set `CF_WAIT_SELECTOR: "h1.article-title"`
+
+This ensures the extractor gets clean HTML with the correct title for each page.
 
 **Session Persistence Benefits:**
 - Cloudflare challenge solved once, not on every page

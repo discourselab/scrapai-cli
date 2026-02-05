@@ -97,17 +97,19 @@ class CloudflareDownloadHandler:
                     cf_max_retries = spider_settings.get('CF_MAX_RETRIES', 5)
                     cf_retry_interval = spider_settings.get('CF_RETRY_INTERVAL', 1)
                     cf_post_delay = spider_settings.get('CF_POST_DELAY', 5)
+                    cf_page_timeout = spider_settings.get('CF_PAGE_TIMEOUT', 120000)
 
                     logger.info(
                         f"CloudflareDownloadHandler: Starting browser "
-                        f"(retries={cf_max_retries}, interval={cf_retry_interval}s, delay={cf_post_delay}s)"
+                        f"(retries={cf_max_retries}, interval={cf_retry_interval}s, delay={cf_post_delay}s, timeout={cf_page_timeout}ms)"
                     )
 
                     self.browser = CloudflareBrowserClient(
                         headless=False,
                         cf_max_retries=cf_max_retries,
                         cf_retry_interval=cf_retry_interval,
-                        post_cf_delay=cf_post_delay
+                        post_cf_delay=cf_post_delay,
+                        page_timeout=cf_page_timeout
                     )
 
                     await self.browser.start()
@@ -116,8 +118,17 @@ class CloudflareDownloadHandler:
 
                 logger.debug(f"CloudflareDownloadHandler: Fetching {request.url}")
 
-                # Fetch through persistent browser
-                html = await self.browser.fetch(request.url)
+                # Get wait selector settings
+                spider_settings = getattr(spider, 'custom_settings', {})
+                wait_selector = spider_settings.get('CF_WAIT_SELECTOR')
+                wait_timeout = spider_settings.get('CF_WAIT_TIMEOUT', 10)
+
+                # Fetch through persistent browser with optional wait selector
+                html = await self.browser.fetch(
+                    request.url,
+                    wait_selector=wait_selector,
+                    wait_timeout=wait_timeout
+                )
 
                 if html:
                     # Create Scrapy response

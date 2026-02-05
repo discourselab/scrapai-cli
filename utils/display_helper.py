@@ -25,7 +25,43 @@ def has_display() -> bool:
         logger.debug("No DISPLAY environment variable set")
         return False
 
-    # Try to connect to the display
+    # macOS detection
+    if sys.platform == 'darwin':
+        # On macOS, check if XQuartz is running or if display socket exists
+        logger.debug("macOS detected, checking for XQuartz or display socket")
+
+        # Check if XQuartz process is running
+        try:
+            result = subprocess.run(
+                ['pgrep', '-x', 'Xquartz'],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=2
+            )
+            if result.returncode == 0:
+                logger.debug(f"XQuartz is running, display {display} available")
+                return True
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+        # Check if display socket exists (format: /tmp/.X11-unix/X0)
+        if display.startswith(':'):
+            # Extract display number (e.g., :0 -> 0)
+            display_num = display.split(':')[1].split('.')[0]
+            socket_path = f"/tmp/.X11-unix/X{display_num}"
+            if os.path.exists(socket_path):
+                logger.debug(f"Display socket {socket_path} exists")
+                return True
+
+        # Check for launchd socket (macOS XQuartz can use launchd sockets)
+        if '/tmp/com.apple.launchd' in display or 'org.xquartz' in display.lower():
+            logger.debug(f"macOS XQuartz launchd socket detected: {display}")
+            return True
+
+        logger.debug("No XQuartz process or display socket found on macOS")
+        return False
+
+    # Linux/Unix detection
     try:
         # Use xdpyinfo to check if display is accessible
         result = subprocess.run(
@@ -35,14 +71,22 @@ def has_display() -> bool:
             timeout=2
         )
         if result.returncode == 0:
-            logger.debug(f"Display {display} is accessible")
+            logger.debug(f"Display {display} is accessible (xdpyinfo)")
             return True
         else:
             logger.debug(f"Display {display} not accessible")
             return False
     except (subprocess.TimeoutExpired, FileNotFoundError):
-        # xdpyinfo not found or timed out - assume no display
-        logger.debug("xdpyinfo not available or timed out")
+        # xdpyinfo not found - try alternative check for Linux
+        # Check if display socket exists
+        if display.startswith(':'):
+            display_num = display.split(':')[1].split('.')[0]
+            socket_path = f"/tmp/.X11-unix/X{display_num}"
+            if os.path.exists(socket_path):
+                logger.debug(f"Display socket {socket_path} exists")
+                return True
+
+        logger.debug("xdpyinfo not available and no display socket found")
         return False
 
 
