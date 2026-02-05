@@ -77,7 +77,7 @@ class DatabaseSpider(CrawlSpider):
         if spider.settings:
             if not getattr(self, 'custom_settings', None):
                 self.custom_settings = {}
-            
+
             for s in spider.settings:
                 # Convert value to appropriate type if needed
                 val = s.value
@@ -93,8 +93,22 @@ class DatabaseSpider(CrawlSpider):
                             val = False
                         elif val.isdigit():
                             val = int(val)
-                
+
                 self.custom_settings[s.key] = val
+
+        # Check if Cloudflare mode enabled
+        cf_enabled = self.custom_settings.get('CLOUDFLARE_ENABLED', False)
+
+        if cf_enabled:
+            # Enable CF download handler
+            logger.info(f"Cloudflare bypass mode enabled for {self.spider_name}")
+            # Handler will be loaded from settings.py DOWNLOAD_HANDLERS
+        else:
+            # Use default Scrapy HTTP downloader
+            # Override DOWNLOAD_HANDLERS to use default
+            if not getattr(self, 'custom_settings', None):
+                self.custom_settings = {}
+            self.custom_settings['DOWNLOAD_HANDLERS'] = {}
 
     def parse_start_url(self, response):
         """

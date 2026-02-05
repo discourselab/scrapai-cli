@@ -24,6 +24,7 @@ skills/
 .gemini/
 .cursor/
 
+tmp/
 
 # Output files (but keep example configs)
 *.json
