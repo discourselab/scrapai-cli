@@ -28,9 +28,11 @@ def main():
     parser = argparse.ArgumentParser(description='Inspect a fact-checking website to help create scrapers')
     parser.add_argument('--url', type=str, required=True, help='URL to inspect')
     parser.add_argument('--output-dir', type=str, default=None, help='Directory to save analysis')
-    parser.add_argument('--proxy-type', choices=['none', 'static', 'residential', 'auto'], 
+    parser.add_argument('--proxy-type', choices=['none', 'static', 'residential', 'auto'],
                       default='auto', help='Proxy type to use')
     parser.add_argument('--no-save-html', action='store_true', help='Do not save the full HTML')
+    parser.add_argument('--cloudflare', action='store_true',
+                      help='Use Cloudflare bypass mode (nodriver with CF verification)')
     parser.add_argument('--log-level', choices=['debug', 'info', 'warning', 'error', 'critical'],
                       default='info', help='Set the logging level')
     parser.add_argument('--log-file', type=str, help='Path to log file (optional)')
@@ -46,7 +48,27 @@ def main():
     )
     
     logger.info(f"Starting inspection of {args.url}")
-    inspect_page(args.url, args.output_dir, args.proxy_type, not args.no_save_html)
+
+    # Check display availability if using Cloudflare bypass
+    if args.cloudflare:
+        from utils.display_helper import needs_xvfb, has_xvfb
+
+        if needs_xvfb():
+            if not has_xvfb():
+                print("❌ ERROR: Cloudflare bypass requires a display")
+                print("   No display available and xvfb not installed")
+                print("\nOptions:")
+                print("   1. Install xvfb: sudo apt-get install xvfb")
+                print("   2. Then run: xvfb-run -a bin/inspector --url <url> --cloudflare")
+                print("   3. Or run on a machine with a display")
+                sys.exit(1)
+            print("🖥️  Headless environment detected - make sure to use: xvfb-run -a bin/inspector ...")
+            print("   (If you're seeing this, you may have forgotten to wrap with xvfb-run)")
+        else:
+            print("🖥️  Display available - using native browser for Cloudflare bypass")
+
+    inspect_page(args.url, args.output_dir, args.proxy_type, not args.no_save_html,
+                 use_cloudflare=args.cloudflare)
     logger.info("Inspection complete")
 
 if __name__ == "__main__":

@@ -1099,6 +1099,15 @@ def run_spider(project_name, spider_name, output_file=None, limit=None, timeout=
         print(f"🚀 Running DB spider: {spider_name}")
         import sys
         from datetime import datetime
+
+        # Check if spider uses Cloudflare bypass
+        cf_enabled = False
+        if db_spider.settings:
+            for setting in db_spider.settings:
+                if setting.key == "CLOUDFLARE_ENABLED" and str(setting.value).lower() in ["true", "1"]:
+                    cf_enabled = True
+                    break
+
         cmd = [sys.executable, '-m', 'scrapy', 'crawl', 'database_spider', '-a', f'spider_name={spider_name}']
 
         # Smart storage logic based on --limit flag
@@ -1142,6 +1151,21 @@ def run_spider(project_name, spider_name, output_file=None, limit=None, timeout=
             cmd.extend(['-s', f'CLOSESPIDER_TIMEOUT={timeout}'])
             hours = timeout / 3600
             print(f"⏱️  Max runtime: {hours:.1f} hours (graceful stop)")
+
+        # Auto-detect if xvfb is needed for Cloudflare bypass
+        if cf_enabled:
+            from utils.display_helper import needs_xvfb, has_xvfb
+
+            if needs_xvfb():
+                if has_xvfb():
+                    print("🖥️  Headless environment detected - using xvfb for Cloudflare bypass")
+                    cmd = ['xvfb-run', '-a'] + cmd
+                else:
+                    print("⚠️  WARNING: Cloudflare bypass enabled but no display available and xvfb not installed")
+                    print("   Install xvfb: sudo apt-get install xvfb")
+                    print("   Continuing anyway - browser may fail to start...")
+            else:
+                print("🖥️  Display available - using native browser for Cloudflare bypass")
 
         subprocess.run(cmd)
         return

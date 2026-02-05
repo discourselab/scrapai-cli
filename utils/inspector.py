@@ -19,20 +19,23 @@ from urllib.parse import urljoin, urlparse
 from utils.browser import BrowserClient
 from core.config import DATA_DIR
 
-async def inspect_page_async(url, output_dir=None, proxy_type="auto", save_html=True):
+async def inspect_page_async(url, output_dir=None, proxy_type="auto", save_html=True, use_cloudflare=False):
     """
     Inspect a page using browser client and output analysis to help with creating a scraper
-    
+
     Args:
         url (str): URL to inspect
         output_dir (str): Directory to save analysis and HTML. If None, a directory is created based on the domain
         proxy_type (str): Proxy type to use (unused now, browser handles this)
         save_html (bool): Whether to save the full HTML
-    
+        use_cloudflare (bool): Whether to use Cloudflare bypass mode
+
     Returns:
         dict: Analysis results
     """
     print(f"Inspecting: {url}")
+    if use_cloudflare:
+        print("Using Cloudflare bypass mode...")
     
     # Extract domain for folder name if output_dir is not specified
     if output_dir is None:
@@ -72,25 +75,47 @@ async def inspect_page_async(url, output_dir=None, proxy_type="auto", save_html=
     
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
-    
-    # Get the page using browser client
-    async with BrowserClient(headless=True) as browser:
-        await browser.goto(url)
-        html_content = await browser.get_html()
-        
-        if not html_content:
-            print(f"Failed to fetch page: {url}")
-            return None
-        
-        # Save the HTML if requested
-        if save_html:
-            html_file = os.path.join(output_dir, "page.html")
-            with open(html_file, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-            print(f"Saved HTML to: {html_file}")
-        
-        # Parse the HTML
-        soup = BeautifulSoup(html_content, 'html.parser')
+
+    # Choose browser client based on mode
+    if use_cloudflare:
+        # Use nodriver with Cloudflare bypass
+        from utils.cf_browser import CloudflareBrowserClient
+
+        async with CloudflareBrowserClient(headless=False) as browser:
+            html_content = await browser.fetch(url)
+
+            if not html_content:
+                print(f"Failed to fetch page (Cloudflare bypass failed): {url}")
+                return None
+
+            # Save the HTML if requested
+            if save_html:
+                html_file = os.path.join(output_dir, "page.html")
+                with open(html_file, 'w', encoding='utf-8') as f:
+                    f.write(html_content)
+                print(f"Saved HTML to: {html_file}")
+
+            # Parse the HTML
+            soup = BeautifulSoup(html_content, 'html.parser')
+    else:
+        # Use existing Playwright path
+        async with BrowserClient(headless=True) as browser:
+            await browser.goto(url)
+            html_content = await browser.get_html()
+
+            if not html_content:
+                print(f"Failed to fetch page: {url}")
+                return None
+
+            # Save the HTML if requested
+            if save_html:
+                html_file = os.path.join(output_dir, "page.html")
+                with open(html_file, 'w', encoding='utf-8') as f:
+                    f.write(html_content)
+                print(f"Saved HTML to: {html_file}")
+
+            # Parse the HTML
+            soup = BeautifulSoup(html_content, 'html.parser')
     
     # Extract useful information
     title = soup.title.text if soup.title else "No title"
@@ -135,11 +160,11 @@ async def inspect_page_async(url, output_dir=None, proxy_type="auto", save_html=
     
         return analysis
 
-def inspect_page(url, output_dir=None, proxy_type="auto", save_html=True):
+def inspect_page(url, output_dir=None, proxy_type="auto", save_html=True, use_cloudflare=False):
     """
     Synchronous wrapper for inspect_page_async
     """
-    return asyncio.run(inspect_page_async(url, output_dir, proxy_type, save_html))
+    return asyncio.run(inspect_page_async(url, output_dir, proxy_type, save_html, use_cloudflare))
 
 def analyze_potential_containers(soup):
     """

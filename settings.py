@@ -31,6 +31,13 @@ ITEM_PIPELINES = {
     'pipelines.DatabasePipeline': 400,
 }
 
+# Cloudflare bypass download handler
+# This will be activated when spider has CLOUDFLARE_ENABLED=True
+DOWNLOAD_HANDLERS = {
+    'http': 'handlers.cloudflare_handler.CloudflareDownloadHandler',
+    'https': 'handlers.cloudflare_handler.CloudflareDownloadHandler',
+}
+
 # Enable and configure HTTP caching
 HTTPCACHE_ENABLED = False
 HTTPCACHE_EXPIRATION_SECS = 3600
