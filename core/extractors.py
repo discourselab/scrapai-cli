@@ -6,6 +6,7 @@ from datetime import datetime
 
 import newspaper
 import trafilatura
+from bs4 import BeautifulSoup
 from .schemas import ScrapedArticle
 from utils.newspaper_parser import NewspaperParser # Reuse existing proxy logic if possible, or reimplement
 from utils.browser import run_browser_task
@@ -117,50 +118,163 @@ class TrafilaturaExtractor(BaseExtractor):
             logger.debug(f"TrafilaturaExtractor failed for {url}: {e}")
             return None
 
+class CustomExtractor(BaseExtractor):
+    """Extractor using custom CSS selectors"""
+
+    def __init__(self, selectors: Dict[str, str]):
+        """
+        Initialize with custom selectors.
+
+        Args:
+            selectors: Dict mapping field names to CSS selectors
+                      e.g., {"title": "h1.title", "content": "div.article"}
+        """
+        self.selectors = selectors
+
+    def extract(self, url: str, html: str, title_hint: str = None, include_html: bool = False) -> Optional[ScrapedArticle]:
+        """
+        Extract content using custom CSS selectors.
+
+        Standard fields: title, author, content, date
+        Custom fields: anything else goes into metadata
+        """
+        try:
+            soup = BeautifulSoup(html, 'lxml')
+
+            # Extract standard fields
+            title = self._extract_text(soup, self.selectors.get('title'))
+            logger.debug(f"Extracted title: '{title}' using selector '{self.selectors.get('title')}'")
+            if not title and title_hint:
+                title = title_hint.strip()
+                logger.debug(f"Using title hint: '{title}'")
+
+            author = self._extract_text(soup, self.selectors.get('author'))
+            logger.debug(f"Extracted author: '{author}' using selector '{self.selectors.get('author')}'")
+
+            content = self._extract_text(soup, self.selectors.get('content'))
+            content_len = len(content) if content else 0
+            logger.debug(f"Extracted content: {content_len} chars using selector '{self.selectors.get('content')}'")
+            if content and content_len < 200:
+                logger.debug(f"Content preview: '{content[:200]}'")
+
+            date_str = self._extract_text(soup, self.selectors.get('date'))
+            logger.debug(f"Extracted date: '{date_str}' using selector '{self.selectors.get('date')}'")
+
+            # Validation: at minimum need title and content
+            if not title or not content:
+                logger.warning(f"CustomExtractor validation failed: title='{title}', content_len={content_len}")
+                return None
+
+            # Parse date if present
+            published_date = None
+            if date_str:
+                try:
+                    from dateutil import parser
+                    published_date = parser.parse(date_str)
+                except Exception as e:
+                    logger.debug(f"Failed to parse date '{date_str}': {e}")
+
+            # Extract custom fields into metadata
+            metadata = {}
+            for field_name, selector in self.selectors.items():
+                # Skip standard fields
+                if field_name in ['title', 'author', 'content', 'date']:
+                    continue
+
+                # Extract custom field
+                value = self._extract_text(soup, selector)
+                if value:
+                    metadata[field_name] = value
+
+            return ScrapedArticle(
+                url=url,
+                title=title,
+                content=content,
+                author=author,
+                published_date=published_date,
+                source='custom',
+                metadata=metadata,
+                html=html if include_html else None
+            )
+
+        except Exception as e:
+            logger.error(f"CustomExtractor failed for {url}: {e}")
+            return None
+
+    def _extract_text(self, soup: BeautifulSoup, selector: Optional[str]) -> Optional[str]:
+        """
+        Extract text from HTML using CSS selector.
+
+        Args:
+            soup: BeautifulSoup object
+            selector: CSS selector string
+
+        Returns:
+            Extracted text or None
+        """
+        if not selector:
+            return None
+
+        try:
+            # Find element
+            element = soup.select_one(selector)
+            if not element:
+                logger.debug(f"Selector '{selector}' found no elements")
+                return None
+
+            # Get text and clean it
+            text = element.get_text(separator=' ', strip=True)
+            return text if text else None
+
+        except Exception as e:
+            logger.debug(f"Error extracting with selector '{selector}': {e}")
+            return None
+
 class SmartExtractor:
     """
     Intelligent extractor that tries multiple strategies in order.
     Strategies:
-    1. 'newspaper': Use newspaper4k on provided HTML
-    2. 'trafilatura': Use trafilatura on provided HTML
-    3. 'playwright': Fetch rendered HTML via browser, then try trafilatura
+    1. 'custom': Use custom CSS selectors if provided
+    2. 'newspaper': Use newspaper4k on provided HTML
+    3. 'trafilatura': Use trafilatura on provided HTML
+    4. 'playwright': Fetch rendered HTML via browser, then try trafilatura
     """
-    
-    def __init__(self, strategies: List[str] = None):
+
+    def __init__(self, strategies: List[str] = None, custom_selectors: Dict[str, str] = None):
         self.strategies = strategies or ['newspaper', 'trafilatura', 'playwright']
-        
+        self.custom_selectors = custom_selectors
+
     def extract(self, url: str, html: str, title_hint: str = None, include_html: bool = False) -> Optional[ScrapedArticle]:
         """
         Attempt extraction using configured strategies.
+        Custom selectors are REQUIRED - no generic extraction fallback.
         """
-        for strategy in self.strategies:
-            try:
-                result = None
-                if strategy == 'newspaper':
-                    result = NewspaperExtractor().extract(url, html, title_hint, include_html)
-                elif strategy == 'trafilatura':
-                    result = TrafilaturaExtractor().extract(url, html, title_hint, include_html)
-                elif strategy == 'playwright':
-                    # Only try playwright if we haven't succeeded yet
-                    logger.info(f"Falling back to Playwright for {url}")
-                    result = self._extract_with_playwright(url, title_hint, include_html)
+        # Custom selectors are mandatory
+        if not self.custom_selectors:
+            logger.error(f"No custom selectors provided for {url}. Generic extraction disabled.")
+            logger.error("You must provide CUSTOM_SELECTORS in spider settings.")
+            return None
 
-                if result:
-                    logger.info(f"Successfully extracted {url} using {strategy}")
-                    return result
-
-            except Exception as e:
-                logger.warning(f"Strategy {strategy} failed for {url}: {e}")
-                continue
-
-        logger.error(f"All extraction strategies failed for {url}")
-        return None
+        # Extract using custom selectors
+        logger.info(f"Extracting {url} with custom selectors")
+        try:
+            result = CustomExtractor(self.custom_selectors).extract(url, html, title_hint, include_html)
+            if result:
+                logger.info(f"Successfully extracted {url} using custom selectors")
+                return result
+            else:
+                logger.error(f"Custom extraction failed for {url} - no content found")
+                return None
+        except Exception as e:
+            logger.error(f"Custom extraction error for {url}: {e}")
+            return None
 
     async def extract_async(self, url: str, html: str, title_hint: str = None, include_html: bool = False,
                            wait_for_selector: str = None, additional_delay: float = 0,
                            enable_scroll: bool = False, max_scrolls: int = 5, scroll_delay: float = 1.0) -> Optional[ScrapedArticle]:
         """
         Async version of extract method.
+        Custom selectors are REQUIRED - no generic extraction fallback.
 
         Args:
             url: The URL of the page
@@ -173,35 +287,25 @@ class SmartExtractor:
             max_scrolls: Maximum number of scrolls to perform
             scroll_delay: Delay between scrolls in seconds
         """
-        for strategy in self.strategies:
-            logger.info(f"Trying strategy: {strategy} for {url}")
-            try:
-                result = None
-                if strategy == 'newspaper':
-                    # Run sync extractors in thread pool to avoid blocking loop
-                    result = await asyncio.to_thread(NewspaperExtractor().extract, url, html, title_hint, include_html)
-                elif strategy == 'trafilatura':
-                    result = await asyncio.to_thread(TrafilaturaExtractor().extract, url, html, title_hint, include_html)
-                elif strategy == 'playwright':
-                    logger.info(f"Falling back to Playwright for {url}")
-                    result = await self._extract_with_playwright_async(url, title_hint, include_html,
-                                                                       wait_for_selector, additional_delay,
-                                                                       enable_scroll, max_scrolls, scroll_delay)
+        # Custom selectors are mandatory
+        if not self.custom_selectors:
+            logger.error(f"No custom selectors provided for {url}. Generic extraction disabled.")
+            logger.error("You must provide CUSTOM_SELECTORS in spider settings.")
+            return None
 
-                if result:
-                    logger.info(f"Successfully extracted {url} using {strategy}")
-                    return result
-                else:
-                    logger.warning(f"Strategy {strategy} returned None for {url}")
-
-            except Exception as e:
-                logger.warning(f"Strategy {strategy} failed for {url}: {e}")
-                import traceback
-                logger.warning(traceback.format_exc())
-                continue
-
-        logger.error(f"All extraction strategies failed for {url}")
-        return None
+        # Extract using custom selectors
+        logger.info(f"Extracting {url} with custom selectors")
+        try:
+            result = await asyncio.to_thread(CustomExtractor(self.custom_selectors).extract, url, html, title_hint, include_html)
+            if result:
+                logger.info(f"Successfully extracted {url} using custom selectors")
+                return result
+            else:
+                logger.error(f"Custom extraction failed for {url} - no content found")
+                return None
+        except Exception as e:
+            logger.error(f"Custom extraction error for {url}: {e}")
+            return None
 
     async def _extract_with_playwright_async(self, url: str, title_hint: str = None, include_html: bool = False,
                                             wait_for_selector: str = None, additional_delay: float = 0,

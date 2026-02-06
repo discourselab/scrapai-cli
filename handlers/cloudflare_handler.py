@@ -39,6 +39,7 @@ class CloudflareDownloadHandler:
         self.browser = None
         self.loop = None
         self.browser_started = False
+        self.fetch_lock = asyncio.Lock()  # Serialize browser access
 
     @classmethod
     def from_crawler(cls, crawler):
@@ -97,19 +98,17 @@ class CloudflareDownloadHandler:
                     cf_max_retries = spider_settings.get('CF_MAX_RETRIES', 5)
                     cf_retry_interval = spider_settings.get('CF_RETRY_INTERVAL', 1)
                     cf_post_delay = spider_settings.get('CF_POST_DELAY', 5)
-                    cf_page_timeout = spider_settings.get('CF_PAGE_TIMEOUT', 120000)
 
                     logger.info(
                         f"CloudflareDownloadHandler: Starting browser "
-                        f"(retries={cf_max_retries}, interval={cf_retry_interval}s, delay={cf_post_delay}s, timeout={cf_page_timeout}ms)"
+                        f"(retries={cf_max_retries}, interval={cf_retry_interval}s, delay={cf_post_delay}s)"
                     )
 
                     self.browser = CloudflareBrowserClient(
                         headless=False,
                         cf_max_retries=cf_max_retries,
                         cf_retry_interval=cf_retry_interval,
-                        post_cf_delay=cf_post_delay,
-                        page_timeout=cf_page_timeout
+                        post_cf_delay=cf_post_delay
                     )
 
                     await self.browser.start()
@@ -123,12 +122,16 @@ class CloudflareDownloadHandler:
                 wait_selector = spider_settings.get('CF_WAIT_SELECTOR')
                 wait_timeout = spider_settings.get('CF_WAIT_TIMEOUT', 10)
 
-                # Fetch through persistent browser with optional wait selector
-                html = await self.browser.fetch(
-                    request.url,
-                    wait_selector=wait_selector,
-                    wait_timeout=wait_timeout
-                )
+                # Serialize browser access to prevent concurrent navigation
+                async with self.fetch_lock:
+                    logger.debug(f"CloudflareDownloadHandler: Acquired lock for {request.url}")
+                    # Fetch through persistent browser with optional wait selector
+                    html = await self.browser.fetch(
+                        request.url,
+                        wait_selector=wait_selector,
+                        wait_timeout=wait_timeout
+                    )
+                    logger.debug(f"CloudflareDownloadHandler: Released lock for {request.url}")
 
                 if html:
                     # Create Scrapy response

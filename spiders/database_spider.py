@@ -1,6 +1,7 @@
 import scrapy
 from scrapy.linkextractors import LinkExtractor
 from scrapy.spiders import CrawlSpider, Rule
+from scrapy.exceptions import CloseSpider
 from core.db import get_db
 from core.models import Spider, SpiderRule
 import logging
@@ -23,6 +24,10 @@ class DatabaseSpider(CrawlSpider):
         self.spider_name = spider_name
         self._load_config()
         super().__init__(*args, **kwargs)
+
+        # Initialize item counter for immediate stop on limit
+        self._items_scraped = 0
+        self._item_limit = None
         
     def _load_config(self):
         """Load spider configuration from database"""
@@ -118,6 +123,16 @@ class DatabaseSpider(CrawlSpider):
         logger.info(f"Processing start URL: {response.url}")
         return self.parse_article(response)
 
+    @classmethod
+    def from_crawler(cls, crawler, *args, **kwargs):
+        """Called by Scrapy to create spider instance from crawler."""
+        spider = super(DatabaseSpider, cls).from_crawler(crawler, *args, **kwargs)
+        # Read CLOSESPIDER_ITEMCOUNT from settings for immediate stop logic
+        spider._item_limit = crawler.settings.getint('CLOSESPIDER_ITEMCOUNT', 0)
+        if spider._item_limit:
+            logger.info(f"Item limit set to {spider._item_limit} (will stop immediately when reached)")
+        return spider
+
     async def parse_article(self, response):
         """
         Parse article page.
@@ -144,8 +159,21 @@ class DatabaseSpider(CrawlSpider):
             
         logger.info(f"Using strategies: {strategies}")
 
+        # Get custom selectors if provided
+        custom_selectors = self.custom_settings.get('CUSTOM_SELECTORS')
+        if isinstance(custom_selectors, str):
+            try:
+                import json
+                custom_selectors = json.loads(custom_selectors.replace("'", '"'))
+            except Exception as e:
+                logger.warning(f"Failed to parse CUSTOM_SELECTORS string: {custom_selectors}. Error: {e}")
+                custom_selectors = None
+
+        if custom_selectors:
+            logger.info(f"Using custom selectors: {list(custom_selectors.keys())}")
+
         from core.extractors import SmartExtractor
-        extractor = SmartExtractor(strategies=strategies)
+        extractor = SmartExtractor(strategies=strategies, custom_selectors=custom_selectors)
 
         # Extract
         logger.info(f"Processing {response.url} (Length: {len(response.text)})")
@@ -188,13 +216,20 @@ class DatabaseSpider(CrawlSpider):
         if article:
             # Convert Pydantic model to dict
             item = article.dict()
-            
+
             # Add spider metadata
             item['spider_name'] = self.spider_name  # Use the actual spider name (e.g. "desmog")
             item['spider_id'] = self.spider_config.id
             item['source'] = 'database_spider'  # Indicate this came from the generic database spider
-            
+
             yield item
+
+            # Check item limit and stop immediately if reached
+            if self._item_limit:
+                self._items_scraped += 1
+                if self._items_scraped >= self._item_limit:
+                    logger.info(f"Reached item limit ({self._item_limit}), stopping spider immediately")
+                    raise CloseSpider(f'closespider_itemcount_immediate')
         else:
             logger.warning(f"Failed to extract article from {response.url}")
 
