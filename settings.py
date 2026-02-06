@@ -41,3 +41,10 @@ DOWNLOAD_HANDLERS = {
 # Enable and configure HTTP caching
 HTTPCACHE_ENABLED = False
 HTTPCACHE_EXPIRATION_SECS = 3600
+
+# Suppress verbose logs from third-party libraries
+import logging
+logging.getLogger('nodriver').setLevel(logging.WARNING)
+logging.getLogger('websockets').setLevel(logging.WARNING)
+logging.getLogger('playwright').setLevel(logging.WARNING)
+logging.getLogger('urllib3').setLevel(logging.WARNING)

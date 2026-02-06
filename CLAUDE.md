@@ -184,11 +184,12 @@ Review the complete URL list again and confirm you understand the full site stru
 
 **ONLY AFTER COMPLETE ANALYSIS → Proceed to Phase 2 (Rule Creation)**
 
-**Key Principle:** Smart extractors (newspaper, trafilatura, playwright) automatically handle content extraction. Your job is to:
+**Key Principle:** Custom selectors extract exactly what you specify. Your job is to:
 - Understand COMPLETE site navigation structure
 - Identify ALL URL patterns for articles vs. navigation pages
 - Create comprehensive rules covering ALL content sections
-- Let extractors handle the actual content extraction
+- Discover CSS selectors for title, content, author, date, and any other fields
+- Configure CUSTOM_SELECTORS in spider settings
 
 **CRITICAL PRINCIPLE: BE INCLUSIVE, NOT RESTRICTIVE**
 
@@ -326,6 +327,11 @@ data/website/analysis/
 #### Phase 2: Section-Based Rule Generation
 Generate comprehensive rules using section documentation. **Do not create Python files.**
 
+**⚠️ MANDATORY: Custom Selectors Required**
+- Generic extractors (newspaper/trafilatura) are disabled
+- You MUST discover and configure CUSTOM_SELECTORS for every spider
+- No shortcuts - inspect HTML and find the right selectors
+
 **Step 2A: Use sections.md for Rule Creation**
 Read the complete `sections.md` file to understand:
 - All sections discovered during analysis
@@ -412,54 +418,95 @@ source .venv/bin/activate
 - Easy to review and modify before importing
 - Can re-import same config if needed
 
+#### Phase 2.5: Discover Custom Selectors (MANDATORY)
+
+**Before creating spider JSON, discover CSS selectors:**
+
+1. **Inspect an article page** (not homepage):
+   ```bash
+   source .venv/bin/activate
+   bin/inspector --url https://website.com/article-url --cloudflare
+   ```
+
+2. **Analyze HTML and find selectors**:
+   ```bash
+   bin/analyze_selectors data/website_com/analysis/page.html
+   ```
+
+   This shows:
+   - All h1/h2 titles with classes
+   - Content containers sorted by size
+   - Date elements
+   - Author elements
+
+3. **Test each selector**:
+   ```bash
+   bin/analyze_selectors data/website_com/analysis/page.html --test "h1.article-title"
+   bin/analyze_selectors data/website_com/analysis/page.html --test "div.article-body"
+   ```
+
+4. **Search for specific fields**:
+   ```bash
+   bin/analyze_selectors data/website_com/analysis/page.html --find "price"
+   bin/analyze_selectors data/website_com/analysis/page.html --find "rating"
+   ```
+
+5. **Add CUSTOM_SELECTORS to final_spider.json**:
+   ```json
+   {
+     "name": "website_name",
+     "settings": {
+       "CUSTOM_SELECTORS": {
+         "title": "h1.article-title",
+         "content": "div.article-body",
+         "author": "span.author-name",
+         "date": "time.published-date"
+       }
+     }
+   }
+   ```
+
+#### Phase 3: Import
+**Import the final spider JSON file that was created in Phase 2 with CUSTOM_SELECTORS.**
+
+```bash
+# Always activate virtual environment and import from the final_spider.json file
+source .venv/bin/activate
+./scrapai spiders import data/website/analysis/final_spider.json
+```
+
 #### Phase 4: Execution & Verification
 
-**IMPORTANT: Storage Mode Selection**
-
-The `--limit` flag controls where data is saved:
-- **With `--limit`**: Saves to database (for testing/verification with `show` command)
-- **Without `--limit`**: Exports to files only (production mode, avoids database costs)
-
-**Testing Mode (with --limit):**
+**Test Mode:**
 ```bash
-# Test with limited items - saves to database
 source .venv/bin/activate
 ./scrapai crawl website_name --limit 5
 ```
 
-This will:
-- Save data to database for quick verification
-- Use `./scrapai show website_name` to check results
-- Ideal for testing spider rules and content extraction
+**Verify Results:**
+```bash
+source .venv/bin/activate
+./scrapai show website_name --limit 5
+```
 
-**Production Mode (without --limit):**
+**Check:**
+- ✅ **Good**: Titles match URL slugs, content looks right
+- ❌ **Bad**: Wrong content, empty fields, or extraction failed
+
+**If extraction is wrong:**
+
+1. **Delete spider**: `source .venv/bin/activate && echo "y" | ./scrapai spiders delete website_name`
+2. **Re-inspect article page**: Verify you used article URL, not homepage
+3. **Test selectors again**: Use `bin/analyze_selectors --test`
+4. **Update CUSTOM_SELECTORS**: Fix the selectors in final_spider.json
+5. **Re-import and test**: Import → Crawl → Show
+
+**Production Mode (after verification):**
 ```bash
 # Full scrape - exports to files, no database cost
 source .venv/bin/activate
 ./scrapai crawl website_name
 ```
-
-This will:
-- Export to `data/website_name/crawl_TIMESTAMP.jsonl`
-- Skip database to avoid storage costs
-- Ideal for large-scale production scrapes
-
-**Verification Checklist:**
-1. **Check extracted content quality**:
-   ```bash
-   source .venv/bin/activate
-   ./scrapai show website_name --limit 5
-   ```
-2. **Verify article vs navigation extraction**:
-   - Look for actual article titles (not "Latest News" or section names)
-   - Confirm substantial content length (not just navigation snippets)
-   - Check for proper metadata (author, date, etc.)
-
-3. **If spider extracts wrong content**:
-   - **DELETE the spider**: `source .venv/bin/activate && echo "y" | ./scrapai spiders delete website_name`
-   - **Re-analyze the site structure** (Phase 1)
-   - **Refine the rules** (Phase 2)
-   - **Re-import and test** (Phases 3-4)
 
 4. **Common fixes for wrong extraction**:
    - Make the `allow` pattern more specific for articles (NOT the deny list)
@@ -694,57 +741,218 @@ Assistant: [runs export command and provides file path]
 
 ## Extractor Options
 
-**🚨 CRITICAL: DEFAULT EXTRACTION APPROACH 🚨**
+### Custom Selector Extraction (MANDATORY)
 
-**ALWAYS use simple extractors by default. NEVER use Playwright custom configuration unless explicitly requested.**
+**🚨 CRITICAL: Custom selectors are REQUIRED for all spiders. Generic extractors are disabled.**
 
-**Default Behavior (Use This Unless User Says Otherwise):**
-- Use the standard extractor order: `["newspaper", "trafilatura", "playwright"]`
-- **DO NOT configure** `PLAYWRIGHT_WAIT_SELECTOR`, `PLAYWRIGHT_DELAY`, `INFINITE_SCROLL`, or other Playwright customizations
-- Let the smart extractors handle content automatically
-- Simple spiders with just URL rules (allow/deny patterns)
+**Extract ANY fields from ANY page type** using custom CSS selectors.
 
-**Only Use Playwright Custom Configuration When:**
-- User explicitly requests "wait for selector" or "add delay"
-- User explicitly requests "infinite scroll" or "scroll down"
-- User mentions JavaScript delays or specific elements to wait for
-- User says the site needs browser rendering with custom settings
+**Why custom selectors:**
+- **Precision**: Target exact elements, no guessing
+- **Flexibility**: Extract ANY field (prices, ratings, specs, votes, views, etc.)
+- **Reliability**: Always get the right content, not navigation/sidebar/footer
+- **Universal**: Works with any page type (articles, products, forums, profiles, events)
+- **Flexible storage**: Standard fields (title/author/content/date) + unlimited custom fields in metadata
 
-**Default Spider Structure (No Custom Extractors):**
+#### **Discovery Workflow:**
+
+**Step 1: Fetch and Inspect Article HTML**
+```bash
+# Use inspector with CF bypass to get full rendered HTML
+source .venv/bin/activate
+bin/inspector --url https://example.com/article-url --cloudflare
+```
+
+**Step 2: Analyze HTML Structure**
+
+Use the selector analyzer tool to discover selectors:
+
+```bash
+# Analyze HTML and get selector suggestions
+bin/analyze_selectors data/example_com/analysis/page.html
+```
+
+This will show:
+- All h1/h2 titles with their CSS classes
+- Content containers sorted by size
+- Date elements
+- Author elements
+
+**Alternative: Manual Analysis with BeautifulSoup**
+
+If you need custom analysis:
+
+```python
+from bs4 import BeautifulSoup
+
+with open('data/example_com/analysis/page.html') as f:
+    soup = BeautifulSoup(f.read(), 'lxml')
+
+# Find title (look for h1, h2 tags)
+print("=== TITLES ===")
+for tag in ['h1', 'h2']:
+    for el in soup.find_all(tag):
+        classes = '.'.join(el.get('class', []))
+        print(f"{tag}.{classes}: {el.get_text()[:60]}")
+
+# Find content containers (look for article, div with content/body classes)
+print("\n=== CONTENT CONTAINERS ===")
+for el in soup.find_all(['article', 'div', 'section']):
+    classes = el.get('class', [])
+    class_str = '.'.join(classes)
+    if any(word in str(classes).lower() for word in ['article', 'content', 'body', 'text', 'post']):
+        text_len = len(el.get_text(strip=True))
+        print(f"{el.name}.{class_str}: {text_len} chars")
+
+# Find date elements
+print("\n=== DATES ===")
+for el in soup.find_all(['time', 'span', 'div']):
+    classes = el.get('class', [])
+    if any(word in str(classes).lower() for word in ['date', 'time', 'published']):
+        print(f"{el.name}.{'.'.join(classes)}: {el.get_text()[:30]}")
+
+# Find author elements
+print("\n=== AUTHORS ===")
+for el in soup.find_all(['span', 'div', 'a']):
+    classes = el.get('class', [])
+    if any(word in str(classes).lower() for word in ['author', 'byline', 'writer']):
+        print(f"{el.name}.{'.'.join(classes)}: {el.get_text()[:30]}")
+```
+
+**Step 3: Test Selectors**
+
+Use the analyzer to test each selector:
+
+```bash
+# Test title selector
+bin/analyze_selectors data/example_com/analysis/page.html --test "h1.article-title"
+
+# Test content selector
+bin/analyze_selectors data/example_com/analysis/page.html --test "div.article-body"
+
+# Test date selector
+bin/analyze_selectors data/example_com/analysis/page.html --test "time.published-date"
+```
+
+This shows:
+- How many elements match
+- The text content of each match
+- Whether it's the right element
+
+**Step 4: Create Spider with Custom Selectors**
+
+**Example 1: News Article**
 ```json
 {
-  "name": "spider_name",
-  "allowed_domains": ["domain.com"],
-  "start_urls": ["https://domain.com"],
-  "rules": [
-    {
-      "allow": ["patterns for content"],
-      "deny": ["patterns to exclude"],
-      "callback": "parse_article",
-      "follow": false,
-      "priority": 100
-    }
-  ],
+  "name": "news_spider",
   "settings": {
-    "DOWNLOAD_DELAY": 2,
-    "CONCURRENT_REQUESTS": 3,
-    "EXTRACTOR_ORDER": ["newspaper", "trafilatura", "playwright"]
+    "CUSTOM_SELECTORS": {
+      "title": "h1.article-title",
+      "author": "span.author-name",
+      "content": "div.article-body",
+      "date": "time.published-date",
+      "category": "a.category-link",
+      "tags": "div.tags a"
+    }
   }
 }
 ```
 
-**Notice:** No `PLAYWRIGHT_WAIT_SELECTOR`, no `PLAYWRIGHT_DELAY`, no `INFINITE_SCROLL` - just simple rules!
+**Example 2: E-commerce Product**
+```json
+{
+  "name": "product_spider",
+  "settings": {
+    "CUSTOM_SELECTORS": {
+      "title": "h1.product-name",
+      "content": "div.product-description",
+      "price": "span.price-value",
+      "rating": "div.star-rating",
+      "reviews_count": "span.review-count",
+      "stock": "span.availability",
+      "brand": "div.brand-name",
+      "sku": "span.product-sku",
+      "images": "div.product-images img"
+    }
+  }
+}
+```
 
----
+**Example 3: Forum Thread**
+```json
+{
+  "name": "forum_spider",
+  "settings": {
+    "CUSTOM_SELECTORS": {
+      "title": "h1.thread-title",
+      "author": "span.username",
+      "content": "div.post-content",
+      "date": "time.post-date",
+      "upvotes": "span.vote-count",
+      "replies_count": "span.reply-count",
+      "views": "span.view-count"
+    }
+  }
+}
+```
 
-The system uses a **Smart Extractor** that tries multiple strategies in order. You can configure the order via `EXTRACTOR_ORDER` in settings.
+#### **How It Works:**
+1. **Custom selectors are mandatory** - must be provided in spider settings
+2. **Extraction**: Uses BeautifulSoup with your CSS selectors
+3. **Standard fields**: title, author, content, date → mapped to main columns in database
+4. **ANY other field**: stored in metadata JSON (price, rating, category, tags, etc.)
 
-**Available Strategies:**
-1.  `newspaper`: Uses `newspaper4k` on the static HTML (Fast, Default).
-2.  `trafilatura`: Uses `trafilatura` on the static HTML (Good for text-heavy sites).
-3.  `playwright`: Uses a headless browser to fetch rendered HTML, then extracts with `trafilatura` (Slow, handles JS).
+**You can extract ANYTHING:**
+```json
+{
+  "CUSTOM_SELECTORS": {
+    "title": "h1.product-name",
+    "price": "span.price-value",
+    "rating": "div.star-rating",
+    "stock": "span.availability",
+    "category": "a.breadcrumb:last-child",
+    "reviews_count": "span.review-count",
+    "brand": "div.brand-name",
+    "sku": "span.product-sku"
+  }
+}
+```
 
-**Default Order:** `["newspaper", "trafilatura", "playwright"]`
+**Storage:**
+- `title`, `author`, `content`, `date` → Standard database columns (always available)
+- Everything else → `metadata` JSON column (flexible, any structure)
+
+#### **Always Required:**
+- Custom selectors are mandatory for ALL spiders
+- No exceptions - every spider needs CUSTOM_SELECTORS configured
+
+#### **Selector Discovery Principles:**
+
+1. **Look for the MAIN content element** - not navigation, sidebars, or related articles
+2. **Verify uniqueness** - selector should match ONE element per page
+3. **Use specific classes** - prefer `.article-title` over generic `.title`
+4. **Test on multiple articles** - ensure selector works across different pages
+5. **Prefer semantic tags** - `<article>`, `<time>`, `<h1>` when available
+6. **Check text length** - content should be substantial (>100 chars for title, >500 for content)
+7. **Avoid dynamic classes** - skip classes with random strings or IDs
+
+**Common Mistakes:**
+- ❌ Using selector that matches multiple elements (gets first one, often wrong)
+- ❌ Using selector from navigation/sidebar/footer (not main content)
+- ❌ Using overly generic selectors like `div.text` or `span.content`
+- ❌ Not testing the selector - verify it finds the right element!
+- ❌ Guessing selectors without analyzing actual HTML
+
+### Generic Extractors (DISABLED)
+
+**🚨 Generic extractors (newspaper, trafilatura) are DISABLED.**
+
+**Why disabled:**
+- Unreliable: Pick up navigation, sidebars, related articles
+- Not flexible: Limited to article-like content only
+- Guesswork: Use heuristics that often fail
+
+**You MUST use CUSTOM_SELECTORS for all spiders.**
 
 ### Choosing Extractor Order
 
@@ -967,9 +1175,20 @@ bin/inspector --url https://americafirstpolicy.com/issues/energy --cloudflare
 **How It Works:**
 1. Spider opens: Starts persistent nodriver browser (visible, not headless)
 2. First request: Navigates to URL and solves Cloudflare challenge
-3. Subsequent requests: Reuses verified session (no additional CF challenges)
-4. Content extraction: Waits for main content selector, then extracts HTML immediately
-5. Spider closes: Closes browser and cleans up resources
+3. Post-CF wait: Waits for full page render (CF_POST_DELAY + 3s additional)
+4. Subsequent requests: Reuses verified session (no additional CF challenges)
+5. Page stabilization: Waits 2s for JavaScript to start executing
+6. Content loading: If CF_WAIT_SELECTOR set, waits for that element + 2s additional
+7. HTML verification: Checks content size, waits longer if skeleton HTML detected
+8. Content extraction: Returns fully-rendered HTML to extractors
+9. Spider closes: Closes browser and cleans up resources
+
+**Wait Times (configurable):**
+- Initial page load: 2 seconds
+- After selector found: 2 seconds additional
+- No selector: 5 seconds total wait
+- Small HTML detected: 5 seconds additional
+- Post-CF verification: CF_POST_DELAY + 3 seconds
 
 **Preventing Title Contamination:**
 The persistent browser session can cause title mismatches if "Related Articles" sections load before HTML extraction. To prevent this:
