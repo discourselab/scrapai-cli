@@ -71,6 +71,7 @@ You MUST complete EVERY step of EVERY phase before proceeding to the next phase.
 **COMMAND EXECUTION RULES:**
 - **NEVER chain multiple operations together** (except venv activation)
 - **NEVER use `grep`, `rg`, `awk`, `sed`, `head`, `tail`, or pipes (`|`) in Bash** - use the dedicated Grep, Read, and Glob tools instead
+- **NEVER use `mkdir` to create directories** - inspector automatically creates `data/<site>/analysis/` directory structure
 - **ALWAYS run operations ONE AT A TIME in separate bash calls**
 - **OK to use: `source .venv/bin/activate && <single command>`** (venv + one command is acceptable)
 - **WAIT for each command to complete before running the next**
@@ -111,15 +112,13 @@ source .venv/bin/activate && cat data/site/urls.txt
 - Take time to be thorough - quality over speed
 
 **STATUS MARKING RULE:**
-ONLY mark queue items as complete (`source .venv/bin/activate && ./scrapai queue complete <id> --project <name>`) when:
+ONLY mark queue items as complete (`source .venv/bin/activate && ./scrapai queue complete <id>`) when:
 1. Phase 1: Full analysis documented in sections.md
 2. Phase 2: All section rules created and consolidated into final_spider.json
 3. Phase 3: Spider successfully imported to database
 4. Phase 4: Test crawl run and results verified with `./scrapai show <spider> --project <name>`
 
 If ANY phase is incomplete or test fails, DO NOT mark as complete.
-
-**CRITICAL: ALWAYS include `--project <name>` with queue complete command.**
 
 ---
 
@@ -175,6 +174,17 @@ See `docs/extractors.md` for full selector documentation, examples, and discover
 
 #### Phase 3: Import
 
+**CRITICAL: Include source_url in your spider JSON**
+When processing from queue, ALWAYS include the original queue URL as `"source_url"` in your `final_spider.json`:
+```json
+{
+  "name": "spider_name",
+  "source_url": "https://original-queue-url.com",
+  "allowed_domains": [...],
+  "start_urls": [...]
+}
+```
+
 **ALWAYS specify --project. Read `docs/projects.md` for why this is mandatory.**
 ```bash
 source .venv/bin/activate && ./scrapai spiders import data/website/analysis/final_spider.json --project <project_name>
@@ -215,8 +225,8 @@ source .venv/bin/activate && ./scrapai crawl website_name --project <name>
 Quick reference:
 - `source .venv/bin/activate && ./scrapai queue add <url> --project <name> [-m "instruction"] [--priority N]` - Add to queue
 - `source .venv/bin/activate && ./scrapai queue next --project <name>` - Claim next item
-- `source .venv/bin/activate && ./scrapai queue complete <id> --project <name>` - Mark complete
-- `source .venv/bin/activate && ./scrapai queue fail <id> --project <name> [-m "error"]` - Mark failed
+- `source .venv/bin/activate && ./scrapai queue complete <id>` - Mark complete (ID is unique, no --project needed)
+- `source .venv/bin/activate && ./scrapai queue fail <id> [-m "error"]` - Mark failed (ID is unique, no --project needed)
 
 ### 3. CLI Reference
 
@@ -231,7 +241,7 @@ Quick reference:
 **Spider Management:**
 - `source .venv/bin/activate && ./scrapai spiders list --project <name>` - List spiders in project (**always specify --project**)
 - `source .venv/bin/activate && ./scrapai spiders import <file> --project <name>` - Import/Update spider (**always specify --project**)
-- `source .venv/bin/activate && ./scrapai spiders delete <name> --project <name>` - Delete a spider (**always specify --project**)
+- `source .venv/bin/activate && ./scrapai spiders delete <name> --project <name>` - Delete spider from project (**always specify --project**)
 
 **Crawling:**
 - `source .venv/bin/activate && ./scrapai crawl <name> --project <name>` - Production scrape (**always specify --project**)
@@ -245,12 +255,13 @@ Quick reference:
 
 **Queue Management (Optional):**
 - `source .venv/bin/activate && ./scrapai queue add <url> --project <name> [-m "instruction"] [--priority N]` - Add to queue (**always specify --project**)
-- `source .venv/bin/activate && ./scrapai queue list --project <name> [--status pending|processing|completed|failed]` - List items (**always specify --project**)
+- `source .venv/bin/activate && ./scrapai queue bulk <file.csv|file.json> --project <name> [--priority N]` - Bulk add from CSV/JSON (**always specify --project**)
+- `source .venv/bin/activate && ./scrapai queue list --project <name> [--status pending|processing|completed|failed] [--count]` - List items or get count (**always specify --project**)
 - `source .venv/bin/activate && ./scrapai queue next --project <name>` - Claim next pending item (**always specify --project**)
-- `source .venv/bin/activate && ./scrapai queue complete <id> --project <name>` - Mark completed (**always specify --project**)
-- `source .venv/bin/activate && ./scrapai queue fail <id> --project <name> [-m "error"]` - Mark failed (**always specify --project**)
-- `source .venv/bin/activate && ./scrapai queue retry <id> --project <name>` - Retry failed item (**always specify --project**)
-- `source .venv/bin/activate && ./scrapai queue remove <id> --project <name>` - Remove from queue (**always specify --project**)
+- `source .venv/bin/activate && ./scrapai queue complete <id>` - Mark completed (ID is globally unique)
+- `source .venv/bin/activate && ./scrapai queue fail <id> [-m "error"]` - Mark failed (ID is globally unique)
+- `source .venv/bin/activate && ./scrapai queue retry <id>` - Retry failed item (ID is globally unique)
+- `source .venv/bin/activate && ./scrapai queue remove <id>` - Remove from queue (ID is globally unique)
 - `source .venv/bin/activate && ./scrapai queue cleanup --completed --force --project <name>` - Remove all completed (**always specify --project**)
 - `source .venv/bin/activate && ./scrapai queue cleanup --failed --force --project <name>` - Remove all failed (**always specify --project**)
 - `source .venv/bin/activate && ./scrapai queue cleanup --all --force --project <name>` - Remove all completed and failed (**always specify --project**)
@@ -261,6 +272,8 @@ Quick reference:
 - `source .venv/bin/activate && ./scrapai show <spider_name> --project <name> --url pattern` - Filter by URL (**always specify --project**)
 - `source .venv/bin/activate && ./scrapai show <spider_name> --project <name> --text "climate"` - Search title or content (**always specify --project**)
 - `source .venv/bin/activate && ./scrapai show <spider_name> --project <name> --title "climate"` - Search titles only (**always specify --project**)
+
+Note: `--project` is technically optional for `show` and `export` commands (defaults to first match), but **strongly recommended** to avoid confusion when spider names exist in multiple projects.
 
 **Data Export:**
 

@@ -17,6 +17,11 @@ The most common mistake is creating spider rules without complete site analysis.
 
 **MANDATORY: Follow this systematic analysis process COMPLETELY before Phase 2:**
 
+**IMPORTANT: Directory Structure**
+- **NEVER use `mkdir` to create directories** - inspector automatically creates `data/<site>/analysis/` directory
+- Inspector saves `page.html` and `analysis.json` in the correct location
+- Just run inspector directly - no setup needed
+
 ### Step 1: Extract ALL URLs from Homepage
 
 ```bash
@@ -455,12 +460,12 @@ Debugging both extraction AND navigation together is difficult. Instead:
    source .venv/bin/activate && ./scrapai spiders import data/website/analysis/test_spider.json --project <project_name>
    ```
    ```bash
-   source .venv/bin/activate && ./scrapai crawl website_name --limit 5
+   source .venv/bin/activate && ./scrapai crawl website_name --limit 5 --project <project_name>
    ```
 
 4. **Verify extraction quality:**
    ```bash
-   source .venv/bin/activate && ./scrapai show website_name --limit 5
+   source .venv/bin/activate && ./scrapai show website_name --limit 5 --project <project_name>
    ```
 
 5. **Check quality:**
@@ -483,7 +488,7 @@ Debugging both extraction AND navigation together is difficult. Instead:
 
 1. **Delete test spider:**
    ```bash
-   source .venv/bin/activate && echo "y" | ./scrapai spiders delete website_name
+   source .venv/bin/activate && echo "y" | ./scrapai spiders delete website_name --project <project_name>
    ```
 
 2. **Import final spider with navigation rules:**
@@ -493,12 +498,12 @@ Debugging both extraction AND navigation together is difficult. Instead:
 
 3. **Test with navigation enabled:**
    ```bash
-   source .venv/bin/activate && ./scrapai crawl website_name --limit 5
+   source .venv/bin/activate && ./scrapai crawl website_name --limit 5 --project <project_name>
    ```
 
 4. **Verify results:**
    ```bash
-   source .venv/bin/activate && ./scrapai show website_name --limit 5
+   source .venv/bin/activate && ./scrapai show website_name --limit 5 --project <project_name>
    ```
 
 **Common issues at this stage:**
@@ -512,7 +517,7 @@ Debugging both extraction AND navigation together is difficult. Instead:
 **Production Mode (after verification):**
 ```bash
 # Full scrape - exports to files, no database cost
-source .venv/bin/activate && ./scrapai crawl website_name
+source .venv/bin/activate && ./scrapai crawl website_name --project <project_name>
 ```
 
 ### Before Marking Queue Item as Complete
@@ -522,7 +527,7 @@ source .venv/bin/activate && ./scrapai crawl website_name
 - Phase 2 completed: All rules created and consolidated in `final_spider.json`
 - Phase 3 completed: Spider imported successfully to database
 - Phase 4 completed: Test crawl run with `--limit 5`
-- Results verified: Run `./scrapai show website_name` and confirmed quality content
+- Results verified: Run `./scrapai show website_name --project <project_name>` and confirmed quality content
 - No errors: Spider extracted actual articles, not navigation pages
 
 **ONLY IF ALL ABOVE ARE TRUE**, mark as complete:
