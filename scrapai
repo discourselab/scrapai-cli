@@ -118,6 +118,7 @@ def main():
     # spiders delete
     delete_parser = spiders_subparsers.add_parser('delete', help='Delete a spider')
     delete_parser.add_argument('name', help='Spider name')
+    delete_parser.add_argument('--project', help='Project name (optional - if not specified, deletes first match)')
     delete_parser.add_argument('--force', '-f', action='store_true', help='Skip confirmation prompt')
 
     # queue command for queue management
@@ -137,6 +138,7 @@ def main():
     list_parser.add_argument('--status', help='Filter by status (pending, processing, completed, failed)')
     list_parser.add_argument('--limit', type=int, default=5, help='Limit number of items to show (default: 5)')
     list_parser.add_argument('--all', action='store_true', help='Show all items including failed and completed')
+    list_parser.add_argument('--count', action='store_true', help='Show only the count of items')
 
     # queue next
     next_parser = queue_subparsers.add_parser('next', help='Get next item from queue (atomic claim)')
@@ -168,10 +170,10 @@ def main():
     cleanup_parser.add_argument('--force', '-f', action='store_true', help='Skip confirmation prompt')
 
     # queue bulk
-    bulk_parser = queue_subparsers.add_parser('bulk', help='Bulk add URLs from JSON file')
-    bulk_parser.add_argument('file', help='JSON file containing URLs (array of objects with "url" field)')
+    bulk_parser = queue_subparsers.add_parser('bulk', help='Bulk add URLs from JSON or CSV file')
+    bulk_parser.add_argument('file', help='JSON or CSV file containing URLs (JSON: array of objects with "url" field, CSV: columns "url", optional "name"/"custom_instruction", "priority")')
     bulk_parser.add_argument('--project', default='default', help='Project name (default: default)')
-    bulk_parser.add_argument('--priority', type=int, default=5, help='Priority for all items (default: 5)')
+    bulk_parser.add_argument('--priority', type=int, default=5, help='Default priority for items without priority column (default: 5)')
 
     # db command for database operations
     db_parser = subparsers.add_parser('db', help='Database management')
@@ -186,6 +188,7 @@ def main():
     # show command
     show_parser = subparsers.add_parser('show', help='Show scraped articles from database')
     show_parser.add_argument('spider_name', help='Spider name to show articles from')
+    show_parser.add_argument('--project', help='Project name (optional - if not specified, shows first match)')
     show_parser.add_argument('--limit', '-l', type=int, default=5, help='Number of articles to show (default: 5)')
     show_parser.add_argument('--url', help='Show only articles containing this URL pattern')
     show_parser.add_argument('--text', '-t', help='Show only articles containing this text in title or content')
@@ -194,6 +197,7 @@ def main():
     # export command
     export_parser = subparsers.add_parser('export', help='Export scraped articles from database')
     export_parser.add_argument('spider_name', help='Spider name to export articles from')
+    export_parser.add_argument('--project', help='Project name (optional - if not specified, exports first match)')
     export_parser.add_argument('--format', '-f', choices=['csv', 'json', 'jsonl', 'parquet'], required=True, help='Export format (csv, json, jsonl, or parquet)')
     export_parser.add_argument('--output', '-o', help='Output file path (default: data/<spider_name>_export.<format>)')
     export_parser.add_argument('--limit', '-l', type=int, help='Limit number of articles to export')
@@ -411,7 +415,11 @@ def handle_spiders_command(args):
                 created = s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else 'Unknown'
                 updated = s.updated_at.strftime('%Y-%m-%d %H:%M') if hasattr(s, 'updated_at') and s.updated_at else created
                 project_tag = f"[{s.project}]" if hasattr(s, 'project') and s.project else "[default]"
+                source_url = s.source_url if hasattr(s, 'source_url') and s.source_url else None
+
                 print(f"  • {s.name} {project_tag} (Active: {s.active}) - Created: {created}, Updated: {updated}")
+                if source_url:
+                    print(f"    Source: {source_url}")
         else:
             if hasattr(args, 'project') and args.project:
                 print(f"No spiders found in project '{args.project}'.")
@@ -432,6 +440,12 @@ def handle_spiders_command(args):
             # Get project name from args
             project_name = args.project if hasattr(args, 'project') else 'default'
 
+            # Validate source_url is provided
+            if 'source_url' not in data or not data['source_url']:
+                print(f"❌ Error: 'source_url' is required in spider JSON")
+                print(f"   Add the original website URL: \"source_url\": \"https://example.com\"")
+                return
+
             # Check if spider exists
             existing = db.query(Spider).filter(Spider.name == data['name']).first()
             if existing:
@@ -440,6 +454,7 @@ def handle_spiders_command(args):
                 # For now, let's just update the main fields and replace rules
                 existing.allowed_domains = data['allowed_domains']
                 existing.start_urls = data['start_urls']
+                existing.source_url = data.get('source_url')  # Optional field
                 existing.project = project_name
 
                 # Clear old rules and settings
@@ -451,6 +466,7 @@ def handle_spiders_command(args):
                     name=data['name'],
                     allowed_domains=data['allowed_domains'],
                     start_urls=data['start_urls'],
+                    source_url=data.get('source_url'),  # Optional field
                     project=project_name
                 )
                 db.add(spider)
@@ -488,19 +504,29 @@ def handle_spiders_command(args):
             print(f"❌ Error importing spider: {e}")
             
     elif args.spiders_command == 'delete':
-        spider = db.query(Spider).filter(Spider.name == args.name).first()
+        query = db.query(Spider).filter(Spider.name == args.name)
+
+        # Filter by project if specified
+        if hasattr(args, 'project') and args.project:
+            query = query.filter(Spider.project == args.project)
+            project_msg = f" in project '{args.project}'"
+        else:
+            project_msg = ""
+
+        spider = query.first()
+
         if spider:
             if not args.force:
-                confirm = input(f"Are you sure you want to delete spider '{args.name}'? (y/N): ")
+                confirm = input(f"Are you sure you want to delete spider '{args.name}'{project_msg}? (y/N): ")
                 if confirm.lower() != 'y':
                     print("❌ Delete cancelled")
                     return
-            
+
             db.delete(spider)
             db.commit()
-            print(f"🗑️  Spider '{args.name}' deleted!")
+            print(f"🗑️  Spider '{args.name}'{project_msg} deleted!")
         else:
-            print(f"❌ Spider '{args.name}' not found.")
+            print(f"❌ Spider '{args.name}'{project_msg} not found.")
 
 def handle_queue_command(args):
     """Handle queue management commands"""
@@ -562,6 +588,13 @@ def handle_queue_command(args):
         elif not args.all:
             # By default, exclude failed and completed items (show only pending and processing)
             query = query.filter(CrawlQueue.status.in_(['pending', 'processing']))
+
+        # If --count flag is set, just return the count
+        if args.count:
+            count = query.count()
+            status_msg = f" ({args.status})" if args.status else ""
+            print(f"{count}")
+            return
 
         query = query.order_by(CrawlQueue.priority.desc(), CrawlQueue.created_at.asc())
 
@@ -766,21 +799,50 @@ def handle_queue_command(args):
         print(f"✅ Removed {len(items)} items from queue")
 
     elif args.queue_command == 'bulk':
-        # Bulk add URLs from JSON file
+        # Bulk add URLs from JSON or CSV file
         import json
+        import csv
+        from pathlib import Path
+
+        file_path = Path(args.file)
 
         try:
-            with open(args.file, 'r') as f:
-                data = json.load(f)
+            # Detect file format by extension
+            if file_path.suffix.lower() == '.csv':
+                # Parse CSV file
+                with open(args.file, 'r', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    data = list(reader)
+
+                    # Validate CSV has 'url' column
+                    if not data or 'url' not in data[0]:
+                        print("❌ CSV file must have a 'url' column")
+                        return
+
+            elif file_path.suffix.lower() == '.json':
+                # Parse JSON file
+                with open(args.file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+                if not isinstance(data, list):
+                    print("❌ JSON file must contain an array of objects")
+                    return
+            else:
+                print(f"❌ Unsupported file format: {file_path.suffix}")
+                print("   Supported formats: .json, .csv")
+                return
+
         except FileNotFoundError:
             print(f"❌ File not found: {args.file}")
             return
         except json.JSONDecodeError as e:
             print(f"❌ Invalid JSON: {e}")
             return
-
-        if not isinstance(data, list):
-            print("❌ JSON file must contain an array of objects")
+        except csv.Error as e:
+            print(f"❌ Invalid CSV: {e}")
+            return
+        except Exception as e:
+            print(f"❌ Error reading file: {e}")
             return
 
         added = 0
@@ -803,12 +865,25 @@ def handle_queue_command(args):
                 skipped += 1
                 continue
 
+            # Get custom instruction from 'name' or 'custom_instruction' field
+            custom_instruction = item.get('custom_instruction') or item.get('name')
+
+            # Get priority from item or use default
+            item_priority = item.get('priority')
+            if item_priority is not None:
+                try:
+                    item_priority = int(item_priority)
+                except (ValueError, TypeError):
+                    item_priority = args.priority
+            else:
+                item_priority = args.priority
+
             # Add new item to queue
             queue_item = CrawlQueue(
                 project_name=args.project,
                 website_url=url,
-                custom_instruction=item.get('name'),  # Use name as instruction if available
-                priority=args.priority
+                custom_instruction=custom_instruction,
+                priority=item_priority
             )
             db.add(queue_item)
             added += 1
@@ -819,7 +894,7 @@ def handle_queue_command(args):
         print(f"   Added: {added}")
         print(f"   Skipped (duplicates/invalid): {skipped}")
         print(f"   Project: {args.project}")
-        print(f"   Priority: {args.priority}")
+        print(f"   Format: {file_path.suffix.upper()}")
 
 def handle_db_command(args):
     """Handle database management commands"""
@@ -857,9 +932,18 @@ def handle_show_command(args):
     db = next(get_db())
 
     # Find spider by name
-    spider = db.query(Spider).filter(Spider.name == args.spider_name).first()
+    query = db.query(Spider).filter(Spider.name == args.spider_name)
+
+    # Filter by project if specified
+    if hasattr(args, 'project') and args.project:
+        query = query.filter(Spider.project == args.project)
+        project_msg = f" in project '{args.project}'"
+    else:
+        project_msg = ""
+
+    spider = query.first()
     if not spider:
-        print(f"❌ Spider '{args.spider_name}' not found in database.")
+        print(f"❌ Spider '{args.spider_name}'{project_msg} not found in database.")
         return
 
     # Build query
@@ -928,9 +1012,18 @@ def handle_export_command(args):
     db = next(get_db())
 
     # Find spider by name
-    spider = db.query(Spider).filter(Spider.name == args.spider_name).first()
+    query = db.query(Spider).filter(Spider.name == args.spider_name)
+
+    # Filter by project if specified
+    if hasattr(args, 'project') and args.project:
+        query = query.filter(Spider.project == args.project)
+        project_msg = f" in project '{args.project}'"
+    else:
+        project_msg = ""
+
+    spider = query.first()
     if not spider:
-        print(f"❌ Spider '{args.spider_name}' not found in database.")
+        print(f"❌ Spider '{args.spider_name}'{project_msg} not found in database.")
         return
 
     # Build query

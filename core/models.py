@@ -10,6 +10,7 @@ class Spider(Base):
     name = Column(String, unique=True, index=True, nullable=False)
     allowed_domains = Column(JSON, nullable=False)
     start_urls = Column(JSON, nullable=False)
+    source_url = Column(String, nullable=True)  # Original URL from queue/request
     active = Column(Boolean, default=True)
     project = Column(String(255), default='default')
     created_at = Column(DateTime, default=datetime.utcnow)
