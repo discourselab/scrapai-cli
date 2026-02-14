@@ -75,7 +75,7 @@ class CloudflareDownloadHandler:
             logger.info("CloudflareDownloadHandler: No browser to close")
 
     def download_request(self, request: Request, spider) -> Deferred:
-        """Handle request by routing through persistent browser.
+        """Handle request by routing through persistent browser if CF enabled.
 
         Args:
             request: Scrapy request to download
@@ -84,6 +84,17 @@ class CloudflareDownloadHandler:
         Returns:
             Deferred that will fire with HtmlResponse or error
         """
+        # Check if Cloudflare mode is enabled for this spider
+        spider_settings = getattr(spider, 'custom_settings', {})
+        cf_enabled = spider_settings.get('CLOUDFLARE_ENABLED', False)
+
+        # If CF not enabled, use default Scrapy downloader
+        if not cf_enabled:
+            from scrapy.core.downloader.handlers.http11 import HTTP11DownloadHandler
+            handler = HTTP11DownloadHandler(self.crawler.settings, self.crawler)
+            return handler.download_request(request, spider)
+
+        # CF enabled - use browser
         dfd = Deferred()
 
         async def fetch_async():

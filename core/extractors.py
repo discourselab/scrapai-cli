@@ -246,35 +246,54 @@ class SmartExtractor:
 
     def extract(self, url: str, html: str, title_hint: str = None, include_html: bool = False) -> Optional[ScrapedArticle]:
         """
-        Attempt extraction using configured strategies.
-        Custom selectors are REQUIRED - no generic extraction fallback.
-        """
-        # Custom selectors are mandatory
-        if not self.custom_selectors:
-            logger.error(f"No custom selectors provided for {url}. Generic extraction disabled.")
-            logger.error("You must provide CUSTOM_SELECTORS in spider settings.")
-            return None
+        Attempt extraction using configured strategies in order.
 
-        # Extract using custom selectors
-        logger.info(f"Extracting {url} with custom selectors")
-        try:
-            result = CustomExtractor(self.custom_selectors).extract(url, html, title_hint, include_html)
-            if result:
-                logger.info(f"Successfully extracted {url} using custom selectors")
-                return result
-            else:
-                logger.error(f"Custom extraction failed for {url} - no content found")
-                return None
-        except Exception as e:
-            logger.error(f"Custom extraction error for {url}: {e}")
-            return None
+        If custom selectors are provided, tries 'custom' strategy first if in strategies list,
+        otherwise tries generic extractors (newspaper, trafilatura).
+        Falls back to next strategy if one fails.
+        """
+        # Build list of extractors to try based on strategies
+        extractors = []
+
+        for strategy in self.strategies:
+            if strategy == 'custom':
+                if self.custom_selectors:
+                    extractors.append(('custom', CustomExtractor(self.custom_selectors)))
+                else:
+                    logger.debug(f"Skipping 'custom' strategy - no custom selectors provided")
+            elif strategy == 'newspaper':
+                extractors.append(('newspaper', NewspaperExtractor()))
+            elif strategy == 'trafilatura':
+                extractors.append(('trafilatura', TrafilaturaExtractor()))
+            elif strategy == 'playwright':
+                # Playwright handled separately in async method
+                logger.debug(f"Skipping 'playwright' in sync extract (use extract_async)")
+
+        # Try each extractor in order
+        for name, extractor in extractors:
+            logger.info(f"Trying {name} extractor for {url}")
+            try:
+                result = extractor.extract(url, html, title_hint, include_html)
+                if result:
+                    logger.info(f"Successfully extracted {url} using {name}")
+                    return result
+                else:
+                    logger.debug(f"{name} extractor returned no result for {url}")
+            except Exception as e:
+                logger.debug(f"{name} extractor failed for {url}: {e}")
+
+        # All extractors failed
+        logger.error(f"All extractors failed for {url}")
+        return None
 
     async def extract_async(self, url: str, html: str, title_hint: str = None, include_html: bool = False,
                            wait_for_selector: str = None, additional_delay: float = 0,
                            enable_scroll: bool = False, max_scrolls: int = 5, scroll_delay: float = 1.0) -> Optional[ScrapedArticle]:
         """
-        Async version of extract method.
-        Custom selectors are REQUIRED - no generic extraction fallback.
+        Async version of extract method with Playwright support.
+
+        Tries each strategy in order, including Playwright for JS-rendered content.
+        Falls back to next strategy if one fails.
 
         Args:
             url: The URL of the page
@@ -287,25 +306,66 @@ class SmartExtractor:
             max_scrolls: Maximum number of scrolls to perform
             scroll_delay: Delay between scrolls in seconds
         """
-        # Custom selectors are mandatory
-        if not self.custom_selectors:
-            logger.error(f"No custom selectors provided for {url}. Generic extraction disabled.")
-            logger.error("You must provide CUSTOM_SELECTORS in spider settings.")
-            return None
+        # Try each strategy in order
+        for strategy in self.strategies:
+            if strategy == 'custom':
+                if self.custom_selectors:
+                    logger.info(f"Trying custom extractor for {url}")
+                    try:
+                        result = await asyncio.to_thread(CustomExtractor(self.custom_selectors).extract, url, html, title_hint, include_html)
+                        if result:
+                            logger.info(f"Successfully extracted {url} using custom")
+                            return result
+                        else:
+                            logger.debug(f"Custom extractor returned no result for {url}")
+                    except Exception as e:
+                        logger.debug(f"Custom extractor failed for {url}: {e}")
+                else:
+                    logger.debug(f"Skipping 'custom' strategy - no custom selectors provided")
 
-        # Extract using custom selectors
-        logger.info(f"Extracting {url} with custom selectors")
-        try:
-            result = await asyncio.to_thread(CustomExtractor(self.custom_selectors).extract, url, html, title_hint, include_html)
-            if result:
-                logger.info(f"Successfully extracted {url} using custom selectors")
-                return result
-            else:
-                logger.error(f"Custom extraction failed for {url} - no content found")
-                return None
-        except Exception as e:
-            logger.error(f"Custom extraction error for {url}: {e}")
-            return None
+            elif strategy == 'newspaper':
+                logger.info(f"Trying newspaper extractor for {url}")
+                try:
+                    result = await asyncio.to_thread(NewspaperExtractor().extract, url, html, title_hint, include_html)
+                    if result:
+                        logger.info(f"Successfully extracted {url} using newspaper")
+                        return result
+                    else:
+                        logger.debug(f"Newspaper extractor returned no result for {url}")
+                except Exception as e:
+                    logger.debug(f"Newspaper extractor failed for {url}: {e}")
+
+            elif strategy == 'trafilatura':
+                logger.info(f"Trying trafilatura extractor for {url}")
+                try:
+                    result = await asyncio.to_thread(TrafilaturaExtractor().extract, url, html, title_hint, include_html)
+                    if result:
+                        logger.info(f"Successfully extracted {url} using trafilatura")
+                        return result
+                    else:
+                        logger.debug(f"Trafilatura extractor returned no result for {url}")
+                except Exception as e:
+                    logger.debug(f"Trafilatura extractor failed for {url}: {e}")
+
+            elif strategy == 'playwright':
+                logger.info(f"Trying playwright extractor for {url}")
+                try:
+                    result = await self._extract_with_playwright_async(
+                        url, title_hint, include_html,
+                        wait_for_selector, additional_delay,
+                        enable_scroll, max_scrolls, scroll_delay
+                    )
+                    if result:
+                        logger.info(f"Successfully extracted {url} using playwright")
+                        return result
+                    else:
+                        logger.debug(f"Playwright extractor returned no result for {url}")
+                except Exception as e:
+                    logger.debug(f"Playwright extractor failed for {url}: {e}")
+
+        # All extractors failed
+        logger.error(f"All extractors failed for {url}")
+        return None
 
     async def _extract_with_playwright_async(self, url: str, title_hint: str = None, include_html: bool = False,
                                             wait_for_selector: str = None, additional_delay: float = 0,

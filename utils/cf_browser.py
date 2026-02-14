@@ -85,7 +85,6 @@ class CloudflareBrowserClient:
                     logger.info(f"Found Playwright Chromium: {browser_path}")
 
         browser_args = [
-            '--no-sandbox',
             '--disable-dev-shm-usage',
         ]
 
