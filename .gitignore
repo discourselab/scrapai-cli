@@ -16,7 +16,7 @@ projects/*/logs/
 
 .DS_Store
 
-docs/
+# docs/
 skills/
 .agent/
 .agents/
