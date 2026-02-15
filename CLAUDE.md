@@ -8,25 +8,165 @@ Project-based Scrapy spider management for large-scale web scraping. Built for C
 
 **When asked to add any website, follow this Database-First Workflow:**
 
-### CRITICAL: ALWAYS SEQUENTIAL, NEVER PARALLEL
+### CRITICAL: Adaptive Queue Processing (Parallel or Sequential)
 
-**ABSOLUTE REQUIREMENT: Process ONE website at a time. NEVER use subagents, background tasks, or parallel processing.**
+**When user requests processing multiple websites:**
+
+**Step 1: Detect capabilities and inform user**
+- Check if Task tool is available
+- **IMMEDIATELY tell user which mode you're using:**
+  - ✅ "Task tool available - using parallel processing (max 5 concurrent)"
+  - ℹ️ "Task tool not available - using sequential processing"
+
+**Example User Experience:**
+```
+User: "Process next 12 sites from brown_v2 queue"
+
+Agent: "✓ Task tool available - using parallel processing (max 5 concurrent)"
+Agent: "Total: 12 sites → Processing in 3 batches (5 + 5 + 2)"
+Agent: ""
+Agent: "📦 Batch 1/3: Processing 5 sites in parallel..."
+Agent: "  ⏳ climate.news - Phase 1 started"
+Agent: "  ⏳ factcheck.org - Phase 1 started"
+Agent: "  ⏳ politifact.com - Phase 1 started"
+Agent: "  ⏳ snopes.com - Phase 1 started"
+Agent: "  ⏳ fullfact.org - Phase 1 started"
+Agent: ""
+[... progress updates ...]
+Agent: "  ✓ factcheck.org completed"
+Agent: "  ✓ snopes.com completed"
+Agent: "  ✗ climate.news failed: extraction quality poor"
+Agent: "  ✓ politifact.com completed"
+Agent: "  ✓ fullfact.org completed"
+Agent: ""
+Agent: "📊 Batch 1 complete: 4 succeeded, 1 failed"
+Agent: ""
+Agent: "📦 Batch 2/3: Processing next 5 sites in parallel..."
+[... continues ...]
+```
+
+**Step 2: Process websites with frequent updates**
+
+**🚨 ABSOLUTE LIMITS (NEVER EXCEED):**
+- **MAXIMUM 5 websites in parallel at any time** (HARD LIMIT - NO EXCEPTIONS)
+- If user requests more than 5, process in batches of 5
+- Example: "Process 12 sites" → Batch 1 (5 parallel) → Batch 2 (5 parallel) → Batch 3 (2 parallel)
+
+**If Task tool available (Parallel Mode):**
+1. **Announce batch:** "Batch 1: Processing 5 sites in parallel..."
+2. **Claim items:** Get next 5 items from queue (max 5!)
+3. **Spawn Task agents:** One Task agent per website (max 5 concurrent)
+4. **Give regular updates:** Report progress as agents work
+   - "Started: climate.news (Phase 1)"
+   - "Progress: factcheck.org completed Phase 2"
+   - "Completed: snopes.com ✓"
+5. **Wait for batch:** All 5 Task agents complete before next batch
+6. **Report results:** "Batch 1: 4 succeeded, 1 failed"
+7. **Repeat:** If more items remain, process next batch of max 5
+
+**If Task tool NOT available (Sequential Mode):**
+1. **Announce mode:** "Processing sequentially (one at a time)..."
+2. **Process each website:** Claim → Phase 1-4 → Mark complete
+3. **Give updates after each phase:** "climate.news: Completed Phase 2"
+4. **Report completion:** "Completed: climate.news ✓ (3/10 done)"
+5. **Repeat:** Until all requested sites are processed
+
+**CRITICAL RULES (APPLY TO BOTH MODES):**
+- **Phases within each website MUST be sequential:** Phase 1 → 2 → 3 → 4 (NEVER parallel)
+- **Each website is independent:** Different data directories, different spiders
+- **Always specify --project:** ALL spider, queue, crawl, show, export commands need --project
+- **Update user frequently:** Don't go silent - tell user what's happening every 1-2 minutes
+- **Report failures immediately:** If a site fails, tell user right away with error details
+
+**Why This Approach:**
+- Parallel: 3-5x faster when available, handles batch work efficiently
+- Sequential: Works everywhere, easier to debug, better visibility
+- Adaptive: Same command works with any AI agent, optimized automatically
+
+---
+
+### Task Agent Instructions (Parallel Mode Only)
+
+**When spawning Task agents for parallel processing:**
+
+**Task Agent Prompt (what to tell each Task agent):**
+```
+Process this website from the queue:
+
+Queue Item ID: <id>
+Website URL: <url>
+Project: <project_name>
+Custom Instructions: <custom_instruction if any>
+
+Complete the FULL workflow (Phases 1-4):
+1. Phase 1: Analysis & Section Documentation
+2. Phase 2: Rule Generation & Extraction Testing
+3. Phase 3: Prepare Spider Configuration (include source_url)
+4. Phase 4A: Test extraction quality (import test_spider, verify)
+5. Phase 4B: Import final spider
+
+When done, report:
+- Status: SUCCESS or FAILED
+- Spider name: <name>
+- Queue item ID: <id>
+- Summary: Brief description of what was completed or what failed
+- Any errors encountered
+
+Follow ALL instructions in CLAUDE.md for each phase.
+```
+
+**After Task agents complete:**
+1. **Collect results from each Task agent**
+2. **For each successful agent:**
+   - Mark queue item as complete: `queue complete <id>`
+   - Report to user: "✓ climate.news completed successfully"
+3. **For each failed agent:**
+   - Mark queue item as failed: `queue fail <id> -m "error description"`
+   - Report to user: "✗ factcheck.org failed: [error details]"
+4. **Summary report:** "Batch complete: 4/5 succeeded, 1/5 failed"
+
+---
+
+### CRITICAL: Allowed Tools and Commands
+
+**🚨 STRICT REQUIREMENT: Only use tools and commands available in this repository.**
+
+**ALLOWED - Repository Tools:**
+- `./scrapai` - Main CLI tool (spider management, queue, crawl, export, show)
+- `bin/inspector` - Website analysis and inspection tool
+- `bin/analyze_selectors` - CSS selector analysis tool (if needed)
+
+**ALLOWED - Claude Code Tools:**
+- **Read** - Read file contents (use instead of cat/head/tail)
+- **Write** - Write new files (use instead of echo >/cat <<EOF)
+- **Edit** - Edit existing files (use instead of sed/awk)
+- **Glob** - Find files by pattern (use instead of find/ls)
+- **Grep** - Search file contents (use instead of grep/rg)
+- **Bash** - Execute shell commands (ONLY for git, npm, docker, etc.)
+- **Task** - Spawn subagents for parallel processing (when available)
 
 **FORBIDDEN - DO NOT USE:**
-- Task tool / subagents (`Task`, `subagent_type`, etc.)
-- Background tasks (`run_in_background=true`)
-- Parallel agents (multiple agents running simultaneously)
-- ANY form of concurrent processing
+- ❌ `fetch` - not available in this repo
+- ❌ `curl` - use bin/inspector instead
+- ❌ `wget` - use bin/inspector instead
+- ❌ `grep`, `rg`, `awk`, `sed` in Bash - use Grep tool instead
+- ❌ `cat`, `head`, `tail` in Bash - use Read tool instead
+- ❌ `find`, `ls` for searching - use Glob tool instead
+- ❌ `echo >`, `cat <<EOF` for files - use Write/Edit tools instead
+- ❌ `mkdir` - directories created automatically by inspector
+- ❌ Any external tools not listed in "ALLOWED" section
 
-**REQUIRED - ALWAYS DO THIS:**
-- Process one website at a time, start to finish
-- Claim queue items one at a time using `source .venv/bin/activate && ./scrapai queue next --project <name>`
-- Complete the FULL workflow for each website before moving to next
-- All work done directly by Claude Code (no delegation to subagents)
-- **ALWAYS specify `--project <name>` for ALL spider, queue, crawl, show, and export commands**
+**Why This Restriction:**
+- Ensures commands work in any environment
+- Prevents permission issues and missing dependencies
+- Uses optimized tools designed for the repo's workflow
+- Maintains consistency across different systems
 
-**Why Sequential Only:**
-- Easier to debug, better visibility, no file conflicts, simpler troubleshooting
+**If you need functionality not available:**
+- Ask the user first before attempting workarounds
+- Don't assume external tools are installed
+
+---
 
 ### 1. Setup (First Time Only)
 
@@ -74,6 +214,7 @@ source .venv/bin/activate
 You MUST complete EVERY step of EVERY phase before proceeding to the next phase.
 
 **COMMAND EXECUTION RULES:**
+- **ONLY use allowed tools** - See "Allowed Tools and Commands" section above (NO fetch, curl, wget, etc.)
 - **NEVER chain multiple operations together** (except venv activation)
 - **NEVER use `grep`, `rg`, `awk`, `sed`, `head`, `tail`, or pipes (`|`) in Bash** - use the dedicated Grep, Read, and Glob tools instead
 - **NEVER use `mkdir` to create directories** - inspector automatically creates `data/<project>/<spider>/analysis/` directory structure
@@ -84,6 +225,7 @@ You MUST complete EVERY step of EVERY phase before proceeding to the next phase.
 - **To search file contents**: Use the Grep tool (NOT `grep` or `rg` in Bash)
 - **To read files**: Use the Read tool (NOT `cat`, `head`, `tail` in Bash)
 - **To find files**: Use the Glob tool (NOT `find` or `ls` in Bash)
+- **For web inspection**: Use `bin/inspector` (NOT curl, wget, fetch)
 
 **Bad Example (DO NOT DO THIS):**
 ```bash
@@ -100,6 +242,27 @@ source .venv/bin/activate && ./scrapai extract-urls --file data/myproject/site/a
 ```bash
 source .venv/bin/activate && cat data/myproject/site/analysis/urls.txt
 ```
+
+**🚨 CRITICAL: Piping Input with Venv Activation**
+
+When you need to pipe input to a command (like "y" for confirmation):
+
+**✅ CORRECT - Pipe AFTER venv activation:**
+```bash
+source .venv/bin/activate && echo "y" | ./scrapai spiders delete name --project proj
+```
+
+**❌ WRONG - Pipe BEFORE venv activation:**
+```bash
+echo "y" | source .venv/bin/activate && ./scrapai spiders delete name --project proj
+```
+
+**Why this fails:**
+- The pipe `|` connects to the FIRST command after it (`source`)
+- `source` doesn't read from stdin, so the "y" is wasted
+- The actual command (`spiders delete`) never receives the "y" and hangs forever waiting for input
+
+**Rule:** Always put `source .venv/bin/activate &&` first, THEN the piped command.
 
 **DO NOT:**
 - Skip analysis and jump straight to rule creation
@@ -201,14 +364,18 @@ When processing from queue, ALWAYS include the original queue URL as `"source_ur
 
 **Step 4A: Test extraction on 5 specific article URLs first**
 - Collect 5 article URLs from your analysis
-- Create test_spider.json with only those URLs and `follow: false`
-- Import, crawl, and verify extraction quality
+- Create test_spider.json with `"name": "website_name"`, 5 URLs, and `follow: false`
+- Import: `./scrapai spiders import test_spider.json --project <name>`
+- Crawl: `./scrapai crawl website_name --limit 5 --project <name>`
+- Verify: `./scrapai show website_name --limit 5 --project <name>`
 - If quality is bad, fix extractors/selectors and re-test
 - Only proceed to Step 4B when extraction is confirmed good
 
 **Step 4B: Import final spider for production**
-- Delete test spider
-- Import final_spider.json with navigation rules enabled
+- Create final_spider.json with **same name:** `"name": "website_name"` (full navigation rules)
+- Import: `./scrapai spiders import final_spider.json --project <name>`
+- **Import automatically updates the existing spider** (no deletion needed!)
+- Test data from Step 4A is preserved
 - Spider is now ready for production use
 
 **Production Mode:**

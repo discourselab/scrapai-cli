@@ -31,6 +31,11 @@ ITEM_PIPELINES = {
     'pipelines.DatabasePipeline': 400,
 }
 
+# Enable smart proxy middleware (only uses proxy on 403/429 errors)
+DOWNLOADER_MIDDLEWARES = {
+    'middlewares.SmartProxyMiddleware': 350,
+}
+
 # Cloudflare bypass download handler
 # This will be activated when spider has CLOUDFLARE_ENABLED=True
 DOWNLOAD_HANDLERS = {

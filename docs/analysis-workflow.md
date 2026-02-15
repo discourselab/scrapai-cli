@@ -485,17 +485,36 @@ Debugging both extraction AND navigation together is difficult. Instead:
 
 **Only proceed here if Step 4A extraction was successful!**
 
-1. **Delete test spider:**
-   ```bash
-   source .venv/bin/activate && echo "y" | ./scrapai spiders delete website_name --project <project_name>
+1. **Import final spider with navigation rules:**
+
+   Make sure your `final_spider.json` has the **same name** as test_spider:
+   ```json
+   {
+     "name": "website_name",  // Same name as test spider
+     "source_url": "https://original-url.com",
+     "allowed_domains": [...],
+     "start_urls": [...],
+     "rules": [...]  // Full navigation rules with follow: true
+   }
    ```
 
-2. **Import final spider with navigation rules:**
+   Import (this automatically updates the existing spider):
    ```bash
    source .venv/bin/activate && ./scrapai spiders import data/<project>/<spider>/analysis/final_spider.json --project <project_name>
    ```
 
+   **What happens:**
+   - ✅ Spider configuration updated with full navigation rules
+   - ✅ Test data from Step 4A is preserved (still accessible with `show` command)
+   - ✅ No deletion needed!
+
 **Spider is now ready for production use!** Extraction quality was already verified in Step 4A.
+
+**Note:** If you ever need to delete a spider:
+```bash
+# Correct syntax - pipe AFTER venv activation
+source .venv/bin/activate && echo "y" | ./scrapai spiders delete spider_name --project <project_name>
+```
 
 **Production Mode:**
 ```bash
