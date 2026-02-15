@@ -134,11 +134,11 @@ source .venv/bin/activate && ./scrapai queue cleanup --all --force --project NAM
 2. Note the ID, URL, project, and custom_instruction from output
 3. **If custom_instruction exists**: Use it to override CLAUDE.md defaults during analysis
 4. Follow the full workflow (Phases 1-4):
-   - Analysis & Section Documentation
-   - Rule Generation
-   - **IMPORTANT**: When creating `final_spider.json`, include `"source_url": "<queue_url>"` to preserve the original URL
-   - Import Spider **with --project parameter matching the queue project**
-   - Test & Verify
+   - Phase 1: Analysis & Section Documentation
+   - Phase 2: Rule Generation
+   - Phase 3: Prepare spider JSONs (**IMPORTANT**: Include `"source_url": "<queue_url>"` in final_spider.json)
+   - Phase 4A: Import test_spider.json, verify extraction quality
+   - Phase 4B: Import final_spider.json **with --project parameter matching the queue project** (ready for production)
 5. **If successful**: `source .venv/bin/activate && ./scrapai queue complete <id>`
 6. **If failed**: `source .venv/bin/activate && ./scrapai queue fail <id> -m "error description"`
 

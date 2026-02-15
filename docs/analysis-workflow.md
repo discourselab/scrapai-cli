@@ -376,25 +376,22 @@ For full selector documentation (examples, discovery principles, common mistakes
 
 ---
 
-## Phase 3: Import
+## Phase 3: Prepare Spider Configuration
 
-**Import the final spider JSON file that was created in Phase 2.**
+**DO NOT import yet! Phase 3 is just preparation.**
 
-**ALWAYS specify --project to avoid mixing spiders across projects.**
-```bash
-source .venv/bin/activate && ./scrapai spiders import data/website/analysis/final_spider.json --project <project_name>
-```
+At this point you should have created in Phase 2:
+- `final_spider.json` - Full spider with navigation rules
+- Optionally `test_spider.json` - Test spider with 5 URLs and follow=false
 
-**Project Parameter:**
-- `--project <name>`: Assigns spider to specific project (**always required**)
-- This ensures spiders are properly isolated by project
-- Prevents duplicate spiders across projects
+**All importing happens in Phase 4:**
+- **Phase 4A:** Import test_spider.json to test extraction quality
+- **Phase 4B:** Import final_spider.json to test navigation and full crawl
 
-**Why import from file:**
-- Uses the consolidated JSON created during analysis
-- Preserves the spider configuration for future reference
-- Easy to review and modify before importing
-- Can re-import same config if needed
+**Why delay import until testing:**
+- Test extraction first (Phase 4A) before committing to full spider
+- If extraction fails, you can fix selectors without deleting/reimporting
+- Cleaner workflow: create → test → import final
 
 ---
 
@@ -496,25 +493,9 @@ Debugging both extraction AND navigation together is difficult. Instead:
    source .venv/bin/activate && ./scrapai spiders import data/website/analysis/final_spider.json --project <project_name>
    ```
 
-3. **Test with navigation enabled:**
-   ```bash
-   source .venv/bin/activate && ./scrapai crawl website_name --limit 5 --project <project_name>
-   ```
+**Spider is now ready for production use!** Extraction quality was already verified in Step 4A.
 
-4. **Verify results:**
-   ```bash
-   source .venv/bin/activate && ./scrapai show website_name --limit 5 --project <project_name>
-   ```
-
-**Common issues at this stage:**
-- Spider extracts from listing pages instead of articles
-  - **Fix:** Add deny rules for listing page URLs with higher priority
-- Spider doesn't follow links
-  - **Fix:** Check navigation rules have `follow: true` and patterns match discovered links
-- Spider follows too many pages
-  - **Fix:** Make navigation rules more specific, add deny patterns for unwanted sections
-
-**Production Mode (after verification):**
+**Production Mode:**
 ```bash
 # Full scrape - exports to files, no database cost
 source .venv/bin/activate && ./scrapai crawl website_name --project <project_name>
@@ -525,10 +506,10 @@ source .venv/bin/activate && ./scrapai crawl website_name --project <project_nam
 **STOP. Verify ALL of these are TRUE:**
 - Phase 1 completed: Full analysis documented in `sections.md`
 - Phase 2 completed: All rules created and consolidated in `final_spider.json`
-- Phase 3 completed: Spider imported successfully to database
-- Phase 4 completed: Test crawl run with `--limit 5`
-- Results verified: Run `./scrapai show website_name --project <project_name>` and confirmed quality content
-- No errors: Spider extracted actual articles, not navigation pages
+- Phase 3 completed: Spider JSON files prepared (test_spider.json and final_spider.json)
+- Phase 4A completed: Test spider extraction quality verified (ran `--limit 5`, checked results)
+- Phase 4B completed: Final spider imported successfully to database
+- No errors: Test spider extracted actual articles with good quality
 
 **ONLY IF ALL ABOVE ARE TRUE**, mark as complete:
 ```bash

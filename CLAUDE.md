@@ -115,8 +115,9 @@ source .venv/bin/activate && cat data/site/urls.txt
 ONLY mark queue items as complete (`source .venv/bin/activate && ./scrapai queue complete <id>`) when:
 1. Phase 1: Full analysis documented in sections.md
 2. Phase 2: All section rules created and consolidated into final_spider.json
-3. Phase 3: Spider successfully imported to database
-4. Phase 4: Test crawl run and results verified with `./scrapai show <spider> --project <name>`
+3. Phase 3: Spider JSON files prepared (test_spider.json and final_spider.json)
+4. Phase 4A: Extraction quality verified on test spider
+5. Phase 4B: Final spider imported successfully (ready for production)
 
 If ANY phase is incomplete or test fails, DO NOT mark as complete.
 
@@ -172,7 +173,7 @@ Summary: Use sections.md to create rules -> Test generic extractors (newspaper/t
 
 See `docs/extractors.md` for full selector documentation, examples, and discovery principles.
 
-#### Phase 3: Import
+#### Phase 3: Prepare Spider Configuration
 
 **CRITICAL: Include source_url in your spider JSON**
 When processing from queue, ALWAYS include the original queue URL as `"source_url"` in your `final_spider.json`:
@@ -185,10 +186,7 @@ When processing from queue, ALWAYS include the original queue URL as `"source_ur
 }
 ```
 
-**ALWAYS specify --project. Read `docs/projects.md` for why this is mandatory.**
-```bash
-source .venv/bin/activate && ./scrapai spiders import data/website/analysis/final_spider.json --project <project_name>
-```
+**DO NOT import yet.** Importing happens in Phase 4 after you've created both test_spider.json and final_spider.json.
 
 #### Phase 4: Execution & Verification
 
@@ -203,13 +201,12 @@ source .venv/bin/activate && ./scrapai spiders import data/website/analysis/fina
 - If quality is bad, fix extractors/selectors and re-test
 - Only proceed to Step 4B when extraction is confirmed good
 
-**Step 4B: Enable navigation and test full crawl**
+**Step 4B: Import final spider for production**
 - Delete test spider
 - Import final_spider.json with navigation rules enabled
-- Test crawl with `--limit 5 --project <name>`
-- Verify results with `./scrapai show <spider> --project <name>`
+- Spider is now ready for production use
 
-**Production Mode (after verification):**
+**Production Mode:**
 ```bash
 source .venv/bin/activate && ./scrapai crawl website_name --project <name>
 ```
