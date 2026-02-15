@@ -27,6 +27,7 @@ logger = setup_logging('inspector', log_format='%(asctime)s - %(name)s - %(level
 def main():
     parser = argparse.ArgumentParser(description='Inspect a fact-checking website to help create scrapers')
     parser.add_argument('--url', type=str, required=True, help='URL to inspect')
+    parser.add_argument('--project', type=str, default='default', help='Project name for organizing analysis files')
     parser.add_argument('--output-dir', type=str, default=None, help='Directory to save analysis')
     parser.add_argument('--proxy-type', choices=['none', 'static', 'residential', 'auto'],
                       default='auto', help='Proxy type to use')
@@ -36,7 +37,7 @@ def main():
     parser.add_argument('--log-level', choices=['debug', 'info', 'warning', 'error', 'critical'],
                       default='info', help='Set the logging level')
     parser.add_argument('--log-file', type=str, help='Path to log file (optional)')
-    
+
     args = parser.parse_args()
     
     # Configure logging with provided options
@@ -68,7 +69,7 @@ def main():
             print("🖥️  Display available - using native browser for Cloudflare bypass")
 
     inspect_page(args.url, args.output_dir, args.proxy_type, not args.no_save_html,
-                 use_cloudflare=args.cloudflare)
+                 use_cloudflare=args.cloudflare, project=args.project)
     logger.info("Inspection complete")
 
 if __name__ == "__main__":

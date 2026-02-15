@@ -60,6 +60,11 @@ source .venv/bin/activate
 - `source .venv/bin/activate && ./scrapai db current` - Show current migration state
 - All schema changes are handled safely via Alembic migrations
 
+**Data Directory Configuration:**
+- Analysis files are saved to `DATA_DIR/<project>/<spider>/analysis/` (default: `./data`)
+- Customize in `.env`: `DATA_DIR=./data` (default) or `DATA_DIR=~/.scrapai/data` or any path
+- Directory structure is created automatically by inspector - never use `mkdir`
+
 ### 2. Workflow
 
 #### CRITICAL WORKFLOW RULES
@@ -71,7 +76,7 @@ You MUST complete EVERY step of EVERY phase before proceeding to the next phase.
 **COMMAND EXECUTION RULES:**
 - **NEVER chain multiple operations together** (except venv activation)
 - **NEVER use `grep`, `rg`, `awk`, `sed`, `head`, `tail`, or pipes (`|`) in Bash** - use the dedicated Grep, Read, and Glob tools instead
-- **NEVER use `mkdir` to create directories** - inspector automatically creates `data/<site>/analysis/` directory structure
+- **NEVER use `mkdir` to create directories** - inspector automatically creates `data/<project>/<spider>/analysis/` directory structure
 - **ALWAYS run operations ONE AT A TIME in separate bash calls**
 - **OK to use: `source .venv/bin/activate && <single command>`** (venv + one command is acceptable)
 - **WAIT for each command to complete before running the next**
@@ -87,13 +92,13 @@ source .venv/bin/activate && bin/inspector --url https://example.com && ./scrapa
 
 **Good Example (DO THIS):**
 ```bash
-source .venv/bin/activate && bin/inspector --url https://example.com
+source .venv/bin/activate && bin/inspector --url https://example.com --project myproject
 ```
 ```bash
-source .venv/bin/activate && ./scrapai extract-urls --file data/site/page.html -o data/site/urls.txt
+source .venv/bin/activate && ./scrapai extract-urls --file data/myproject/site/analysis/page.html -o data/myproject/site/analysis/urls.txt
 ```
 ```bash
-source .venv/bin/activate && cat data/site/urls.txt
+source .venv/bin/activate && cat data/myproject/site/analysis/urls.txt
 ```
 
 **DO NOT:**

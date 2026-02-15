@@ -19,7 +19,7 @@ from urllib.parse import urljoin, urlparse
 from utils.browser import BrowserClient
 from core.config import DATA_DIR
 
-async def inspect_page_async(url, output_dir=None, proxy_type="auto", save_html=True, use_cloudflare=False):
+async def inspect_page_async(url, output_dir=None, proxy_type="auto", save_html=True, use_cloudflare=False, project="default"):
     """
     Inspect a page using browser client and output analysis to help with creating a scraper
 
@@ -29,6 +29,7 @@ async def inspect_page_async(url, output_dir=None, proxy_type="auto", save_html=
         proxy_type (str): Proxy type to use (unused now, browser handles this)
         save_html (bool): Whether to save the full HTML
         use_cloudflare (bool): Whether to use Cloudflare bypass mode
+        project (str): Project name for organizing analysis files (default: "default")
 
     Returns:
         dict: Analysis results
@@ -53,10 +54,10 @@ async def inspect_page_async(url, output_dir=None, proxy_type="auto", save_html=
             if match:
                 timestamp = match.group(1)  # 8-digit date (YYYYMMDD)
                 original_domain = match.group(2).replace(".", "_").replace(":", "_")
-                output_dir = f"{DATA_DIR}/web_archive_org/{original_domain}/{timestamp}/analysis"
+                output_dir = f"{DATA_DIR}/{project}/web_archive_org/{original_domain}/{timestamp}/analysis"
             else:
                 # Fallback if pattern doesn't match
-                output_dir = f"{DATA_DIR}/web_archive_org/analysis"
+                output_dir = f"{DATA_DIR}/{project}/web_archive_org/analysis"
         else:
             # Map domain to source_id for regular sites
             source_id_mapping = {
@@ -71,7 +72,7 @@ async def inspect_page_async(url, output_dir=None, proxy_type="auto", save_html=
             }
 
             source_id = source_id_mapping.get(domain, domain.replace(".", "_"))
-            output_dir = f"{DATA_DIR}/{source_id}/analysis"
+            output_dir = f"{DATA_DIR}/{project}/{source_id}/analysis"
     
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
@@ -160,11 +161,11 @@ async def inspect_page_async(url, output_dir=None, proxy_type="auto", save_html=
     
         return analysis
 
-def inspect_page(url, output_dir=None, proxy_type="auto", save_html=True, use_cloudflare=False):
+def inspect_page(url, output_dir=None, proxy_type="auto", save_html=True, use_cloudflare=False, project="default"):
     """
     Synchronous wrapper for inspect_page_async
     """
-    return asyncio.run(inspect_page_async(url, output_dir, proxy_type, save_html, use_cloudflare))
+    return asyncio.run(inspect_page_async(url, output_dir, proxy_type, save_html, use_cloudflare, project))
 
 def analyze_potential_containers(soup):
     """
