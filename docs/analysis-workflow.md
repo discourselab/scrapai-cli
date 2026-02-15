@@ -18,17 +18,19 @@ The most common mistake is creating spider rules without complete site analysis.
 **MANDATORY: Follow this systematic analysis process COMPLETELY before Phase 2:**
 
 **IMPORTANT: Directory Structure**
-- **NEVER use `mkdir` to create directories** - inspector automatically creates `data/<site>/analysis/` directory
+- **NEVER use `mkdir` to create directories** - inspector automatically creates `data/<project>/<spider>/analysis/` directory
+- Directory structure: `DATA_DIR/project_name/spider_name/analysis/` (default DATA_DIR is `./data`)
+- You can customize DATA_DIR in `.env` file (e.g., `DATA_DIR=~/.scrapai/data` or `/mnt/storage/scrapai`)
 - Inspector saves `page.html` and `analysis.json` in the correct location
-- Just run inspector directly - no setup needed
+- Just run inspector with `--project <name>` - no setup needed
 
 ### Step 1: Extract ALL URLs from Homepage
 
 ```bash
-source .venv/bin/activate && ./scrapai extract-urls --file data/website/analysis/page.html --output data/website/analysis/all_urls.txt
+source .venv/bin/activate && ./scrapai extract-urls --file data/<project>/<spider>/analysis/page.html --output data/<project>/<spider>/analysis/all_urls.txt
 ```
 ```bash
-source .venv/bin/activate && cat data/website/analysis/all_urls.txt
+source .venv/bin/activate && cat data/<project>/<spider>/analysis/all_urls.txt
 ```
 
 ### Step 2: Categorize Every URL Type
@@ -89,10 +91,10 @@ source .venv/bin/activate && bin/inspector --url https://example.com/news/
 ```
 ```bash
 # Step 2: IMMEDIATELY read and document before moving on
-source .venv/bin/activate && cat data/example_com/analysis/analysis.json
+source .venv/bin/activate && cat data/<project>/example_com/analysis/analysis.json
 ```
 ```bash
-source .venv/bin/activate && ./scrapai extract-urls --file data/example_com/analysis/page.html --output data/example_com/analysis/news_urls.txt
+source .venv/bin/activate && ./scrapai extract-urls --file data/<project>/example_com/analysis/page.html --output data/<project>/example_com/analysis/news_urls.txt
 ```
 ```bash
 # Step 3: Update sections.md with findings
@@ -101,10 +103,10 @@ source .venv/bin/activate && bin/inspector --url https://example.com/policy/
 ```
 ```bash
 # Step 5: IMMEDIATELY read and document
-source .venv/bin/activate && cat data/example_com/analysis/analysis.json
+source .venv/bin/activate && cat data/<project>/example_com/analysis/analysis.json
 ```
 ```bash
-source .venv/bin/activate && ./scrapai extract-urls --file data/example_com/analysis/page.html --output data/example_com/analysis/policy_urls.txt
+source .venv/bin/activate && ./scrapai extract-urls --file data/<project>/example_com/analysis/page.html --output data/<project>/example_com/analysis/policy_urls.txt
 ```
 ```bash
 # Step 6: Update sections.md with findings
@@ -132,7 +134,7 @@ source .venv/bin/activate && ./scrapai extract-urls --file data/example_com/anal
 ### File Structure Created
 
 ```
-data/website/analysis/
+data/<project>/<spider>/analysis/
 ├── page.html           (preserved - homepage HTML)
 ├── analysis.json       (preserved - homepage analysis)
 ├── all_urls.txt        (all URLs extracted from homepage)
@@ -195,10 +197,10 @@ Combine all section rule files into a comprehensive spider definition.
 Fetch an actual article (not homepage or listing page):
 
 ```bash
-source .venv/bin/activate && bin/inspector --url https://website.com/article-url
+source .venv/bin/activate && bin/inspector --url https://website.com/article-url --project <project_name>
 ```
 
-This saves `page.html` and `analysis.json` to `data/website_com/analysis/`.
+This saves `page.html` and `analysis.json` to `data/<project_name>/website_com/analysis/`.
 
 ### Step 2: Test Generic Extraction
 
@@ -244,24 +246,24 @@ Currently, there's no automated tool for this. You must:
 
 2. **Analyze HTML and find selectors**:
    ```bash
-   source .venv/bin/activate && bin/analyze_selectors data/website_com/analysis/page.html
+   source .venv/bin/activate && bin/analyze_selectors data/<project>/website_com/analysis/page.html
    ```
    This shows: All h1/h2 titles with classes, content containers sorted by size, date elements, author elements.
 
 3. **Test each selector**:
    ```bash
-   source .venv/bin/activate && bin/analyze_selectors data/website_com/analysis/page.html --test "h1.article-title"
+   source .venv/bin/activate && bin/analyze_selectors data/<project>/website_com/analysis/page.html --test "h1.article-title"
    ```
    ```bash
-   source .venv/bin/activate && bin/analyze_selectors data/website_com/analysis/page.html --test "div.article-body"
+   source .venv/bin/activate && bin/analyze_selectors data/<project>/website_com/analysis/page.html --test "div.article-body"
    ```
 
 4. **Search for specific fields**:
    ```bash
-   source .venv/bin/activate && bin/analyze_selectors data/website_com/analysis/page.html --find "price"
+   source .venv/bin/activate && bin/analyze_selectors data/<project>/website_com/analysis/page.html --find "price"
    ```
    ```bash
-   source .venv/bin/activate && bin/analyze_selectors data/website_com/analysis/page.html --find "rating"
+   source .venv/bin/activate && bin/analyze_selectors data/<project>/website_com/analysis/page.html --find "rating"
    ```
 
 5. **Add CUSTOM_SELECTORS to final_spider.json**:
@@ -422,7 +424,7 @@ Debugging both extraction AND navigation together is difficult. Instead:
    https://example.com/commentary/article-5
    ```
 
-2. **Create a test spider** (`data/website/analysis/test_spider.json`):
+2. **Create a test spider** (`data/<project>/<spider>/analysis/test_spider.json`):
    ```json
    {
      "name": "website_name",
@@ -454,7 +456,7 @@ Debugging both extraction AND navigation together is difficult. Instead:
 
 3. **Import and test:**
    ```bash
-   source .venv/bin/activate && ./scrapai spiders import data/website/analysis/test_spider.json --project <project_name>
+   source .venv/bin/activate && ./scrapai spiders import data/<project>/<spider>/analysis/test_spider.json --project <project_name>
    ```
    ```bash
    source .venv/bin/activate && ./scrapai crawl website_name --limit 5 --project <project_name>
@@ -490,7 +492,7 @@ Debugging both extraction AND navigation together is difficult. Instead:
 
 2. **Import final spider with navigation rules:**
    ```bash
-   source .venv/bin/activate && ./scrapai spiders import data/website/analysis/final_spider.json --project <project_name>
+   source .venv/bin/activate && ./scrapai spiders import data/<project>/<spider>/analysis/final_spider.json --project <project_name>
    ```
 
 **Spider is now ready for production use!** Extraction quality was already verified in Step 4A.
