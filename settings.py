@@ -47,6 +47,12 @@ DOWNLOAD_HANDLERS = {
 HTTPCACHE_ENABLED = False
 HTTPCACHE_EXPIRATION_SECS = 3600
 
+# Set log level to INFO to prevent printing full items with HTML to console
+LOG_LEVEL = 'INFO'
+
+# Show stats every 10 seconds
+LOGSTATS_INTERVAL = 10
+
 # Suppress verbose logs from third-party libraries
 import logging
 logging.getLogger('nodriver').setLevel(logging.WARNING)
