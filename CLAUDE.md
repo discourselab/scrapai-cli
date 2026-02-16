@@ -56,6 +56,8 @@ Agent: "📦 Batch 2/3: Processing next 5 sites in parallel..."
 1. **Announce batch:** "Batch 1: Processing 5 sites in parallel..."
 2. **Claim items:** Get next 5 items from queue (max 5!)
 3. **Spawn Task agents:** One Task agent per website (max 5 concurrent)
+   - **DO NOT use `run_in_background=true`** - Wait for agents to complete
+   - Agents run in parallel with each other, but main agent waits for all
 4. **Give regular updates:** Report progress as agents work
    - "Started: climate.news (Phase 1)"
    - "Progress: factcheck.org completed Phase 2"
@@ -105,7 +107,11 @@ Complete the FULL workflow (Phases 1-4):
 4. Phase 4A: Test extraction quality (import test_spider, verify)
 5. Phase 4B: Import final spider
 
-When done, report:
+CRITICAL: Mark your own status before reporting back:
+- If successful: Run `queue complete <id>`
+- If failed: Run `queue fail <id> -m "error description"`
+
+Then report back to main agent:
 - Status: SUCCESS or FAILED
 - Spider name: <name>
 - Queue item ID: <id>
@@ -115,15 +121,14 @@ When done, report:
 Follow ALL instructions in CLAUDE.md for each phase.
 ```
 
-**After Task agents complete:**
+**Main Agent - After Task agents complete:**
 1. **Collect results from each Task agent**
-2. **For each successful agent:**
-   - Mark queue item as complete: `queue complete <id>`
-   - Report to user: "✓ climate.news completed successfully"
-3. **For each failed agent:**
-   - Mark queue item as failed: `queue fail <id> -m "error description"`
-   - Report to user: "✗ factcheck.org failed: [error details]"
-4. **Summary report:** "Batch complete: 4/5 succeeded, 1/5 failed"
+2. **Report summary to user:**
+   - For each successful: "✓ climate.news completed successfully"
+   - For each failed: "✗ factcheck.org failed: [error details]"
+3. **Summary report:** "Batch complete: 4/5 succeeded, 1/5 failed"
+
+**Note:** Task agents mark their own queue status - main agent only reports results to user.
 
 ---
 
@@ -162,6 +167,27 @@ Follow ALL instructions in CLAUDE.md for each phase.
 - Uses optimized tools designed for the repo's workflow
 - Maintains consistency across different systems
 
+**System-Level Enforcement (Claude Code Settings):**
+This project uses Claude Code settings to block forbidden tools at project level.
+
+**When user runs `./scrapai verify` or `./scrapai setup`:**
+1. **Check if Claude Code environment:** `ls -d ~/.claude/ 2>/dev/null`
+2. **If ~/.claude/ exists** (Claude Code user):
+   - Check if `.claude/settings.json` exists in project
+   - If missing or incomplete, create/update it with:
+     ```json
+     {
+       "permissions": {
+         "WebFetch": "deny",
+         "WebSearch": "deny"
+       }
+     }
+     ```
+   - Inform user: "✅ Tool restrictions configured in .claude/settings.json"
+3. **If ~/.claude/ doesn't exist** (other AI tool):
+   - Skip - settings only work in Claude Code
+   - Tool restrictions enforced through CLAUDE.md instructions only
+
 **If you need functionality not available:**
 - Ask the user first before attempting workarounds
 - Don't assume external tools are installed
@@ -194,6 +220,36 @@ source .venv/bin/activate
 # If verify passes, just activate and proceed
 source .venv/bin/activate
 ```
+
+**Step 4: Configure Tool Restrictions (Claude Code Only)**
+
+**Check if running in Claude Code:**
+```bash
+ls -d ~/.claude/ 2>/dev/null
+```
+
+**If ~/.claude/ exists (Claude Code user):**
+- Check if `.claude/settings.json` exists in project
+- If missing, create it with tool restrictions:
+  ```json
+  {
+    "permissions": {
+      "WebFetch": "deny",
+      "WebSearch": "deny"
+    }
+  }
+  ```
+- This blocks forbidden tools at project level
+- Settings only apply to this project, not other Claude Code projects
+
+**If ~/.claude/ doesn't exist (other AI tool):**
+- Skip - settings are Claude Code specific
+- Tool restrictions enforced through CLAUDE.md instructions only
+
+**What this does (Claude Code only):**
+- Blocks forbidden tools (WebFetch, WebSearch) at project level
+- Prevents accidental use of unavailable tools
+- Project-specific - doesn't affect other projects
 
 **Database Management:**
 - `source .venv/bin/activate && ./scrapai db migrate` - Run pending migrations
