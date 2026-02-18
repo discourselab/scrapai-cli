@@ -9,6 +9,40 @@ import sys
 import os
 from pathlib import Path
 
+def auto_activate_venv():
+    """
+    Auto-activate virtual environment by re-executing script with venv Python.
+    This makes the CLI work transparently without requiring manual venv activation.
+    """
+    # Skip if already in venv or in special environments
+    if hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
+        return  # Already in venv
+
+    if os.getenv('SKIP_VENV_CHECK') or os.getenv('AIRFLOW_HOME'):
+        return  # Skip in Docker/Airflow
+
+    # Look for venv in common locations
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    venv_paths = [
+        os.path.join(script_dir, '.venv'),
+        os.path.join(script_dir, 'venv'),
+    ]
+
+    for venv_path in venv_paths:
+        venv_python = os.path.join(venv_path, 'bin', 'python')
+        if os.path.exists(venv_python):
+            # Re-execute this script with venv Python
+            args = [venv_python] + sys.argv
+            os.execv(venv_python, args)
+            # execv replaces current process, so this line never runs
+            return
+
+    # No venv found - continue with system Python (setup will create one)
+
+# Auto-activate venv before anything else (except for setup/verify commands)
+if len(sys.argv) > 1 and sys.argv[1] not in ['setup', 'verify', '--help', '-h']:
+    auto_activate_venv()
+
 # Add current directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -25,32 +59,7 @@ except ImportError:
     ProjectManager = None
     ConfigLoader = None
 
-def check_venv():
-    """Check if we're in a virtual environment, warn if not"""
-    # Skip venv check if running in Docker/containerized environment
-    if os.getenv('SKIP_VENV_CHECK') or os.getenv('AIRFLOW_HOME'):
-        return True
-
-    if not hasattr(sys, 'real_prefix') and not (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
-        venv_path = Path('.venv')
-        if venv_path.exists():
-            print("⚠️  Virtual environment detected but not activated!")
-            print("Run: source .venv/bin/activate")
-            print("Then try again.\n")
-        else:
-            print("⚠️  No virtual environment found!")
-            print("Run: uv venv && source .venv/bin/activate && uv pip install -r requirements.txt")
-            print("Then try again.\n")
-        return False
-    return True
-
 def main():
-    # Skip venv check for setup and verify commands
-    if len(sys.argv) > 1 and sys.argv[1] in ['setup', 'verify', '--help', '-h']:
-        pass  # Allow setup/verify/help commands to run without venv
-    else:
-        if not check_venv():
-            sys.exit(1)
     
     parser = argparse.ArgumentParser(description='Run Scrapy spiders with project support')
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
@@ -259,60 +268,56 @@ def handle_setup_command():
     import subprocess
     import sys
     from pathlib import Path
-    
+
     print("🚀 Setting up ScrapAI environment...")
-    
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
     # Check if virtual environment exists
     venv_path = Path('.venv')
+    venv_python = venv_path / 'bin' / 'python'
+
     if not venv_path.exists():
         print("📦 Creating virtual environment...")
         try:
-            subprocess.run([sys.executable, '-m', 'venv', '.venv'], check=True)
+            subprocess.run([sys.executable, '-m', 'venv', '.venv'], check=True, cwd=script_dir)
             print("✅ Virtual environment created")
         except subprocess.CalledProcessError as e:
             print(f"❌ Failed to create virtual environment: {e}")
             sys.exit(1)
     else:
         print("✅ Virtual environment already exists")
-    
-    # Check if we're in a virtual environment
-    if not hasattr(sys, 'real_prefix') and not (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
-        print("⚠️  Virtual environment not activated")
-        print("🔄 Run: source .venv/bin/activate")
-        print("🔄 Then run: ./scrapai setup")
-        return
-    
-    # Install requirements if needed
+
+    # Install requirements using venv Python directly (no activation needed!)
     requirements_path = Path('requirements.txt')
     if requirements_path.exists():
         print("📋 Installing requirements...")
         try:
-            subprocess.run([sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt'], check=True)
+            # Use venv's Python directly - no activation needed
+            subprocess.run([str(venv_python), '-m', 'pip', 'install', '--upgrade', 'pip'],
+                         check=True, cwd=script_dir)
+            subprocess.run([str(venv_python), '-m', 'pip', 'install', '-r', 'requirements.txt'],
+                         check=True, cwd=script_dir)
             print("✅ Requirements installed")
         except subprocess.CalledProcessError as e:
             print(f"❌ Failed to install requirements: {e}")
             sys.exit(1)
     else:
         print("⚠️  requirements.txt not found")
-    
-    # Check database setup
-    print("🗄️  Checking database setup...")
+
+    # Check database setup using venv Python
+    print("🗄️  Initializing database...")
     try:
-        # Try to check current migration state
-        result = subprocess.run(['./scrapai', 'db', 'current'], capture_output=True, text=True)
-        if result.returncode == 0 and 'head' in result.stdout:
-            print("✅ Database already initialized")
-        else:
-            print("🔧 Initializing database...")
-            subprocess.run(['python', './init_db.py'], check=True)
-            print("✅ Database initialized")
+        init_db_path = os.path.join(script_dir, 'init_db.py')
+        subprocess.run([str(venv_python), init_db_path], check=True, cwd=script_dir)
+        print("✅ Database initialized")
     except subprocess.CalledProcessError as e:
         print(f"❌ Database setup failed: {e}")
         sys.exit(1)
     except Exception as e:
         print(f"❌ Setup error: {e}")
         sys.exit(1)
-    
+
     print("🎉 ScrapAI setup complete!")
     print("📝 You can now:")
     print("   • List spiders: ./scrapai spiders list")
@@ -328,9 +333,12 @@ def handle_verify_command():
     print("🔍 Verifying ScrapAI environment...\n")
 
     all_good = True
+    script_dir = os.path.dirname(os.path.abspath(__file__))
 
     # Check if virtual environment exists
     venv_path = Path('.venv')
+    venv_python = venv_path / 'bin' / 'python'
+
     if not venv_path.exists():
         print("❌ Virtual environment not found")
         print("   Run: ./scrapai setup")
@@ -338,57 +346,57 @@ def handle_verify_command():
     else:
         print("✅ Virtual environment exists")
 
-    # Check if we're in a virtual environment
-    if not hasattr(sys, 'real_prefix') and not (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
-        print("❌ Virtual environment not activated")
-        print("   Run: source .venv/bin/activate")
-        all_good = False
-    else:
-        print("✅ Virtual environment activated")
-
-        # Check if key dependencies are installed (only if venv is activated)
+        # Check if key dependencies are installed (using venv Python directly)
         try:
-            import scrapy
-            import sqlalchemy
-            import alembic
-            print("✅ Core dependencies installed")
-        except ImportError as e:
-            print(f"❌ Missing dependencies: {e}")
-            print("   Run: source .venv/bin/activate && ./scrapai setup")
+            result = subprocess.run(
+                [str(venv_python), '-c', 'import scrapy, sqlalchemy, alembic; print("ok")'],
+                capture_output=True,
+                text=True,
+                cwd=script_dir
+            )
+            if result.returncode == 0 and 'ok' in result.stdout:
+                print("✅ Core dependencies installed")
+            else:
+                print("❌ Missing dependencies")
+                print("   Run: ./scrapai setup")
+                all_good = False
+        except Exception as e:
+            print(f"❌ Error checking dependencies: {e}")
+            print("   Run: ./scrapai setup")
             all_good = False
 
-    # Check database setup (only if venv is activated and dependencies exist)
+    # Check database setup
     if all_good:
         try:
             result = subprocess.run(
-                [sys.executable, '-m', 'alembic', 'current'],
+                [str(venv_python), '-m', 'alembic', 'current'],
                 capture_output=True,
                 text=True,
-                cwd=os.path.dirname(os.path.abspath(__file__))
+                cwd=script_dir
             )
             if result.returncode == 0:
                 if 'head' in result.stdout or result.stdout.strip():
                     print("✅ Database initialized")
                 else:
                     print("❌ Database not initialized")
-                    print("   Run: source .venv/bin/activate && ./scrapai setup")
+                    print("   Run: ./scrapai setup")
                     all_good = False
             else:
                 print("❌ Unable to check database status")
-                print("   Run: source .venv/bin/activate && ./scrapai setup")
+                print("   Run: ./scrapai setup")
                 all_good = False
         except Exception as e:
             print(f"❌ Error checking database: {e}")
-            print("   Run: source .venv/bin/activate && ./scrapai setup")
+            print("   Run: ./scrapai setup")
             all_good = False
 
     print()
     if all_good:
         print("🎉 Environment is ready!")
         print("📝 You can now:")
-        print("   • List spiders: ./scrapai spiders list")
-        print("   • Import spiders: ./scrapai spiders import <file>")
-        print("   • Run crawls: ./scrapai crawl <spider_name>")
+        print("   • List spiders: ./scrapai spiders list --project <name>")
+        print("   • Import spiders: ./scrapai spiders import <file> --project <name>")
+        print("   • Run crawls: ./scrapai crawl <spider_name> --project <name>")
     else:
         print("⚠️  Environment setup incomplete")
         print("   Run: ./scrapai setup")
