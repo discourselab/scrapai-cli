@@ -48,7 +48,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Only import dependencies if not running setup command or if dependencies are available
 try:
-    from core.project_manager import ProjectManager
     from core.config_loader import ConfigLoader
 except ImportError:
     if len(sys.argv) <= 1 or (sys.argv[1] not in ['setup', 'verify', '--help', '-h']):
@@ -56,34 +55,13 @@ except ImportError:
         print("❌ Dependencies not installed. Run './scrapai setup' first.")
         sys.exit(1)
     # For setup/verify/help command, continue without imports
-    ProjectManager = None
     ConfigLoader = None
 
 def main():
     
     parser = argparse.ArgumentParser(description='Run Scrapy spiders with project support')
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
-    
-    # projects command
-    projects_parser = subparsers.add_parser('projects', help='Project management')
-    projects_subparsers = projects_parser.add_subparsers(dest='projects_command', help='Project commands')
-    
-    # projects create
-    create_parser = projects_subparsers.add_parser('create', help='Create a new project')
-    create_parser.add_argument('--name', required=True, help='Project name')
-    create_parser.add_argument('--spiders', required=True, help='Comma-separated spider names')
-    
-    # projects list
-    projects_subparsers.add_parser('list', help='List all projects')
-    
-    # projects status
-    status_parser = projects_subparsers.add_parser('status', help='Show project status')
-    status_parser.add_argument('--project', required=True, help='Project name')
-    
-    # projects delete
-    delete_parser = projects_subparsers.add_parser('delete', help='Delete a project')
-    delete_parser.add_argument('--project', required=True, help='Project name')
-    
+
     # crawl command
     crawl_parser = subparsers.add_parser('crawl', help='Run a spider')
     crawl_parser.add_argument('--project', help='Project name (optional for DB spiders)')
@@ -100,17 +78,7 @@ def main():
     # list command
     list_parser = subparsers.add_parser('list', help='List available spiders')
     list_parser.add_argument('--project', help='Project name (optional)')
-    
-    # test command
-    test_parser = subparsers.add_parser('test', help='Test a spider with limited items')
-    test_parser.add_argument('--project', required=True, help='Project name')
-    test_parser.add_argument('spider', help='Spider name to test')
-    test_parser.add_argument('--limit', '-l', type=int, default=5, help='Number of items to test')
-    
-    # status command
-    status_parser = subparsers.add_parser('status', help='Show project status')
-    status_parser.add_argument('--project', required=True, help='Project name')
-    
+
     # spiders command
     spiders_parser = subparsers.add_parser('spiders', help='Spider management')
     spiders_subparsers = spiders_parser.add_subparsers(dest='spiders_command', help='Spider commands')
@@ -236,8 +204,6 @@ def main():
         handle_setup_command()
     elif args.command == 'verify':
         handle_verify_command()
-    elif args.command == 'projects':
-        handle_projects_command(args)
     elif args.command == 'spiders':
         handle_spiders_command(args)
     elif args.command == 'queue':
@@ -256,12 +222,6 @@ def main():
         run_all_spiders(args.project, args.limit)
     elif args.command == 'list':
         list_spiders(args.project)
-    elif args.command == 'test':
-        test_spider(args.project, args.spider, args.limit)
-    elif args.command == 'status':
-        show_project_status(args.project)
-    elif args.command == 'logs':
-        show_project_logs(args.project, args.spider)
 
 def handle_setup_command():
     """Handle setup command - automated virtual environment and database setup"""
@@ -1252,38 +1212,6 @@ def handle_extract_urls_command(args):
         print(f"❌ Error: {e}")
         sys.exit(1)
 
-def handle_projects_command(args):
-    """Handle project management commands"""
-    pm = ProjectManager()
-    
-    if args.projects_command == 'create':
-        spiders = [s.strip() for s in args.spiders.split(',')]
-        pm.create_project(args.name, spiders)
-    elif args.projects_command == 'list':
-        projects = pm.list_projects()
-        if projects:
-            print("📋 Available projects:")
-            for project in projects:
-                print(f"  • {project}")
-        else:
-            print("No projects found. Create one with: ./scrapai projects create --name <name> --spiders <spider1,spider2>")
-    elif args.projects_command == 'status':
-        status = pm.get_project_status(args.project)
-        if 'error' in status:
-            print(f"❌ {status['error']}")
-        else:
-            print(f"📊 Project: {status['name']}")
-            print(f"🕷️  Spiders: {', '.join(status['spiders'])}")
-            print(f"📄 Output files: {status['output_files']}")
-            print(f"📝 Log files: {status['log_files']}")
-            print(f"📁 Path: {status['path']}")
-    elif args.projects_command == 'delete':
-        confirm = input(f"Are you sure you want to delete project '{args.project}'? (y/N): ")
-        if confirm.lower() == 'y':
-            pm.delete_project(args.project)
-        else:
-            print("❌ Delete cancelled")
-
 def run_spider(project_name, spider_name, output_file=None, limit=None, timeout=None):
     """Run a Scrapy spider (DB or File-based)"""
     # Try to find spider in DB first
@@ -1442,83 +1370,6 @@ def run_all_spiders(project_name, limit=None):
             
     except Exception as e:
         print(f"❌ Error running spiders: {e}")
-
-def test_spider(project_name, spider_name, limit=5):
-    """Test a spider with limited items"""
-    print(f"🧪 Testing spider: {spider_name} (project: {project_name}, limit: {limit})")
-    run_spider(project_name, spider_name, None, limit)
-
-def list_spiders(project_name=None):
-    """List available spiders"""
-    if project_name:
-        # List spiders for specific project
-        config_loader = ConfigLoader()
-        try:
-            spiders = config_loader.get_project_spiders(project_name)
-            print(f"📋 Spiders configured for project '{project_name}':")
-            for spider in spiders:
-                print(f"  • {spider}")
-        except Exception as e:
-            print(f"❌ Error: {e}")
-    else:
-        # List all available spiders
-        print("📋 Available spiders:")
-        spiders_dir = Path("spiders")
-        if spiders_dir.exists():
-            for spider_file in spiders_dir.glob("*.py"):
-                if spider_file.name != "__init__.py" and spider_file.name != "base_spider.py":
-                    spider_name = spider_file.stem
-                    print(f"  • {spider_name}")
-        else:
-            print("  No spiders found. Ask Claude Code to create some!")
-
-def show_project_status(project_name):
-    """Show project status"""
-    pm = ProjectManager()
-    status = pm.get_project_status(project_name)
-    
-    if 'error' in status:
-        print(f"❌ {status['error']}")
-    else:
-        print(f"📊 Project: {status['name']}")
-        print(f"🕷️  Spiders: {', '.join(status['spiders'])}")
-        print(f"📄 Output files: {status['output_files']}")
-        print(f"📝 Log files: {status['log_files']}")
-        print(f"📁 Path: {status['path']}")
-
-def show_project_logs(project_name, spider_name=None):
-    """Show project logs"""
-    pm = ProjectManager()
-    
-    if not pm.project_exists(project_name):
-        print(f"❌ Project '{project_name}' not found")
-        return
-    
-    logs_dir = pm.get_project_path(project_name) / "logs"
-    
-    if not logs_dir.exists():
-        print(f"📝 No logs found for project '{project_name}'")
-        return
-    
-    if spider_name:
-        # Show specific spider logs
-        log_file = logs_dir / f"{spider_name}.log"
-        if log_file.exists():
-            print(f"📝 Logs for {spider_name} (project: {project_name}):")
-            print("-" * 50)
-            with open(log_file, 'r') as f:
-                print(f.read())
-        else:
-            print(f"❌ No logs found for spider '{spider_name}' in project '{project_name}'")
-    else:
-        # Show all log files
-        log_files = list(logs_dir.glob("*.log"))
-        if log_files:
-            print(f"📝 Log files for project '{project_name}':")
-            for log_file in log_files:
-                print(f"  • {log_file.name}")
-        else:
-            print(f"📝 No log files found for project '{project_name}'")
 
 if __name__ == '__main__':
     main()

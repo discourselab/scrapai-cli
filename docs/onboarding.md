@@ -111,17 +111,15 @@ If you're using **Claude Code** (the AI coding assistant), the setup command aut
 
 ## Next Steps
 
-### 1. Create a Project
+### 1. Understanding Projects
 
-Projects help organize your spiders:
+Projects are simple groupings for organizing your spiders - just a field in the database. No setup required!
 
-```bash
-# View help
-./scrapai projects --help
+- Projects are created automatically when you use `--project <name>`
+- Default project name is "default" if not specified
+- Example: `./scrapai queue add https://example.com --project myproject`
 
-# Create a project (this is optional - "default" project is used if not specified)
-./scrapai projects create --name myproject --spiders spider1,spider2
-```
+**That's it!** No `projects create` command needed.
 
 ### 2. Add Websites to Queue (Optional)
 
