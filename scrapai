@@ -193,6 +193,26 @@ def main():
     # verify command
     subparsers.add_parser('verify', help='Verify environment setup (no installations)')
 
+    # inspect command
+    inspect_parser = subparsers.add_parser('inspect', help='Inspect a website to help create scrapers')
+    inspect_parser.add_argument('url', help='URL to inspect')
+    inspect_parser.add_argument('--project', type=str, default='default', help='Project name for organizing analysis files')
+    inspect_parser.add_argument('--output-dir', type=str, default=None, help='Directory to save analysis')
+    inspect_parser.add_argument('--proxy-type', choices=['none', 'static', 'residential', 'auto'],
+                              default='auto', help='Proxy type to use')
+    inspect_parser.add_argument('--no-save-html', action='store_true', help='Do not save the full HTML')
+    inspect_parser.add_argument('--cloudflare', action='store_true',
+                              help='Use Cloudflare bypass mode (nodriver with CF verification)')
+    inspect_parser.add_argument('--log-level', choices=['debug', 'info', 'warning', 'error', 'critical'],
+                              default='info', help='Set the logging level')
+    inspect_parser.add_argument('--log-file', type=str, help='Path to log file (optional)')
+
+    # analyze command
+    analyze_parser = subparsers.add_parser('analyze', help='Analyze HTML for CSS selector discovery')
+    analyze_parser.add_argument('html_file', help='Path to HTML file to analyze')
+    analyze_parser.add_argument('--test', help='Test a specific CSS selector')
+    analyze_parser.add_argument('--find', help='Find elements by keyword (searches classes/ids)')
+
     args = parser.parse_args()
     
     if not args.command:
@@ -204,6 +224,10 @@ def main():
         handle_setup_command()
     elif args.command == 'verify':
         handle_verify_command()
+    elif args.command == 'inspect':
+        handle_inspect_command(args)
+    elif args.command == 'analyze':
+        handle_analyze_command(args)
     elif args.command == 'spiders':
         handle_spiders_command(args)
     elif args.command == 'queue':
@@ -432,6 +456,218 @@ def handle_verify_command():
     else:
         print("⚠️  Environment setup incomplete")
         print("   Run: ./scrapai setup")
+
+def handle_inspect_command(args):
+    """Handle inspect command - inspect a website"""
+    from utils.inspector import inspect_page
+    from utils.logger import setup_logging
+    import sys
+
+    # Configure logging
+    logger = setup_logging(
+        'inspector',
+        level=args.log_level,
+        log_file=args.log_file if hasattr(args, 'log_file') and args.log_file else None
+    )
+
+    logger.info(f"Starting inspection of {args.url}")
+
+    # Check display availability if using Cloudflare bypass
+    if args.cloudflare:
+        from utils.display_helper import needs_xvfb, has_xvfb
+
+        if needs_xvfb():
+            if not has_xvfb():
+                print("❌ ERROR: Cloudflare bypass requires a display")
+                print("   No display available and xvfb not installed")
+                print("\nOptions:")
+                print("   1. Install xvfb: sudo apt-get install xvfb")
+                print("   2. Then run: xvfb-run -a ./scrapai inspect <url> --cloudflare")
+                print("   3. Or run on a machine with a display")
+                sys.exit(1)
+            print("🖥️  Headless environment detected - make sure to use: xvfb-run -a ./scrapai inspect ...")
+            print("   (If you're seeing this, you may have forgotten to wrap with xvfb-run)")
+        else:
+            print("🖥️  Display available - using native browser for Cloudflare bypass")
+
+    inspect_page(args.url, args.output_dir, args.proxy_type, not args.no_save_html,
+                 use_cloudflare=args.cloudflare, project=args.project)
+    logger.info("Inspection complete")
+
+def handle_analyze_command(args):
+    """Handle analyze command - analyze HTML for CSS selectors"""
+    from bs4 import BeautifulSoup
+
+    def analyze_html(html_path):
+        """Analyze HTML and suggest selectors."""
+        with open(html_path, 'r', encoding='utf-8') as f:
+            html = f.read()
+
+        soup = BeautifulSoup(html, 'lxml')
+
+        print(f"📄 Analyzing: {html_path}")
+        print(f"📊 HTML size: {len(html)} bytes")
+        print("\n💡 TIP: Use --find 'keyword' to search for specific elements (price, rating, etc.)\n")
+
+        # Analyze titles
+        print("=" * 60)
+        print("🏷️  HEADERS (h1, h2) - Often used for: title, product_name, thread_title")
+        print("=" * 60)
+        for tag in ['h1', 'h2']:
+            elements = soup.find_all(tag)
+            if elements:
+                print(f"\n{tag.upper()} - Found {len(elements)}:")
+                for i, el in enumerate(elements[:5], 1):
+                    classes = el.get('class', [])
+                    class_str = '.' + '.'.join(classes) if classes else ''
+                    text = el.get_text(strip=True)[:80]
+                    print(f"  [{i}] {tag}{class_str}")
+                    print(f"      Text: {text}")
+
+        # Analyze content containers
+        print("\n" + "=" * 60)
+        print("📝 CONTENT CONTAINERS (article, div with content-related classes)")
+        print("=" * 60)
+        content_keywords = ['article', 'content', 'body', 'text', 'post', 'entry']
+        found_containers = []
+
+        for el in soup.find_all(['article', 'div', 'section', 'main']):
+            classes = el.get('class', [])
+            class_str = ' '.join(classes) if classes else ''
+
+            # Check if likely content container
+            if el.name == 'article' or any(kw in class_str.lower() for kw in content_keywords):
+                text_len = len(el.get_text(strip=True))
+                if text_len > 200:  # Substantial content
+                    found_containers.append((el, text_len))
+
+        # Sort by text length (largest first)
+        found_containers.sort(key=lambda x: x[1], reverse=True)
+
+        for i, (el, text_len) in enumerate(found_containers[:5], 1):
+            classes = el.get('class', [])
+            class_str = '.' + '.'.join(classes) if classes else ''
+            print(f"\n  [{i}] {el.name}{class_str}")
+            print(f"      Size: {text_len} chars")
+            print(f"      Preview: {el.get_text(strip=True)[:80]}...")
+
+        # Analyze dates
+        print("\n" + "=" * 60)
+        print("📅 DATES (time, elements with date/time classes)")
+        print("=" * 60)
+        date_keywords = ['date', 'time', 'published', 'posted', 'updated']
+        found = 0
+
+        for el in soup.find_all(['time', 'span', 'div', 'p']):
+            classes = el.get('class', [])
+            class_str = ' '.join(classes) if classes else ''
+
+            if el.name == 'time' or any(kw in class_str.lower() for kw in date_keywords):
+                text = el.get_text(strip=True)
+                if text and len(text) < 50:  # Reasonable date length
+                    classes_list = el.get('class', [])
+                    selector = '.' + '.'.join(classes_list) if classes_list else ''
+                    print(f"  {el.name}{selector}: {text}")
+                    found += 1
+                    if found >= 5:
+                        break
+
+        # Analyze authors
+        print("\n" + "=" * 60)
+        print("✍️  AUTHORS (elements with author/byline classes)")
+        print("=" * 60)
+        author_keywords = ['author', 'byline', 'writer', 'by']
+        found = 0
+
+        for el in soup.find_all(['span', 'div', 'a', 'p']):
+            classes = el.get('class', [])
+            class_str = ' '.join(classes) if classes else ''
+
+            if any(kw in class_str.lower() for kw in author_keywords):
+                text = el.get_text(strip=True)
+                if text and len(text) < 100:  # Reasonable author length
+                    classes_list = el.get('class', [])
+                    selector = '.' + '.'.join(classes_list) if classes_list else ''
+                    print(f"  {el.name}{selector}: {text}")
+                    found += 1
+                    if found >= 5:
+                        break
+
+        print("\n" + "=" * 60)
+
+    def test_selector(html_path, selector):
+        """Test a CSS selector on HTML."""
+        with open(html_path, 'r', encoding='utf-8') as f:
+            html = f.read()
+
+        soup = BeautifulSoup(html, 'lxml')
+
+        print(f"\n🔍 Testing selector: {selector}")
+        print("=" * 60)
+
+        elements = soup.select(selector)
+
+        if not elements:
+            print("❌ No elements found!")
+            return
+
+        print(f"✓ Found {len(elements)} element(s)\n")
+
+        for i, el in enumerate(elements[:3], 1):
+            text = el.get_text(strip=True)
+            print(f"[{i}] {el.name}")
+            print(f"    Classes: {el.get('class', [])}")
+            print(f"    Text ({len(text)} chars): {text[:150]}...")
+            print()
+
+    def find_by_keyword(html_path, keyword):
+        """Find elements by keyword in classes or text."""
+        with open(html_path, 'r', encoding='utf-8') as f:
+            html = f.read()
+
+        soup = BeautifulSoup(html, 'lxml')
+
+        print(f"\n🔎 Finding elements with keyword: '{keyword}'")
+        print("=" * 60)
+
+        found = 0
+
+        # Search in all elements
+        for el in soup.find_all():
+            # Check classes
+            classes = el.get('class', [])
+            class_str = ' '.join(classes) if classes else ''
+
+            # Check id
+            el_id = el.get('id', '')
+
+            # Match keyword in class or id
+            if keyword.lower() in class_str.lower() or keyword.lower() in el_id.lower():
+                text = el.get_text(strip=True)
+                if text and len(text) < 200:  # Reasonable length
+                    classes_list = el.get('class', [])
+                    selector = '.' + '.'.join(classes_list) if classes_list else ''
+                    if el_id:
+                        selector = f"#{el_id}"
+                    print(f"\n  {el.name}{selector}")
+                    print(f"    Text: {text[:100]}")
+                    found += 1
+                    if found >= 10:
+                        break
+
+        if found == 0:
+            print(f"\n❌ No elements found with keyword '{keyword}'")
+            print("\n💡 Try searching for:")
+            print("   - Class keywords: 'price', 'rating', 'author', 'date', 'title'")
+            print("   - Content keywords: look at text content in analyze mode")
+
+    # Execute based on flags
+    if args.test:
+        test_selector(args.html_file, args.test)
+    elif args.find:
+        find_by_keyword(args.html_file, args.find)
+    else:
+        analyze_html(args.html_file)
 
 def handle_spiders_command(args):
     """Handle spider management commands"""

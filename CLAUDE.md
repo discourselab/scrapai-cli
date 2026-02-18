@@ -137,9 +137,7 @@ Follow ALL instructions in CLAUDE.md for each phase.
 **🚨 STRICT REQUIREMENT: Only use tools and commands available in this repository.**
 
 **ALLOWED - Repository Tools:**
-- `./scrapai` - Main CLI tool (spider management, queue, crawl, export, show)
-- `bin/inspector` - Website analysis and inspection tool
-- `bin/analyze_selectors` - CSS selector analysis tool (if needed)
+- `./scrapai` - Main CLI tool (all commands: spider management, queue, crawl, export, show, inspect, analyze)
 
 **ALLOWED - Claude Code Tools:**
 - **Read** - Read file contents (use instead of cat/head/tail)
@@ -152,8 +150,8 @@ Follow ALL instructions in CLAUDE.md for each phase.
 
 **FORBIDDEN - DO NOT USE:**
 - ❌ `fetch` - not available in this repo
-- ❌ `curl` - use bin/inspector instead
-- ❌ `wget` - use bin/inspector instead
+- ❌ `curl` - use ./scrapai inspect instead
+- ❌ `wget` - use ./scrapai inspect instead
 - ❌ `grep`, `rg`, `awk`, `sed` in Bash - use Grep tool instead
 - ❌ `cat`, `head`, `tail` in Bash - use Read tool instead
 - ❌ `find`, `ls` for searching - use Glob tool instead
@@ -205,18 +203,18 @@ You MUST complete EVERY step of EVERY phase before proceeding to the next phase.
 - **To search file contents**: Use the Grep tool (NOT `grep` or `rg` in Bash)
 - **To read files**: Use the Read tool (NOT `cat`, `head`, `tail` in Bash)
 - **To find files**: Use the Glob tool (NOT `find` or `ls` in Bash)
-- **For web inspection**: Use `bin/inspector` (NOT curl, wget, fetch)
+- **For web inspection**: Use `./scrapai inspect` (NOT curl, wget, fetch)
 
 **Note:** Virtual environment activation is automatic - you don't need `source .venv/bin/activate` anymore!
 
 **Bad Example (DO NOT DO THIS):**
 ```bash
-bin/inspector --url https://example.com && ./scrapai extract-urls ... && cat file.txt | grep something
+./scrapai inspect https://example.com && ./scrapai extract-urls ... && cat file.txt | grep something
 ```
 
 **Good Example (DO THIS):**
 ```bash
-bin/inspector --url https://example.com --project myproject
+./scrapai inspect https://example.com --project myproject
 ```
 ```bash
 ./scrapai extract-urls --file data/myproject/site/analysis/page.html -o data/myproject/site/analysis/urls.txt
@@ -442,7 +440,7 @@ Export behavior:
 **Test generic extractors first. Only use custom selectors if they fail.**
 
 **Analysis Workflow:**
-1. Inspect article page with `bin/inspector`
+1. Inspect article page with `./scrapai inspect`
 2. Test if newspaper/trafilatura extract correctly
 3. If yes → use generic extractors (`EXTRACTOR_ORDER: ["newspaper", "trafilatura"]`)
 4. If no → discover custom selectors and use `EXTRACTOR_ORDER: ["custom", "newspaper", "trafilatura"]`
