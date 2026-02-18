@@ -386,6 +386,8 @@ ScrapAI is agent-agnostic and works with multiple AI coding assistants. Choose t
 
 ### Setup
 
+**Quick Start (5 minutes):**
+
 1. **Clone the repository**
 
    ```bash
@@ -393,31 +395,27 @@ ScrapAI is agent-agnostic and works with multiple AI coding assistants. Choose t
    cd scrapai-cli
    ```
 
-2. **Create and activate virtual environment**
-
-   **Linux/Mac:**
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
-
-   **Windows (Command Prompt):**
-   ```cmd
-   python -m venv .venv
-   .venv\Scripts\activate.bat
-   ```
-
-   **Windows (PowerShell):**
-   ```powershell
-   python -m venv .venv
-   .venv\Scripts\Activate.ps1
-   ```
-
-3. **Install Python dependencies**
+2. **Run setup**
 
    ```bash
-   pip install -r requirements.txt
+   ./scrapai setup
    ```
+
+   That's it! This single command:
+   - ✅ Creates virtual environment automatically
+   - ✅ Installs all dependencies
+   - ✅ Initializes SQLite database (no PostgreSQL setup required!)
+   - ✅ Configures permissions (if using Claude Code)
+
+   **Note:** Virtual environment activation is automatic - you never need to run `source .venv/bin/activate`!
+
+3. **Verify installation**
+
+   ```bash
+   ./scrapai verify
+   ```
+
+**For detailed onboarding guide, see [docs/onboarding.md](docs/onboarding.md)**
 
 4. **Choose your AI agent**
 
