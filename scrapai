@@ -639,31 +639,56 @@ def handle_queue_command(args):
             print()
 
     elif args.queue_command == 'next':
-        # Atomic claim next item using PostgreSQL FOR UPDATE SKIP LOCKED
+        # Atomic claim next item (supports both PostgreSQL and SQLite)
+        from core.db import is_postgres
         processing_by = f"{getpass.getuser()}@{socket.gethostname()}"
 
-        # Use raw SQL for atomic operation
-        result = db.execute(text("""
-            UPDATE crawl_queue
-            SET
-                status = 'processing',
-                processing_by = :processing_by,
-                locked_at = NOW(),
-                updated_at = NOW()
-            WHERE id = (
-                SELECT id
-                FROM crawl_queue
-                WHERE status = 'pending'
-                  AND project_name = :project_name
-                ORDER BY priority DESC, created_at ASC
-                LIMIT 1
-                FOR UPDATE SKIP LOCKED
-            )
-            RETURNING id, website_url, custom_instruction, priority
-        """), {
-            'processing_by': processing_by,
-            'project_name': args.project
-        })
+        if is_postgres():
+            # PostgreSQL: Use FOR UPDATE SKIP LOCKED for best performance
+            result = db.execute(text("""
+                UPDATE crawl_queue
+                SET
+                    status = 'processing',
+                    processing_by = :processing_by,
+                    locked_at = NOW(),
+                    updated_at = NOW()
+                WHERE id = (
+                    SELECT id
+                    FROM crawl_queue
+                    WHERE status = 'pending'
+                      AND project_name = :project_name
+                    ORDER BY priority DESC, created_at ASC
+                    LIMIT 1
+                    FOR UPDATE SKIP LOCKED
+                )
+                RETURNING id, website_url, custom_instruction, priority
+            """), {
+                'processing_by': processing_by,
+                'project_name': args.project
+            })
+        else:
+            # SQLite: Use optimistic locking (re-check status in WHERE clause)
+            result = db.execute(text("""
+                UPDATE crawl_queue
+                SET
+                    status = 'processing',
+                    processing_by = :processing_by,
+                    locked_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = (
+                    SELECT id
+                    FROM crawl_queue
+                    WHERE status = 'pending'
+                      AND project_name = :project_name
+                    ORDER BY priority DESC, created_at ASC
+                    LIMIT 1
+                )
+                AND status = 'pending'
+                RETURNING id, website_url, custom_instruction, priority
+            """), {
+                'processing_by': processing_by,
+                'project_name': args.project
+            })
 
         db.commit()
 
