@@ -81,8 +81,7 @@ If you're using **Claude Code** (the AI coding assistant), the setup command aut
       "Update",
       "Glob",
       "Grep",
-      "Bash(./scrapai verify:*)",
-      "Bash(./scrapai setup:*)",
+      "Bash(./scrapai:*)",
       "Bash(source:*)",
       "Bash(sqlite3:*)"
     ],
@@ -96,13 +95,16 @@ If you're using **Claude Code** (the AI coding assistant), the setup command aut
 
 **What this does:**
 - ✅ **Allows** all file operations (Read, Write, Edit, Update, Glob, Grep)
-- ✅ **Allows** essential ScrapAI commands (verify, setup, source, sqlite3)
+- ✅ **Allows** all ScrapAI CLI commands (`./scrapai:*`)
+- ✅ **Allows** essential system commands (source, sqlite3)
 - ❌ **Denies** web tools (WebFetch, WebSearch) - these don't exist in the repo anyway
+- 🔄 **Merges with existing** - Won't overwrite your accumulated permissions
 - 🔒 **Project-specific** - only applies to this project, not your other Claude Code projects
 
 **Why this matters:**
 - Prevents Claude Code from trying to use tools that don't exist
-- Pre-approves file operations and common setup commands
+- Pre-approves file operations and all ScrapAI commands
+- Preserves any additional permissions you've already granted
 - Makes onboarding smoother by avoiding permission prompts
 
 **Note:** If you're using a different AI assistant (Cursor, Windsurf, etc.), this section doesn't apply - it's Claude Code specific.

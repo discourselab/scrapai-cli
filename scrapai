@@ -339,27 +339,49 @@ def handle_setup_command():
             settings_dir.mkdir(exist_ok=True)
             settings_file = settings_dir / 'settings.local.json'
 
-            settings = {
-                "permissions": {
-                    "allow": [
-                        "Read",
-                        "Write",
-                        "Edit",
-                        "Update",
-                        "Glob",
-                        "Grep",
-                        "Bash(./scrapai verify:*)",
-                        "Bash(./scrapai setup:*)",
-                        "Bash(source:*)",
-                        "Bash(sqlite3:*)"
-                    ],
-                    "deny": [
-                        "WebFetch",
-                        "WebSearch"
-                    ]
-                }
-            }
+            # Default permissions to add
+            new_allow = [
+                "Read",
+                "Write",
+                "Edit",
+                "Update",
+                "Glob",
+                "Grep",
+                "Bash(./scrapai:*)",
+                "Bash(source:*)",
+                "Bash(sqlite3:*)"
+            ]
+            new_deny = [
+                "WebFetch",
+                "WebSearch"
+            ]
 
+            # Read existing settings if file exists
+            if settings_file.exists():
+                with open(settings_file, 'r') as f:
+                    settings = json.load(f)
+            else:
+                settings = {"permissions": {}}
+
+            # Ensure permissions key exists
+            if "permissions" not in settings:
+                settings["permissions"] = {}
+
+            # Merge allow list (avoid duplicates)
+            existing_allow = settings["permissions"].get("allow", [])
+            for item in new_allow:
+                if item not in existing_allow:
+                    existing_allow.append(item)
+            settings["permissions"]["allow"] = existing_allow
+
+            # Merge deny list (avoid duplicates)
+            existing_deny = settings["permissions"].get("deny", [])
+            for item in new_deny:
+                if item not in existing_deny:
+                    existing_deny.append(item)
+            settings["permissions"]["deny"] = existing_deny
+
+            # Write merged settings
             with open(settings_file, 'w') as f:
                 json.dump(settings, f, indent=2)
 
