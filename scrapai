@@ -295,9 +295,9 @@ def handle_setup_command():
         try:
             # Use venv's Python directly - no activation needed
             subprocess.run([str(venv_python), '-m', 'pip', 'install', '--upgrade', 'pip'],
-                         check=True, cwd=script_dir)
+                         check=True, cwd=script_dir, capture_output=True)
             subprocess.run([str(venv_python), '-m', 'pip', 'install', '-r', 'requirements.txt'],
-                         check=True, cwd=script_dir)
+                         check=True, cwd=script_dir, capture_output=True)
             print("✅ Requirements installed")
         except subprocess.CalledProcessError as e:
             print(f"❌ Failed to install requirements: {e}")
@@ -305,12 +305,23 @@ def handle_setup_command():
     else:
         print("⚠️  requirements.txt not found")
 
-    # Check database setup using venv Python
-    print("🗄️  Initializing database...")
+    # Create .env file if it doesn't exist
+    env_file = Path('.env')
+    env_example = Path('.env.example')
+    if not env_file.exists() and env_example.exists():
+        print("📝 Creating .env from .env.example...")
+        try:
+            import shutil
+            shutil.copy(env_example, env_file)
+            print("✅ .env file created (using SQLite by default)")
+        except Exception as e:
+            print(f"⚠️  Warning: Could not create .env: {e}")
+            print("   You may need to create it manually")
+
+    # Initialize database using venv Python
     try:
         init_db_path = os.path.join(script_dir, 'init_db.py')
         subprocess.run([str(venv_python), init_db_path], check=True, cwd=script_dir)
-        print("✅ Database initialized")
     except subprocess.CalledProcessError as e:
         print(f"❌ Database setup failed: {e}")
         sys.exit(1)
