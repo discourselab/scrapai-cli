@@ -318,11 +318,41 @@ def handle_setup_command():
         print(f"❌ Setup error: {e}")
         sys.exit(1)
 
+    # Configure Claude Code settings (if running in Claude Code)
+    claude_home = Path.home() / '.claude'
+    if claude_home.exists():
+        print("🔧 Configuring Claude Code permissions...")
+        try:
+            import json
+            settings_dir = Path('.claude')
+            settings_dir.mkdir(exist_ok=True)
+            settings_file = settings_dir / 'settings.json'
+
+            settings = {
+                "permissions": {
+                    "Read": "allow",
+                    "Write": "allow",
+                    "Edit": "allow",
+                    "Glob": "allow",
+                    "Grep": "allow",
+                    "WebFetch": "deny",
+                    "WebSearch": "deny"
+                }
+            }
+
+            with open(settings_file, 'w') as f:
+                json.dump(settings, f, indent=2)
+
+            print("✅ Claude Code permissions configured")
+        except Exception as e:
+            print(f"⚠️  Warning: Could not configure Claude Code settings: {e}")
+            # Don't fail setup if this fails
+
     print("🎉 ScrapAI setup complete!")
     print("📝 You can now:")
-    print("   • List spiders: ./scrapai spiders list")
-    print("   • Import spiders: ./scrapai spiders import <file>")
-    print("   • Run crawls: ./scrapai crawl <spider_name>")
+    print("   • List spiders: ./scrapai spiders list --project <name>")
+    print("   • Import spiders: ./scrapai spiders import <file> --project <name>")
+    print("   • Run crawls: ./scrapai crawl <spider_name> --project <name>")
 
 def handle_verify_command():
     """Verify environment setup without installing anything"""
