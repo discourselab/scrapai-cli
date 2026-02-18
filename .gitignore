@@ -26,6 +26,7 @@ skills/
 
 tmp/
 seed/
+pitch/
 
 # Output files (but keep example configs)
 *.json
