@@ -13,11 +13,11 @@
 
 ```bash
 # Regular inspection (Playwright)
-source .venv/bin/activate && bin/inspector --url https://example.com
+./scrapai inspect --url https://example.com
 ```
 ```bash
 # CF-protected site (nodriver with bypass)
-source .venv/bin/activate && bin/inspector --url https://americafirstpolicy.com/issues/energy --cloudflare
+./scrapai inspect --url https://americafirstpolicy.com/issues/energy --cloudflare
 ```
 
 ## Spider Configuration with Cloudflare
