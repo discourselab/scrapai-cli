@@ -167,31 +167,6 @@ Follow ALL instructions in CLAUDE.md for each phase.
 - Uses optimized tools designed for the repo's workflow
 - Maintains consistency across different systems
 
-**System-Level Enforcement (Claude Code Settings):**
-This project uses Claude Code settings to block forbidden tools at project level.
-
-**When user runs `./scrapai verify` or `./scrapai setup`:**
-1. **Check if Claude Code environment:** `ls -d ~/.claude/ 2>/dev/null`
-2. **If ~/.claude/ exists** (Claude Code user):
-   - Check if `.claude/settings.json` exists in project
-   - If missing or incomplete, create/update it with:
-     ```json
-     {
-       "permissions": {
-         "WebFetch": "deny",
-         "WebSearch": "deny"
-       }
-     }
-     ```
-   - Inform user: "✅ Tool restrictions configured in .claude/settings.json"
-3. **If ~/.claude/ doesn't exist** (other AI tool):
-   - Skip - settings only work in Claude Code
-   - Tool restrictions enforced through CLAUDE.md instructions only
-
-**If you need functionality not available:**
-- Ask the user first before attempting workarounds
-- Don't assume external tools are installed
-
 ---
 
 ### 1. Environment Notes

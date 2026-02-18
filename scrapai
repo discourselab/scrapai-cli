@@ -337,24 +337,33 @@ def handle_setup_command():
             import json
             settings_dir = Path('.claude')
             settings_dir.mkdir(exist_ok=True)
-            settings_file = settings_dir / 'settings.json'
+            settings_file = settings_dir / 'settings.local.json'
 
             settings = {
                 "permissions": {
-                    "Read": "allow",
-                    "Write": "allow",
-                    "Edit": "allow",
-                    "Glob": "allow",
-                    "Grep": "allow",
-                    "WebFetch": "deny",
-                    "WebSearch": "deny"
+                    "allow": [
+                        "Read",
+                        "Write",
+                        "Edit",
+                        "Update",
+                        "Glob",
+                        "Grep",
+                        "Bash(./scrapai verify:*)",
+                        "Bash(./scrapai setup:*)",
+                        "Bash(source:*)",
+                        "Bash(sqlite3:*)"
+                    ],
+                    "deny": [
+                        "WebFetch",
+                        "WebSearch"
+                    ]
                 }
             }
 
             with open(settings_file, 'w') as f:
                 json.dump(settings, f, indent=2)
 
-            print("✅ Claude Code permissions configured")
+            print("✅ Claude Code permissions configured in .claude/settings.local.json")
         except Exception as e:
             print(f"⚠️  Warning: Could not configure Claude Code settings: {e}")
             # Don't fail setup if this fails

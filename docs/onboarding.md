@@ -69,30 +69,40 @@ You **never** need to type `source .venv/bin/activate` - the CLI does it for you
 
 ### Claude Code Permissions (Automatic)
 
-If you're using **Claude Code** (the AI coding assistant), the setup command automatically configures project-specific permissions in `.claude/settings.json`:
+If you're using **Claude Code** (the AI coding assistant), the setup command automatically configures project-specific permissions in `.claude/settings.local.json`:
 
 ```json
 {
   "permissions": {
-    "Read": "allow",
-    "Write": "allow",
-    "Edit": "allow",
-    "Glob": "allow",
-    "Grep": "allow",
-    "WebFetch": "deny",
-    "WebSearch": "deny"
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "Update",
+      "Glob",
+      "Grep",
+      "Bash(./scrapai verify:*)",
+      "Bash(./scrapai setup:*)",
+      "Bash(source:*)",
+      "Bash(sqlite3:*)"
+    ],
+    "deny": [
+      "WebFetch",
+      "WebSearch"
+    ]
   }
 }
 ```
 
 **What this does:**
-- ✅ **Allows** all file operations (Read, Write, Edit, Glob, Grep)
+- ✅ **Allows** all file operations (Read, Write, Edit, Update, Glob, Grep)
+- ✅ **Allows** essential ScrapAI commands (verify, setup, source, sqlite3)
 - ❌ **Denies** web tools (WebFetch, WebSearch) - these don't exist in the repo anyway
 - 🔒 **Project-specific** - only applies to this project, not your other Claude Code projects
 
 **Why this matters:**
 - Prevents Claude Code from trying to use tools that don't exist
-- Explicitly grants permissions for tools the project needs
+- Pre-approves file operations and common setup commands
 - Makes onboarding smoother by avoiding permission prompts
 
 **Note:** If you're using a different AI assistant (Cursor, Windsurf, etc.), this section doesn't apply - it's Claude Code specific.
