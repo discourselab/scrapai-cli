@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./scrapai:*)",
+      "Bash(source:*)",
+      "Bash(sqlite3:*)",
+      "Bash(psql:*)",
+      "Bash(git pull:*)",
+      "Bash(touch:*)",
+      "Read",
+      "Write",
+      "Edit",
+      "Update",
+      "Glob",
+      "Grep",
+      "MultiEdit",
+      "Bash(git add:*)"
+    ],
+    "deny": [
+      "Write(**/*.py)",
+      "Edit(**/*.py)",
+      "MultiEdit(**/*.py)",
+      "Write(.env)",
+      "Write(secrets/**)",
+      "Write(config/**/*.key)",
+      "Write(**/*password*)",
+      "Write(**/*secret*)",
+      "WebFetch",
+      "WebSearch"
+    ]
+  }
+}
