@@ -770,9 +770,9 @@ def handle_queue_command(args):
                 'project_name': args.project
             })
 
-        db.commit()
-
+        # Fetch result BEFORE committing (SQLite requires this)
         row = result.fetchone()
+        db.commit()
 
         if row:
             print(f"🔄 Claimed item from queue:")
