@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.ext.declarative import declarative_base
 from dotenv import load_dotenv
@@ -11,19 +11,29 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
-    # Fallback to local SQLite for development if no Postgres URL provided
-    # But user specifically asked for Postgres, so we should warn or default to a postgres pattern
-    # For now, let's assume standard Postgres params if DATABASE_URL is missing
-    POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
-    POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
-    POSTGRES_DB = os.getenv("POSTGRES_DB", "scrapai")
-    POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
-    POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
-    
-    DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+    # Default to SQLite (no setup required!)
+    DATABASE_URL = "sqlite:///scrapai.db"
 
 # Create engine
 engine = create_engine(DATABASE_URL)
+
+# Enable WAL mode for SQLite (better concurrency and performance)
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_conn, connection_record):
+    if 'sqlite' in DATABASE_URL:
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")  # Balance speed/safety
+        cursor.execute("PRAGMA cache_size=-64000")   # 64MB cache
+        cursor.close()
+
+def is_postgres():
+    """Check if we're using PostgreSQL"""
+    return 'postgresql' in DATABASE_URL or 'postgres' in DATABASE_URL
+
+def is_sqlite():
+    """Check if we're using SQLite"""
+    return 'sqlite' in DATABASE_URL
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
