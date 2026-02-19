@@ -486,7 +486,29 @@ Quick reference for spider settings:
 }
 ```
 
-**For Cloudflare-Protected Sites:**
+**For Cloudflare-Protected Sites (ONLY WHEN NEEDED):**
+
+⚠️ **IMPORTANT: Only enable Cloudflare bypass when the site actually requires it. DO NOT enable by default.**
+
+**When to use Cloudflare bypass:**
+- Inspector shows "Checking your browser" or "Just a moment" messages
+- Inspector fails with 403/503 errors
+- Site returns Cloudflare challenge pages
+- Normal crawl fails due to Cloudflare protection
+
+**When NOT to use (default):**
+- Inspector successfully fetches pages
+- No Cloudflare errors during inspection
+- Site works with normal requests
+
+**Cost of enabling unnecessarily:**
+- Much slower (visible browser vs HTTP requests)
+- Higher resource usage (browser memory/CPU)
+- Limited to single concurrent request
+- Adds 5-50 seconds per page overhead
+
+**How to test:** Run inspector WITHOUT `--cloudflare` flag first. Only add Cloudflare if it fails.
+
 ```json
 {
   "settings": {

@@ -202,6 +202,12 @@ Fetch an actual article (not homepage or listing page):
 
 This saves `page.html` and `analysis.json` to `data/<project_name>/website_com/analysis/`.
 
+**🛡️ Cloudflare Detection:**
+- If inspector shows "Checking your browser" or fails with 403/503, the site has Cloudflare protection
+- In that case, re-run with: `./scrapai inspect --url https://website.com/article-url --project <project_name> --cloudflare`
+- Note this for Phase 4 - you'll need to add `"CLOUDFLARE_ENABLED": true` to spider settings
+- If inspector works normally (no errors), DO NOT enable Cloudflare bypass
+
 ### Step 2: Test Generic Extraction
 
 **CRITICAL: You need to actually test if newspaper/trafilatura extract the content correctly.**
@@ -448,11 +454,19 @@ Debugging both extraction AND navigation together is difficult. Instead:
      "settings": {
        "DOWNLOAD_DELAY": 1,
        "CONCURRENT_REQUESTS": 3,
-       "EXTRACTOR_ORDER": ["newspaper", "trafilatura"],
-       "CLOUDFLARE_ENABLED": true
+       "EXTRACTOR_ORDER": ["newspaper", "trafilatura"]
      }
    }
    ```
+
+   **⚠️ Cloudflare Bypass - Only Add When Needed:**
+
+   DO NOT add `"CLOUDFLARE_ENABLED": true` by default. Only add if:
+   - Inspector showed "Checking your browser" messages during analysis
+   - Inspector failed with 403/503 errors
+   - You confirmed the site has Cloudflare protection
+
+   If inspector worked fine, DO NOT enable Cloudflare (adds major overhead: visible browser, slower crawling, single concurrent request).
 
 3. **Import and test:**
    ```bash
