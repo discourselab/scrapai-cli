@@ -22,7 +22,7 @@
 **Step 1: Fetch and Inspect Article HTML**
 ```bash
 # Use inspector with CF bypass to get full rendered HTML
-source .venv/bin/activate && bin/inspector --url https://example.com/article-url --cloudflare
+./scrapai inspect --url https://example.com/article-url --cloudflare
 ```
 
 **Step 2: Analyze HTML Structure**
@@ -31,7 +31,7 @@ Use the selector analyzer tool to discover selectors:
 
 ```bash
 # Analyze HTML and get selector suggestions
-source .venv/bin/activate && bin/analyze_selectors data/example_com/analysis/page.html
+./scrapai analyze data/example_com/analysis/page.html
 ```
 
 This will show:
@@ -87,15 +87,15 @@ Use the analyzer to test each selector:
 
 ```bash
 # Test title selector
-source .venv/bin/activate && bin/analyze_selectors data/example_com/analysis/page.html --test "h1.article-title"
+./scrapai analyze data/example_com/analysis/page.html --test "h1.article-title"
 ```
 ```bash
 # Test content selector
-source .venv/bin/activate && bin/analyze_selectors data/example_com/analysis/page.html --test "div.article-body"
+./scrapai analyze data/example_com/analysis/page.html --test "div.article-body"
 ```
 ```bash
 # Test date selector
-source .venv/bin/activate && bin/analyze_selectors data/example_com/analysis/page.html --test "time.published-date"
+./scrapai analyze data/example_com/analysis/page.html --test "time.published-date"
 ```
 
 This shows:

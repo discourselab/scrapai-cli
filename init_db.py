@@ -7,19 +7,39 @@ import subprocess
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 def main():
-    print("Initializing database with Alembic migrations...")
+    """Initialize database - try migrations first, fallback to direct table creation."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    print("🗄️  Initializing database...")
+
     try:
-        # Run alembic upgrade to ensure database is up to date
+        # Try migrations first
         result = subprocess.run([
             sys.executable, '-m', 'alembic', 'upgrade', 'head'
-        ], capture_output=True, text=True, cwd=os.path.dirname(os.path.abspath(__file__)))
-        
+        ], capture_output=True, text=True, cwd=script_dir)
+
         if result.returncode == 0:
-            print("✅ Database initialized successfully!")
-            print("📝 All migrations applied.")
+            print("✅ Database initialized with migrations")
+            return
         else:
-            print(f"❌ Error running migrations: {result.stderr}")
-            sys.exit(1)
+            print("⚠️  Migrations failed, creating tables directly...")
+            # If migrations fail, create tables directly from models
+            from core.db import Base, engine
+            from core import models  # Import to register all models
+
+            Base.metadata.create_all(bind=engine)
+            print("✅ Database tables created")
+
+            # Stamp database with latest migration
+            result = subprocess.run([
+                sys.executable, '-m', 'alembic', 'stamp', 'head'
+            ], capture_output=True, text=True, cwd=script_dir)
+
+            if result.returncode == 0:
+                print("✅ Database stamped with latest migration")
+            else:
+                print("⚠️  Warning: Could not stamp database (non-critical)")
+
     except Exception as e:
         print(f"❌ Error initializing database: {e}")
         sys.exit(1)

@@ -65,7 +65,7 @@ Review the complete URL list again and confirm you understand the full site stru
 
 Inspect the site structure to understand how to extract content:
 ```bash
-source .venv/bin/activate && bin/inspector --url https://website.com/
+./scrapai inspect --url https://website.com/
 ```
 Read page.html and analysis.json immediately after.
 
@@ -87,7 +87,7 @@ After homepage analysis, create a comprehensive section map in `sections.md` to 
 Example - sequential section drilling (ONE at a time):
 ```bash
 # Step 1: Inspect first section
-source .venv/bin/activate && bin/inspector --url https://example.com/news/
+./scrapai inspect --url https://example.com/news/
 ```
 ```bash
 # Step 2: IMMEDIATELY read and document before moving on
@@ -99,7 +99,7 @@ source .venv/bin/activate && ./scrapai extract-urls --file data/<project>/exampl
 ```bash
 # Step 3: Update sections.md with findings
 # Step 4: Now inspect next section
-source .venv/bin/activate && bin/inspector --url https://example.com/policy/
+./scrapai inspect --url https://example.com/policy/
 ```
 ```bash
 # Step 5: IMMEDIATELY read and document
@@ -197,10 +197,16 @@ Combine all section rule files into a comprehensive spider definition.
 Fetch an actual article (not homepage or listing page):
 
 ```bash
-source .venv/bin/activate && bin/inspector --url https://website.com/article-url --project <project_name>
+./scrapai inspect --url https://website.com/article-url --project <project_name>
 ```
 
 This saves `page.html` and `analysis.json` to `data/<project_name>/website_com/analysis/`.
+
+**🛡️ Cloudflare Detection:**
+- If inspector shows "Checking your browser" or fails with 403/503, the site has Cloudflare protection
+- In that case, re-run with: `./scrapai inspect --url https://website.com/article-url --project <project_name> --cloudflare`
+- Note this for Phase 4 - you'll need to add `"CLOUDFLARE_ENABLED": true` to spider settings
+- If inspector works normally (no errors), DO NOT enable Cloudflare bypass
 
 ### Step 2: Test Generic Extraction
 
@@ -246,24 +252,24 @@ Currently, there's no automated tool for this. You must:
 
 2. **Analyze HTML and find selectors**:
    ```bash
-   source .venv/bin/activate && bin/analyze_selectors data/<project>/website_com/analysis/page.html
+   ./scrapai analyze data/<project>/website_com/analysis/page.html
    ```
    This shows: All h1/h2 titles with classes, content containers sorted by size, date elements, author elements.
 
 3. **Test each selector**:
    ```bash
-   source .venv/bin/activate && bin/analyze_selectors data/<project>/website_com/analysis/page.html --test "h1.article-title"
+   ./scrapai analyze data/<project>/website_com/analysis/page.html --test "h1.article-title"
    ```
    ```bash
-   source .venv/bin/activate && bin/analyze_selectors data/<project>/website_com/analysis/page.html --test "div.article-body"
+   ./scrapai analyze data/<project>/website_com/analysis/page.html --test "div.article-body"
    ```
 
 4. **Search for specific fields**:
    ```bash
-   source .venv/bin/activate && bin/analyze_selectors data/<project>/website_com/analysis/page.html --find "price"
+   ./scrapai analyze data/<project>/website_com/analysis/page.html --find "price"
    ```
    ```bash
-   source .venv/bin/activate && bin/analyze_selectors data/<project>/website_com/analysis/page.html --find "rating"
+   ./scrapai analyze data/<project>/website_com/analysis/page.html --find "rating"
    ```
 
 5. **Add CUSTOM_SELECTORS to final_spider.json**:
@@ -448,11 +454,19 @@ Debugging both extraction AND navigation together is difficult. Instead:
      "settings": {
        "DOWNLOAD_DELAY": 1,
        "CONCURRENT_REQUESTS": 3,
-       "EXTRACTOR_ORDER": ["newspaper", "trafilatura"],
-       "CLOUDFLARE_ENABLED": true
+       "EXTRACTOR_ORDER": ["newspaper", "trafilatura"]
      }
    }
    ```
+
+   **⚠️ Cloudflare Bypass - Only Add When Needed:**
+
+   DO NOT add `"CLOUDFLARE_ENABLED": true` by default. Only add if:
+   - Inspector showed "Checking your browser" messages during analysis
+   - Inspector failed with 403/503 errors
+   - You confirmed the site has Cloudflare protection
+
+   If inspector worked fine, DO NOT enable Cloudflare (adds major overhead: visible browser, slower crawling, single concurrent request).
 
 3. **Import and test:**
    ```bash

@@ -1,23 +1,23 @@
 # Cloudflare Bypass Support
 
-**For sites protected by Cloudflare challenges**, the system supports automatic bypass using a persistent browser session.
+Technical documentation for Cloudflare bypass functionality using persistent browser sessions.
 
-## When to Use
+## Detection Indicators
 
-- Site shows "Checking your browser" or "Just a moment" messages
-- Site returns 403/503 errors with Cloudflare branding
-- Content extraction fails with normal extractors
-- Inspector fails to fetch the homepage
+Sites with Cloudflare protection typically show:
+- "Checking your browser" or "Just a moment" messages
+- 403/503 HTTP errors with Cloudflare branding
+- Challenge pages before accessing content
 
 ## Inspector with Cloudflare Bypass
 
 ```bash
 # Regular inspection (Playwright)
-source .venv/bin/activate && bin/inspector --url https://example.com
+./scrapai inspect --url https://example.com
 ```
 ```bash
 # CF-protected site (nodriver with bypass)
-source .venv/bin/activate && bin/inspector --url https://americafirstpolicy.com/issues/energy --cloudflare
+./scrapai inspect --url https://americafirstpolicy.com/issues/energy --cloudflare
 ```
 
 ## Spider Configuration with Cloudflare
@@ -123,10 +123,11 @@ Look for these log messages during crawl:
 [INFO] CloudflareDownloadHandler: Closed browser
 ```
 
-## Important Notes
+## Technical Limitations
 
-- Only use when site is actually Cloudflare-protected (adds overhead)
-- Browser must be visible - set `headless=False` (CF may detect headless mode)
+- Browser must be visible - `headless=False` required (Cloudflare may detect headless browsers)
 - Single browser session = single concurrent request only
-- SmartExtractor still handles content extraction from fetched HTML
-- No changes to `EXTRACTOR_ORDER` needed - works with all extractors
+- Higher resource usage: browser memory and CPU overhead
+- Slower than HTTP requests: adds 5-50 second overhead per page
+- SmartExtractor handles content extraction from fetched HTML
+- Compatible with all `EXTRACTOR_ORDER` configurations
