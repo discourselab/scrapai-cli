@@ -286,6 +286,12 @@ def handle_setup_command():
             subprocess.run([str(venv_python), '-m', 'pip', 'install', '-r', 'requirements.txt'],
                          check=True, cwd=script_dir, capture_output=True)
             print("✅ Requirements installed")
+
+            # Install Playwright browsers
+            print("🌐 Installing Playwright browsers...")
+            subprocess.run([str(venv_python), '-m', 'playwright', 'install'],
+                         check=True, cwd=script_dir, capture_output=True)
+            print("✅ Playwright browsers installed")
         except subprocess.CalledProcessError as e:
             print(f"❌ Failed to install requirements: {e}")
             sys.exit(1)
