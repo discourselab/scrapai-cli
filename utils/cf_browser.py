@@ -171,9 +171,11 @@ class CloudflareBrowserClient:
                 return None
         else:
             # Subsequent requests - create NEW tab for each fetch (concurrent isolation)
+            # Keep self.tab as anchor (never close it) to prevent browser shutdown
             logger.info(f"Fetching {url} using verified Cloudflare session (new tab)")
             try:
-                # Create a new tab for this fetch (prevents concurrent request conflicts)
+                # Create a new tab for this fetch
+                # driver.get() opens URL in a new tab, preserving self.tab anchor
                 tab = await self.driver.get(url)
 
                 # Wait for page to fully load (not just network idle)
@@ -209,24 +211,18 @@ class CloudflareBrowserClient:
                     text_length = len(html.replace('<', '').replace('>', '').strip())
                     logger.info(f"After additional wait: {text_length} chars")
 
-                # Get HTML content before closing tab
+                # Get HTML content
                 html = await tab.get_content()
 
-                # Close the tab to prevent leaks (browser stays open)
-                await tab.close()
-                logger.debug(f"Closed tab for {url}")
+                # Don't close tab - keep browser alive with multiple tabs
+                # Tabs will be closed when browser shuts down at end of crawl
+                logger.debug(f"Keeping tab open for {url} (browser stays alive)")
 
                 logger.info(f"Fetched {len(html)} bytes from {url}")
                 return html
 
             except Exception as e:
                 logger.error(f"Error navigating to {url}: {e}")
-                # Try to close tab if it was created
-                try:
-                    if 'tab' in locals():
-                        await tab.close()
-                except:
-                    pass
                 return None
 
         # Get HTML content (first request path - uses self.tab from CF verification)
