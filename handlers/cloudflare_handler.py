@@ -10,6 +10,7 @@ import logging
 from typing import Callable
 
 from scrapy.http import HtmlResponse, Request
+from scrapy.utils.defer import deferred_from_coro
 from twisted.internet import defer
 from twisted.internet.defer import Deferred
 
@@ -96,7 +97,8 @@ class CloudflareDownloadHandler:
         if not cf_enabled:
             from scrapy.core.downloader.handlers.http11 import HTTP11DownloadHandler
             handler = HTTP11DownloadHandler(self.crawler)
-            return handler.download_request(request)
+            # Convert async coroutine to Deferred for Twisted
+            return deferred_from_coro(handler.download_request(request))
 
         # CF enabled - use browser
         dfd = Deferred()
