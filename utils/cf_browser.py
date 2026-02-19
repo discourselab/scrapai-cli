@@ -170,50 +170,66 @@ class CloudflareBrowserClient:
             if not success:
                 return None
         else:
-            # Subsequent requests - reuse verified session
-            logger.info(f"Fetching {url} using verified Cloudflare session")
+            # Subsequent requests - create NEW tab for each fetch (concurrent isolation)
+            logger.info(f"Fetching {url} using verified Cloudflare session (new tab)")
             try:
-                # Navigate to URL (timeout set at browser config level)
-                await self.tab.get(url)
+                # Create a new tab for this fetch (prevents concurrent request conflicts)
+                tab = await self.driver.get(url)
 
                 # Wait for page to fully load (not just network idle)
                 logger.debug("Waiting for page to stabilize...")
-                await self.tab.sleep(2)  # Initial wait for JS to start
+                await tab.sleep(2)  # Initial wait for JS to start
 
                 # If wait_selector provided, wait for it to appear
                 if wait_selector:
                     logger.info(f"Waiting for selector '{wait_selector}' to appear (timeout: {wait_timeout}s)")
                     try:
                         # Wait for the selector to be present in the DOM
-                        await self.tab.select(wait_selector, timeout=wait_timeout)
+                        await tab.select(wait_selector, timeout=wait_timeout)
                         logger.info(f"Selector '{wait_selector}' found")
                         # Additional wait to ensure full rendering
-                        await self.tab.sleep(2)
+                        await tab.sleep(2)
                     except Exception as e:
                         logger.warning(f"Timeout waiting for selector '{wait_selector}': {e}")
                         # Wait longer anyway - maybe content is loading
-                        await self.tab.sleep(3)
+                        await tab.sleep(3)
                 else:
                     # No specific selector - wait longer for full page render
                     logger.info("No wait selector specified, waiting for full page render")
-                    await self.tab.sleep(5)
+                    await tab.sleep(5)
 
                 # Verify we got actual content, not empty skeleton
-                html = await self.tab.get_content()
+                html = await tab.get_content()
                 text_length = len(html.replace('<', '').replace('>', '').strip())
 
                 if text_length < 5000:
                     logger.warning(f"HTML seems small ({text_length} chars), waiting longer for content...")
-                    await self.tab.sleep(5)
-                    html = await self.tab.get_content()
+                    await tab.sleep(5)
+                    html = await tab.get_content()
                     text_length = len(html.replace('<', '').replace('>', '').strip())
                     logger.info(f"After additional wait: {text_length} chars")
 
+                # Get HTML content before closing tab
+                html = await tab.get_content()
+
+                # Close the tab to prevent leaks (browser stays open)
+                await tab.close()
+                logger.debug(f"Closed tab for {url}")
+
+                logger.info(f"Fetched {len(html)} bytes from {url}")
+                return html
+
             except Exception as e:
                 logger.error(f"Error navigating to {url}: {e}")
+                # Try to close tab if it was created
+                try:
+                    if 'tab' in locals():
+                        await tab.close()
+                except:
+                    pass
                 return None
 
-        # Get HTML content
+        # Get HTML content (first request path - uses self.tab from CF verification)
         try:
             html = await self.tab.get_content()
             logger.info(f"Fetched {len(html)} bytes from {url}")
