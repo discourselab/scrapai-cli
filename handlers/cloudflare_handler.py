@@ -58,26 +58,21 @@ class CloudflareDownloadHandler:
         logger.info("CloudflareDownloadHandler: Handler opened (browser will start on first request)")
 
     def close(self):
-        """Called when spider closes - close browser."""
+        """Called when spider closes - close browser and wait for completion."""
         if CloudflareDownloadHandler._browser_started and CloudflareDownloadHandler._shared_browser:
             try:
-                # Close browser - schedule as task since event loop is running
-                async def close_browser():
-                    await CloudflareDownloadHandler._shared_browser.close()
-                    CloudflareDownloadHandler._shared_browser = None
-                    CloudflareDownloadHandler._browser_started = False
-                    logger.info("CloudflareDownloadHandler: Closed shared browser")
+                logger.info("CloudflareDownloadHandler: Closing shared browser...")
 
-                # Schedule the close operation
-                try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(close_browser())
-                except RuntimeError:
-                    # Fallback if no running loop
-                    asyncio.run(CloudflareDownloadHandler._shared_browser.close())
-                    CloudflareDownloadHandler._shared_browser = None
-                    CloudflareDownloadHandler._browser_started = False
-                    logger.info("CloudflareDownloadHandler: Closed shared browser")
+                # Close browser synchronously (wait for completion)
+                # driver.stop() is synchronous, so call it directly
+                if CloudflareDownloadHandler._shared_browser.driver:
+                    CloudflareDownloadHandler._shared_browser.driver.stop()
+                    logger.info("CloudflareDownloadHandler: Browser stopped successfully")
+
+                # Clean up state
+                CloudflareDownloadHandler._shared_browser = None
+                CloudflareDownloadHandler._browser_started = False
+                logger.info("CloudflareDownloadHandler: Closed shared browser")
 
             except Exception as e:
                 logger.error(f"CloudflareDownloadHandler: Error closing browser: {e}")
