@@ -74,10 +74,6 @@ def main():
     crawl_all_parser = subparsers.add_parser('crawl-all', help='Run all spiders in a project')
     crawl_all_parser.add_argument('--project', required=True, help='Project name')
     crawl_all_parser.add_argument('--limit', '-l', type=int, help='Limit number of items per spider')
-    
-    # list command
-    list_parser = subparsers.add_parser('list', help='List available spiders')
-    list_parser.add_argument('--project', help='Project name (optional)')
 
     # spiders command
     spiders_parser = subparsers.add_parser('spiders', help='Spider management')
@@ -244,8 +240,6 @@ def main():
         run_spider(args.project, args.spider, args.output, args.limit, args.timeout)
     elif args.command == 'crawl-all':
         run_all_spiders(args.project, args.limit)
-    elif args.command == 'list':
-        list_spiders(args.project)
 
 def handle_setup_command():
     """Handle setup command - automated virtual environment and database setup"""
@@ -339,6 +333,7 @@ def handle_setup_command():
             new_deny = [
                 "Write(**/*.py)",
                 "Edit(**/*.py)",
+                "Update(**/*.py)",
                 "MultiEdit(**/*.py)",
                 "Write(.env)",
                 "Write(secrets/**)",
