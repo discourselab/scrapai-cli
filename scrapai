@@ -333,9 +333,18 @@ def handle_setup_command():
                 "Grep",
                 "Bash(./scrapai:*)",
                 "Bash(source:*)",
-                "Bash(sqlite3:*)"
+                "Bash(sqlite3:*)",
+                "Bash(psql:*)"
             ]
             new_deny = [
+                "Write(**/*.py)",
+                "Edit(**/*.py)",
+                "MultiEdit(**/*.py)",
+                "Write(.env)",
+                "Write(secrets/**)",
+                "Write(config/**/*.key)",
+                "Write(**/*password*)",
+                "Write(**/*secret*)",
                 "WebFetch",
                 "WebSearch"
             ]
