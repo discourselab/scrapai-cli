@@ -101,7 +101,7 @@ class CloudflareDownloadHandler:
         # If CF not enabled, use default Scrapy downloader
         if not cf_enabled:
             from scrapy.core.downloader.handlers.http11 import HTTP11DownloadHandler
-            handler = HTTP11DownloadHandler(self.crawler.settings)
+            handler = HTTP11DownloadHandler(self.crawler.settings, self.crawler)
             return handler.download_request(request, spider)
 
         # CF enabled - use browser

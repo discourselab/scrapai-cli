@@ -95,6 +95,8 @@ db.sqlite3-journal
 
 # ScrapAI database
 scrapai.db
+scrapai.db-shm
+scrapai.db-wal
 
 # Flask stuff:
 instance/
