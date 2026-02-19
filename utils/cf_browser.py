@@ -50,6 +50,7 @@ class CloudflareBrowserClient:
         self.cf_max_retries = cf_max_retries
         self.cf_retry_interval = cf_retry_interval
         self.post_cf_delay = post_cf_delay
+        self.fetch_lock = asyncio.Lock()  # Ensure only one fetch at a time
 
     async def start(self):
         """Start the browser instance."""
@@ -154,7 +155,7 @@ class CloudflareBrowserClient:
         """Fetch a URL using the verified session.
 
         On first call, this will verify Cloudflare. Subsequent calls reuse
-        the verified session.
+        the same tab (sequential fetching with lock).
 
         Args:
             url: The URL to fetch
@@ -164,75 +165,65 @@ class CloudflareBrowserClient:
         Returns:
             HTML content as string, or None if fetch failed
         """
-        if not self.cf_verified:
-            # First request - need to verify CF
-            success = await self.verify_cloudflare(url)
-            if not success:
-                return None
-        else:
-            # Subsequent requests - create NEW tab for each fetch (concurrent isolation)
-            # Keep self.tab as anchor (never close it) to prevent browser shutdown
-            logger.info(f"Fetching {url} using verified Cloudflare session (new tab)")
+        # Use lock to ensure only one fetch at a time (sequential, using same tab)
+        async with self.fetch_lock:
+            # First request - verify CF
+            if not self.cf_verified:
+                success = await self.verify_cloudflare(url)
+                if not success:
+                    return None
+                # Return content from CF verification
+                html = await self.tab.get_content()
+                logger.info(f"Fetched {len(html)} bytes from {url}")
+                return html
+
+            # Subsequent requests - reuse same tab
+            logger.info(f"Fetching {url} using verified Cloudflare session (reusing tab)")
             try:
-                # Create a new tab for this fetch
-                # driver.get() opens URL in a new tab, preserving self.tab anchor
-                tab = await self.driver.get(url)
+                # Navigate same tab to new URL
+                await self.tab.get(url)
 
                 # Wait for page to fully load (not just network idle)
                 logger.debug("Waiting for page to stabilize...")
-                await tab.sleep(2)  # Initial wait for JS to start
+                await self.tab.sleep(2)  # Initial wait for JS to start
 
                 # If wait_selector provided, wait for it to appear
                 if wait_selector:
                     logger.info(f"Waiting for selector '{wait_selector}' to appear (timeout: {wait_timeout}s)")
                     try:
                         # Wait for the selector to be present in the DOM
-                        await tab.select(wait_selector, timeout=wait_timeout)
+                        await self.tab.select(wait_selector, timeout=wait_timeout)
                         logger.info(f"Selector '{wait_selector}' found")
                         # Additional wait to ensure full rendering
-                        await tab.sleep(2)
+                        await self.tab.sleep(2)
                     except Exception as e:
                         logger.warning(f"Timeout waiting for selector '{wait_selector}': {e}")
                         # Wait longer anyway - maybe content is loading
-                        await tab.sleep(3)
+                        await self.tab.sleep(3)
                 else:
                     # No specific selector - wait longer for full page render
                     logger.info("No wait selector specified, waiting for full page render")
-                    await tab.sleep(5)
+                    await self.tab.sleep(5)
 
                 # Verify we got actual content, not empty skeleton
-                html = await tab.get_content()
+                html = await self.tab.get_content()
                 text_length = len(html.replace('<', '').replace('>', '').strip())
 
                 if text_length < 5000:
                     logger.warning(f"HTML seems small ({text_length} chars), waiting longer for content...")
-                    await tab.sleep(5)
-                    html = await tab.get_content()
+                    await self.tab.sleep(5)
+                    html = await self.tab.get_content()
                     text_length = len(html.replace('<', '').replace('>', '').strip())
                     logger.info(f"After additional wait: {text_length} chars")
 
                 # Get HTML content
-                html = await tab.get_content()
-
-                # Don't close tab - keep browser alive with multiple tabs
-                # Tabs will be closed when browser shuts down at end of crawl
-                logger.debug(f"Keeping tab open for {url} (browser stays alive)")
-
+                html = await self.tab.get_content()
                 logger.info(f"Fetched {len(html)} bytes from {url}")
                 return html
 
             except Exception as e:
                 logger.error(f"Error navigating to {url}: {e}")
                 return None
-
-        # Get HTML content (first request path - uses self.tab from CF verification)
-        try:
-            html = await self.tab.get_content()
-            logger.info(f"Fetched {len(html)} bytes from {url}")
-            return html
-        except Exception as e:
-            logger.error(f"Error getting content from {url}: {e}")
-            return None
 
     async def close(self):
         """Close the browser."""
