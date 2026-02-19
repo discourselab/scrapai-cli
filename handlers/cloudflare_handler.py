@@ -34,7 +34,8 @@ class CloudflareDownloadHandler:
     # Class-level (shared) browser state
     _shared_browser = None
     _browser_started = False
-    _fetch_lock = asyncio.Lock()  # Serialize browser access across all instances
+    _browser_startup_lock = asyncio.Lock()  # Protect browser startup (1 at a time)
+    _fetch_semaphore = asyncio.Semaphore(3)  # Allow up to 3 concurrent tabs
 
     def __init__(self, settings, crawler=None):
         """Initialize the handler.
@@ -100,7 +101,7 @@ class CloudflareDownloadHandler:
         # If CF not enabled, use default Scrapy downloader
         if not cf_enabled:
             from scrapy.core.downloader.handlers.http11 import HTTP11DownloadHandler
-            handler = HTTP11DownloadHandler(self.crawler.settings, self.crawler)
+            handler = HTTP11DownloadHandler(self.crawler.settings)
             return handler.download_request(request, spider)
 
         # CF enabled - use browser
@@ -109,49 +110,50 @@ class CloudflareDownloadHandler:
         async def fetch_async():
             """Fetch URL using CF browser and return response."""
             try:
-                # Start browser on first request (use class-level variable)
-                if not CloudflareDownloadHandler._browser_started:
-                    from utils.cf_browser import CloudflareBrowserClient
+                # Protect browser startup with a lock (prevent multiple browsers)
+                async with CloudflareDownloadHandler._browser_startup_lock:
+                    if not CloudflareDownloadHandler._browser_started:
+                        from utils.cf_browser import CloudflareBrowserClient
 
-                    # Get CF settings from spider
+                        # Get CF settings from spider
+                        spider_settings = getattr(spider, 'custom_settings', {})
+                        cf_max_retries = spider_settings.get('CF_MAX_RETRIES', 5)
+                        cf_retry_interval = spider_settings.get('CF_RETRY_INTERVAL', 1)
+                        cf_post_delay = spider_settings.get('CF_POST_DELAY', 5)
+
+                        logger.info(
+                            f"CloudflareDownloadHandler: Starting shared browser "
+                            f"(max 3 concurrent tabs, retries={cf_max_retries}, "
+                            f"interval={cf_retry_interval}s, delay={cf_post_delay}s)"
+                        )
+
+                        CloudflareDownloadHandler._shared_browser = CloudflareBrowserClient(
+                            headless=False,
+                            cf_max_retries=cf_max_retries,
+                            cf_retry_interval=cf_retry_interval,
+                            post_cf_delay=cf_post_delay
+                        )
+
+                        await CloudflareDownloadHandler._shared_browser.start()
+                        CloudflareDownloadHandler._browser_started = True
+                        logger.info("CloudflareDownloadHandler: Shared browser started (ready for 3 concurrent tabs)")
+
+                # Allow up to 3 concurrent fetches (3 tabs in same browser)
+                async with CloudflareDownloadHandler._fetch_semaphore:
+                    logger.debug(f"CloudflareDownloadHandler: Fetching {request.url} (tab acquired)")
+
+                    # Get wait selector settings
                     spider_settings = getattr(spider, 'custom_settings', {})
-                    cf_max_retries = spider_settings.get('CF_MAX_RETRIES', 5)
-                    cf_retry_interval = spider_settings.get('CF_RETRY_INTERVAL', 1)
-                    cf_post_delay = spider_settings.get('CF_POST_DELAY', 5)
+                    wait_selector = spider_settings.get('CF_WAIT_SELECTOR')
+                    wait_timeout = spider_settings.get('CF_WAIT_TIMEOUT', 10)
 
-                    logger.info(
-                        f"CloudflareDownloadHandler: Starting shared browser "
-                        f"(retries={cf_max_retries}, interval={cf_retry_interval}s, delay={cf_post_delay}s)"
-                    )
-
-                    CloudflareDownloadHandler._shared_browser = CloudflareBrowserClient(
-                        headless=False,
-                        cf_max_retries=cf_max_retries,
-                        cf_retry_interval=cf_retry_interval,
-                        post_cf_delay=cf_post_delay
-                    )
-
-                    await CloudflareDownloadHandler._shared_browser.start()
-                    CloudflareDownloadHandler._browser_started = True
-                    logger.info("CloudflareDownloadHandler: Shared browser started successfully")
-
-                logger.debug(f"CloudflareDownloadHandler: Fetching {request.url}")
-
-                # Get wait selector settings
-                spider_settings = getattr(spider, 'custom_settings', {})
-                wait_selector = spider_settings.get('CF_WAIT_SELECTOR')
-                wait_timeout = spider_settings.get('CF_WAIT_TIMEOUT', 10)
-
-                # Serialize browser access to prevent concurrent navigation (use class-level lock)
-                async with CloudflareDownloadHandler._fetch_lock:
-                    logger.debug(f"CloudflareDownloadHandler: Acquired lock for {request.url}")
                     # Fetch through persistent browser with optional wait selector
                     html = await CloudflareDownloadHandler._shared_browser.fetch(
                         request.url,
                         wait_selector=wait_selector,
                         wait_timeout=wait_timeout
                     )
-                    logger.debug(f"CloudflareDownloadHandler: Released lock for {request.url}")
+                    logger.debug(f"CloudflareDownloadHandler: Completed {request.url} (tab released)")
 
                 if html:
                     # Create Scrapy response
