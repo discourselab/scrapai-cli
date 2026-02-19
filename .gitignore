@@ -20,7 +20,7 @@ projects/*/logs/
 skills/
 .agent/
 .agents/
-# .claude/
+.claude/
 .gemini/
 .cursor/
 
@@ -29,7 +29,6 @@ seed/
 pitch/
 # Output files (but keep example configs)
 *.json
-!.claude/*.json
 !alembic/versions/*.py
 # Allow version control of alembic migration files
 
