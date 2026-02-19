@@ -377,10 +377,14 @@ Quick reference:
 
 **🚨 CRITICAL: ALWAYS specify `--project <name>` for ALL spider, queue, crawl, show, and export commands. Never omit it.**
 
+**Project Management:**
+- `source .venv/bin/activate && ./scrapai projects list` - List all projects with spider/queue counts
+
 **Spider Management:**
-- `./scrapai spiders list --project <name>` - List spiders in project (**always specify --project**)
-- `./scrapai spiders import <file> --project <name>` - Import/Update spider (**always specify --project**)
-- `./scrapai spiders delete <name> --project <name>` - Delete spider from project (**always specify --project**)
+- `source .venv/bin/activate && ./scrapai spiders list` - List all spiders across all projects
+- `source .venv/bin/activate && ./scrapai spiders list --project <name>` - List spiders in specific project
+- `source .venv/bin/activate && ./scrapai spiders import <file> --project <name>` - Import/Update spider (**always specify --project**)
+- `source .venv/bin/activate && ./scrapai spiders delete <name> --project <name>` - Delete spider from project (**always specify --project**)
 
 **Crawling:**
 - `./scrapai crawl <name> --project <name>` - Production scrape (**always specify --project**)

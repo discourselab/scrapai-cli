@@ -94,6 +94,13 @@ def main():
     delete_parser.add_argument('--project', help='Project name (optional - if not specified, deletes first match)')
     delete_parser.add_argument('--force', '-f', action='store_true', help='Skip confirmation prompt')
 
+    # projects command
+    projects_parser = subparsers.add_parser('projects', help='Project management')
+    projects_subparsers = projects_parser.add_subparsers(dest='projects_command', help='Project commands')
+
+    # projects list
+    list_projects_parser = projects_subparsers.add_parser('list', help='List all projects')
+
     # queue command for queue management
     queue_parser = subparsers.add_parser('queue', help='Queue management')
     queue_subparsers = queue_parser.add_subparsers(dest='queue_command', help='Queue commands')
@@ -226,6 +233,8 @@ def main():
         handle_analyze_command(args)
     elif args.command == 'spiders':
         handle_spiders_command(args)
+    elif args.command == 'projects':
+        handle_projects_command(args)
     elif args.command == 'queue':
         handle_queue_command(args)
     elif args.command == 'db':
@@ -807,6 +816,38 @@ def handle_spiders_command(args):
             print(f"🗑️  Spider '{args.name}'{project_msg} deleted!")
         else:
             print(f"❌ Spider '{args.name}'{project_msg} not found.")
+
+def handle_projects_command(args):
+    """Handle project management commands"""
+    from core.db import get_db
+    from core.models import Spider, CrawlQueue
+    from sqlalchemy import func, distinct
+
+    db = next(get_db())
+
+    if args.projects_command == 'list':
+        # Get distinct projects from both spiders and queue
+        spider_projects = db.query(distinct(Spider.project)).filter(Spider.project.isnot(None)).all()
+        queue_projects = db.query(distinct(CrawlQueue.project_name)).filter(CrawlQueue.project_name.isnot(None)).all()
+
+        # Combine and deduplicate
+        all_projects = set()
+        for (proj,) in spider_projects:
+            all_projects.add(proj)
+        for (proj,) in queue_projects:
+            all_projects.add(proj)
+
+        if all_projects:
+            print("📁 Available Projects:")
+            for proj in sorted(all_projects):
+                # Get counts
+                spider_count = db.query(func.count(Spider.id)).filter(Spider.project == proj).scalar()
+                queue_count = db.query(func.count(CrawlQueue.id)).filter(CrawlQueue.project_name == proj).scalar()
+
+                print(f"  • {proj}")
+                print(f"    Spiders: {spider_count}, Queue items: {queue_count}")
+        else:
+            print("No projects found.")
 
 def handle_queue_command(args):
     """Handle queue management commands"""

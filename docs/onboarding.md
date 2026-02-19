@@ -191,6 +191,9 @@ Import it:
 ## Common Commands
 
 ```bash
+# List all projects
+./scrapai projects list
+
 # List all spiders in a project
 ./scrapai spiders list --project myproject
 
