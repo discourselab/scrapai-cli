@@ -1,3 +1,0 @@
-"""
-Factcheck Scrapers CLI tools
-"""

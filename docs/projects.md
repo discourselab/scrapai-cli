@@ -8,6 +8,25 @@ Projects isolate spiders, queue items, and scraped data from each other. Every o
 - **Clean organization**: Each project has its own queue, spiders, and data
 - **No accidental overlap**: Without `--project`, everything goes to "default" which gets messy fast
 
+## Listing All Projects
+
+To see what projects exist in your system:
+
+```bash
+source .venv/bin/activate && ./scrapai projects list
+```
+
+Example output:
+```
+📁 Available Projects:
+  • project_name_1
+    Spiders: 10, Queue items: 25
+  • project_name_2
+    Spiders: 5, Queue items: 12
+  • default
+    Spiders: 3, Queue items: 0
+```
+
 ## ALWAYS Specify --project
 
 **Every command that supports --project MUST have it specified. Never omit it.**

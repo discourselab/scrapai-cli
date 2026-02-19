@@ -50,6 +50,7 @@ class CloudflareBrowserClient:
         self.cf_max_retries = cf_max_retries
         self.cf_retry_interval = cf_retry_interval
         self.post_cf_delay = post_cf_delay
+        self.fetch_lock = asyncio.Lock()  # Ensure only one fetch at a time
 
     async def start(self):
         """Start the browser instance."""
@@ -154,7 +155,7 @@ class CloudflareBrowserClient:
         """Fetch a URL using the verified session.
 
         On first call, this will verify Cloudflare. Subsequent calls reuse
-        the verified session.
+        the same tab (sequential fetching with lock).
 
         Args:
             url: The URL to fetch
@@ -164,16 +165,22 @@ class CloudflareBrowserClient:
         Returns:
             HTML content as string, or None if fetch failed
         """
-        if not self.cf_verified:
-            # First request - need to verify CF
-            success = await self.verify_cloudflare(url)
-            if not success:
-                return None
-        else:
-            # Subsequent requests - reuse verified session
-            logger.info(f"Fetching {url} using verified Cloudflare session")
+        # Use lock to ensure only one fetch at a time (sequential, using same tab)
+        async with self.fetch_lock:
+            # First request - verify CF
+            if not self.cf_verified:
+                success = await self.verify_cloudflare(url)
+                if not success:
+                    return None
+                # Return content from CF verification
+                html = await self.tab.get_content()
+                logger.info(f"Fetched {len(html)} bytes from {url}")
+                return html
+
+            # Subsequent requests - reuse same tab
+            logger.info(f"Fetching {url} using verified Cloudflare session (reusing tab)")
             try:
-                # Navigate to URL (timeout set at browser config level)
+                # Navigate same tab to new URL
                 await self.tab.get(url)
 
                 # Wait for page to fully load (not just network idle)
@@ -209,18 +216,14 @@ class CloudflareBrowserClient:
                     text_length = len(html.replace('<', '').replace('>', '').strip())
                     logger.info(f"After additional wait: {text_length} chars")
 
+                # Get HTML content
+                html = await self.tab.get_content()
+                logger.info(f"Fetched {len(html)} bytes from {url}")
+                return html
+
             except Exception as e:
                 logger.error(f"Error navigating to {url}: {e}")
                 return None
-
-        # Get HTML content
-        try:
-            html = await self.tab.get_content()
-            logger.info(f"Fetched {len(html)} bytes from {url}")
-            return html
-        except Exception as e:
-            logger.error(f"Error getting content from {url}: {e}")
-            return None
 
     async def close(self):
         """Close the browser."""

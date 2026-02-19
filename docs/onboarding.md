@@ -69,47 +69,57 @@ You **never** need to type `source .venv/bin/activate` - the CLI does it for you
 
 ### Claude Code Permissions (Automatic)
 
-If you're using **Claude Code** (the AI coding assistant), the setup command automatically configures project-specific permissions in `.claude/settings.json`:
+If you're using **Claude Code** (the AI coding assistant), the setup command automatically configures project-specific permissions in `.claude/settings.local.json`:
 
 ```json
 {
   "permissions": {
-    "Read": "allow",
-    "Write": "allow",
-    "Edit": "allow",
-    "Glob": "allow",
-    "Grep": "allow",
-    "WebFetch": "deny",
-    "WebSearch": "deny"
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "Update",
+      "Glob",
+      "Grep",
+      "Bash(./scrapai:*)",
+      "Bash(source:*)",
+      "Bash(sqlite3:*)"
+    ],
+    "deny": [
+      "WebFetch",
+      "WebSearch"
+    ]
   }
 }
 ```
 
 **What this does:**
-- ✅ **Allows** all file operations (Read, Write, Edit, Glob, Grep)
+- ✅ **Allows** all file operations (Read, Write, Edit, Update, Glob, Grep)
+- ✅ **Allows** all ScrapAI CLI commands (`./scrapai:*`)
+- ✅ **Allows** essential system commands (source, sqlite3)
 - ❌ **Denies** web tools (WebFetch, WebSearch) - these don't exist in the repo anyway
+- 🔄 **Merges with existing** - Won't overwrite your accumulated permissions
 - 🔒 **Project-specific** - only applies to this project, not your other Claude Code projects
 
 **Why this matters:**
 - Prevents Claude Code from trying to use tools that don't exist
-- Explicitly grants permissions for tools the project needs
+- Pre-approves file operations and all ScrapAI commands
+- Preserves any additional permissions you've already granted
 - Makes onboarding smoother by avoiding permission prompts
 
 **Note:** If you're using a different AI assistant (Cursor, Windsurf, etc.), this section doesn't apply - it's Claude Code specific.
 
 ## Next Steps
 
-### 1. Create a Project
+### 1. Understanding Projects
 
-Projects help organize your spiders:
+Projects are simple groupings for organizing your spiders - just a field in the database. No setup required!
 
-```bash
-# View help
-./scrapai projects --help
+- Projects are created automatically when you use `--project <name>`
+- Default project name is "default" if not specified
+- Example: `./scrapai queue add https://example.com --project myproject`
 
-# Create a project (this is optional - "default" project is used if not specified)
-./scrapai projects create --name myproject --spiders spider1,spider2
-```
+**That's it!** No `projects create` command needed.
 
 ### 2. Add Websites to Queue (Optional)
 
@@ -181,6 +191,9 @@ Import it:
 ## Common Commands
 
 ```bash
+# List all projects
+./scrapai projects list
+
 # List all spiders in a project
 ./scrapai spiders list --project myproject
 

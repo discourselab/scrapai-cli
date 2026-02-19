@@ -10,6 +10,7 @@ import logging
 from typing import Callable
 
 from scrapy.http import HtmlResponse, Request
+from scrapy.utils.defer import deferred_from_coro
 from twisted.internet import defer
 from twisted.internet.defer import Deferred
 
@@ -34,7 +35,7 @@ class CloudflareDownloadHandler:
     # Class-level (shared) browser state
     _shared_browser = None
     _browser_started = False
-    _fetch_lock = asyncio.Lock()  # Serialize browser access across all instances
+    _browser_startup_lock = asyncio.Lock()  # Protect browser startup (1 at a time)
 
     def __init__(self, settings, crawler=None):
         """Initialize the handler.
@@ -57,26 +58,21 @@ class CloudflareDownloadHandler:
         logger.info("CloudflareDownloadHandler: Handler opened (browser will start on first request)")
 
     def close(self):
-        """Called when spider closes - close browser."""
+        """Called when spider closes - close browser and wait for completion."""
         if CloudflareDownloadHandler._browser_started and CloudflareDownloadHandler._shared_browser:
             try:
-                # Close browser - schedule as task since event loop is running
-                async def close_browser():
-                    await CloudflareDownloadHandler._shared_browser.close()
-                    CloudflareDownloadHandler._shared_browser = None
-                    CloudflareDownloadHandler._browser_started = False
-                    logger.info("CloudflareDownloadHandler: Closed shared browser")
+                logger.info("CloudflareDownloadHandler: Closing shared browser...")
 
-                # Schedule the close operation
-                try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(close_browser())
-                except RuntimeError:
-                    # Fallback if no running loop
-                    asyncio.run(CloudflareDownloadHandler._shared_browser.close())
-                    CloudflareDownloadHandler._shared_browser = None
-                    CloudflareDownloadHandler._browser_started = False
-                    logger.info("CloudflareDownloadHandler: Closed shared browser")
+                # Close browser synchronously (wait for completion)
+                # driver.stop() is synchronous, so call it directly
+                if CloudflareDownloadHandler._shared_browser.driver:
+                    CloudflareDownloadHandler._shared_browser.driver.stop()
+                    logger.info("CloudflareDownloadHandler: Browser stopped successfully")
+
+                # Clean up state
+                CloudflareDownloadHandler._shared_browser = None
+                CloudflareDownloadHandler._browser_started = False
+                logger.info("CloudflareDownloadHandler: Closed shared browser")
 
             except Exception as e:
                 logger.error(f"CloudflareDownloadHandler: Error closing browser: {e}")
@@ -100,8 +96,9 @@ class CloudflareDownloadHandler:
         # If CF not enabled, use default Scrapy downloader
         if not cf_enabled:
             from scrapy.core.downloader.handlers.http11 import HTTP11DownloadHandler
-            handler = HTTP11DownloadHandler(self.crawler.settings, self.crawler)
-            return handler.download_request(request, spider)
+            handler = HTTP11DownloadHandler(self.crawler)
+            # Convert async coroutine to Deferred for Twisted
+            return deferred_from_coro(handler.download_request(request))
 
         # CF enabled - use browser
         dfd = Deferred()
@@ -109,32 +106,35 @@ class CloudflareDownloadHandler:
         async def fetch_async():
             """Fetch URL using CF browser and return response."""
             try:
-                # Start browser on first request (use class-level variable)
-                if not CloudflareDownloadHandler._browser_started:
-                    from utils.cf_browser import CloudflareBrowserClient
+                # Protect browser startup with a lock (prevent multiple browsers)
+                async with CloudflareDownloadHandler._browser_startup_lock:
+                    if not CloudflareDownloadHandler._browser_started:
+                        from utils.cf_browser import CloudflareBrowserClient
 
-                    # Get CF settings from spider
-                    spider_settings = getattr(spider, 'custom_settings', {})
-                    cf_max_retries = spider_settings.get('CF_MAX_RETRIES', 5)
-                    cf_retry_interval = spider_settings.get('CF_RETRY_INTERVAL', 1)
-                    cf_post_delay = spider_settings.get('CF_POST_DELAY', 5)
+                        # Get CF settings from spider
+                        spider_settings = getattr(spider, 'custom_settings', {})
+                        cf_max_retries = spider_settings.get('CF_MAX_RETRIES', 5)
+                        cf_retry_interval = spider_settings.get('CF_RETRY_INTERVAL', 1)
+                        cf_post_delay = spider_settings.get('CF_POST_DELAY', 5)
 
-                    logger.info(
-                        f"CloudflareDownloadHandler: Starting shared browser "
-                        f"(retries={cf_max_retries}, interval={cf_retry_interval}s, delay={cf_post_delay}s)"
-                    )
+                        logger.info(
+                            f"CloudflareDownloadHandler: Starting shared browser "
+                            f"(single tab, sequential fetching, retries={cf_max_retries}, "
+                            f"interval={cf_retry_interval}s, delay={cf_post_delay}s)"
+                        )
 
-                    CloudflareDownloadHandler._shared_browser = CloudflareBrowserClient(
-                        headless=False,
-                        cf_max_retries=cf_max_retries,
-                        cf_retry_interval=cf_retry_interval,
-                        post_cf_delay=cf_post_delay
-                    )
+                        CloudflareDownloadHandler._shared_browser = CloudflareBrowserClient(
+                            headless=False,
+                            cf_max_retries=cf_max_retries,
+                            cf_retry_interval=cf_retry_interval,
+                            post_cf_delay=cf_post_delay
+                        )
 
-                    await CloudflareDownloadHandler._shared_browser.start()
-                    CloudflareDownloadHandler._browser_started = True
-                    logger.info("CloudflareDownloadHandler: Shared browser started successfully")
+                        await CloudflareDownloadHandler._shared_browser.start()
+                        CloudflareDownloadHandler._browser_started = True
+                        logger.info("CloudflareDownloadHandler: Shared browser started (single tab mode)")
 
+                # Fetch using single tab (sequential, lock handled by browser client)
                 logger.debug(f"CloudflareDownloadHandler: Fetching {request.url}")
 
                 # Get wait selector settings
@@ -142,16 +142,13 @@ class CloudflareDownloadHandler:
                 wait_selector = spider_settings.get('CF_WAIT_SELECTOR')
                 wait_timeout = spider_settings.get('CF_WAIT_TIMEOUT', 10)
 
-                # Serialize browser access to prevent concurrent navigation (use class-level lock)
-                async with CloudflareDownloadHandler._fetch_lock:
-                    logger.debug(f"CloudflareDownloadHandler: Acquired lock for {request.url}")
-                    # Fetch through persistent browser with optional wait selector
-                    html = await CloudflareDownloadHandler._shared_browser.fetch(
-                        request.url,
-                        wait_selector=wait_selector,
-                        wait_timeout=wait_timeout
-                    )
-                    logger.debug(f"CloudflareDownloadHandler: Released lock for {request.url}")
+                # Fetch through persistent browser with optional wait selector
+                html = await CloudflareDownloadHandler._shared_browser.fetch(
+                    request.url,
+                    wait_selector=wait_selector,
+                    wait_timeout=wait_timeout
+                )
+                logger.debug(f"CloudflareDownloadHandler: Completed {request.url}")
 
                 if html:
                     # Create Scrapy response

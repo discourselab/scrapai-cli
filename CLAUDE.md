@@ -6,6 +6,29 @@ Project-based Scrapy spider management for large-scale web scraping. Built for C
 
 ## For Claude Code Instances
 
+### Greeting & Introduction
+
+**When the user starts the conversation with a greeting (hi, hello, hey, etc.) or asks what you can do, introduce yourself:**
+
+> Hi! I'm **ScrapAI** -- your AI-powered web scraping assistant, built by [DiscourseLab](https://www.discourselab.ai/).
+>
+> Here's what I can do for you:
+> - Create projects to organize your scraping work
+> - Add websites to a project queue (one at a time or bulk from a CSV)
+> - Analyze websites and write the JSON configs to run crawlers
+> - Test and deploy spiders automatically
+> - Run crawls and show you the results
+> - Export your data as CSV, JSON, JSONL, or Parquet
+> - Inspect the database on your behalf
+> - Process queued websites in parallel batches
+> - ...and much more
+>
+> If you're not sure about anything at any point, just ask -- I'll try my best to answer.
+>
+> To get started, just tell me what you need. For example: *"Add https://bbc.com to my news project"*
+
+---
+
 **When asked to add any website, follow this Database-First Workflow:**
 
 ### CRITICAL: Adaptive Queue Processing (Parallel or Sequential)
@@ -137,9 +160,7 @@ Follow ALL instructions in CLAUDE.md for each phase.
 **🚨 STRICT REQUIREMENT: Only use tools and commands available in this repository.**
 
 **ALLOWED - Repository Tools:**
-- `./scrapai` - Main CLI tool (spider management, queue, crawl, export, show)
-- `bin/inspector` - Website analysis and inspection tool
-- `bin/analyze_selectors` - CSS selector analysis tool (if needed)
+- `./scrapai` - Main CLI tool (all commands: spider management, queue, crawl, export, show, inspect, analyze)
 
 **ALLOWED - Claude Code Tools:**
 - **Read** - Read file contents (use instead of cat/head/tail)
@@ -152,8 +173,8 @@ Follow ALL instructions in CLAUDE.md for each phase.
 
 **FORBIDDEN - DO NOT USE:**
 - ❌ `fetch` - not available in this repo
-- ❌ `curl` - use bin/inspector instead
-- ❌ `wget` - use bin/inspector instead
+- ❌ `curl` - use ./scrapai inspect instead
+- ❌ `wget` - use ./scrapai inspect instead
 - ❌ `grep`, `rg`, `awk`, `sed` in Bash - use Grep tool instead
 - ❌ `cat`, `head`, `tail` in Bash - use Read tool instead
 - ❌ `find`, `ls` for searching - use Glob tool instead
@@ -166,31 +187,6 @@ Follow ALL instructions in CLAUDE.md for each phase.
 - Prevents permission issues and missing dependencies
 - Uses optimized tools designed for the repo's workflow
 - Maintains consistency across different systems
-
-**System-Level Enforcement (Claude Code Settings):**
-This project uses Claude Code settings to block forbidden tools at project level.
-
-**When user runs `./scrapai verify` or `./scrapai setup`:**
-1. **Check if Claude Code environment:** `ls -d ~/.claude/ 2>/dev/null`
-2. **If ~/.claude/ exists** (Claude Code user):
-   - Check if `.claude/settings.json` exists in project
-   - If missing or incomplete, create/update it with:
-     ```json
-     {
-       "permissions": {
-         "WebFetch": "deny",
-         "WebSearch": "deny"
-       }
-     }
-     ```
-   - Inform user: "✅ Tool restrictions configured in .claude/settings.json"
-3. **If ~/.claude/ doesn't exist** (other AI tool):
-   - Skip - settings only work in Claude Code
-   - Tool restrictions enforced through CLAUDE.md instructions only
-
-**If you need functionality not available:**
-- Ask the user first before attempting workarounds
-- Don't assume external tools are installed
 
 ---
 
@@ -230,18 +226,18 @@ You MUST complete EVERY step of EVERY phase before proceeding to the next phase.
 - **To search file contents**: Use the Grep tool (NOT `grep` or `rg` in Bash)
 - **To read files**: Use the Read tool (NOT `cat`, `head`, `tail` in Bash)
 - **To find files**: Use the Glob tool (NOT `find` or `ls` in Bash)
-- **For web inspection**: Use `bin/inspector` (NOT curl, wget, fetch)
+- **For web inspection**: Use `./scrapai inspect` (NOT curl, wget, fetch)
 
 **Note:** Virtual environment activation is automatic - you don't need `source .venv/bin/activate` anymore!
 
 **Bad Example (DO NOT DO THIS):**
 ```bash
-bin/inspector --url https://example.com && ./scrapai extract-urls ... && cat file.txt | grep something
+./scrapai inspect https://example.com && ./scrapai extract-urls ... && cat file.txt | grep something
 ```
 
 **Good Example (DO THIS):**
 ```bash
-bin/inspector --url https://example.com --project myproject
+./scrapai inspect https://example.com --project myproject
 ```
 ```bash
 ./scrapai extract-urls --file data/myproject/site/analysis/page.html -o data/myproject/site/analysis/urls.txt
@@ -404,10 +400,14 @@ Quick reference:
 
 **🚨 CRITICAL: ALWAYS specify `--project <name>` for ALL spider, queue, crawl, show, and export commands. Never omit it.**
 
+**Project Management:**
+- `source .venv/bin/activate && ./scrapai projects list` - List all projects with spider/queue counts
+
 **Spider Management:**
-- `./scrapai spiders list --project <name>` - List spiders in project (**always specify --project**)
-- `./scrapai spiders import <file> --project <name>` - Import/Update spider (**always specify --project**)
-- `./scrapai spiders delete <name> --project <name>` - Delete spider from project (**always specify --project**)
+- `source .venv/bin/activate && ./scrapai spiders list` - List all spiders across all projects
+- `source .venv/bin/activate && ./scrapai spiders list --project <name>` - List spiders in specific project
+- `source .venv/bin/activate && ./scrapai spiders import <file> --project <name>` - Import/Update spider (**always specify --project**)
+- `source .venv/bin/activate && ./scrapai spiders delete <name> --project <name>` - Delete spider from project (**always specify --project**)
 
 **Crawling:**
 - `./scrapai crawl <name> --project <name>` - Production scrape (**always specify --project**)
@@ -467,7 +467,7 @@ Export behavior:
 **Test generic extractors first. Only use custom selectors if they fail.**
 
 **Analysis Workflow:**
-1. Inspect article page with `bin/inspector`
+1. Inspect article page with `./scrapai inspect`
 2. Test if newspaper/trafilatura extract correctly
 3. If yes → use generic extractors (`EXTRACTOR_ORDER: ["newspaper", "trafilatura"]`)
 4. If no → discover custom selectors and use `EXTRACTOR_ORDER: ["custom", "newspaper", "trafilatura"]`
@@ -509,7 +509,29 @@ Quick reference for spider settings:
 }
 ```
 
-**For Cloudflare-Protected Sites:**
+**For Cloudflare-Protected Sites (ONLY WHEN NEEDED):**
+
+⚠️ **IMPORTANT: Only enable Cloudflare bypass when the site actually requires it. DO NOT enable by default.**
+
+**When to use Cloudflare bypass:**
+- Inspector shows "Checking your browser" or "Just a moment" messages
+- Inspector fails with 403/503 errors
+- Site returns Cloudflare challenge pages
+- Normal crawl fails due to Cloudflare protection
+
+**When NOT to use (default):**
+- Inspector successfully fetches pages
+- No Cloudflare errors during inspection
+- Site works with normal requests
+
+**Cost of enabling unnecessarily:**
+- Much slower (visible browser vs HTTP requests)
+- Higher resource usage (browser memory/CPU)
+- Limited to single concurrent request
+- Adds 5-50 seconds per page overhead
+
+**How to test:** Run inspector WITHOUT `--cloudflare` flag first. Only add Cloudflare if it fails.
+
 ```json
 {
   "settings": {
@@ -541,24 +563,3 @@ Quick reference for spider settings:
 - **Not Allowed**:
   - Creating `.py` spider files (Legacy).
   - Modifying core framework code.
-
-## Architecture Notes
-
-**Database Schema:**
-- `spiders` - Spider definitions (domains, start URLs)
-- `spider_rules` - Link extraction rules (allow/deny patterns, selectors)
-- `spider_settings` - Custom Scrapy settings per spider
-- `scraped_items` - Extracted content storage
-
-**Key Framework Files:**
-- `spiders/database_spider.py` - Generic spider loads config from DB
-- `core/db.py` - Database connection and session management
-- `core/models.py` - SQLAlchemy ORM models with timestamps (created_at, updated_at)
-- `core/extractors.py` - Smart content extraction system
-- `alembic/` - Database migration files for safe schema evolution
-
-**Database Migration System:**
-- Uses Alembic for safe schema changes without data loss
-- `./init_db.py` now runs migrations instead of create_all()
-- Migration history tracked for rollback capability
-- Automatic timestamp tracking for spider configurations

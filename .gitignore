@@ -27,7 +27,6 @@ skills/
 tmp/
 seed/
 pitch/
-
 # Output files (but keep example configs)
 *.json
 !alembic/versions/*.py
@@ -93,6 +92,11 @@ cover/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+
+# ScrapAI database
+scrapai.db
+scrapai.db-shm
+scrapai.db-wal
 
 # Flask stuff:
 instance/
