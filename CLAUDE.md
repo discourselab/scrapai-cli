@@ -524,21 +524,33 @@ Quick reference for spider settings:
 - No Cloudflare errors during inspection
 - Site works with normal requests
 
-**Cost of enabling unnecessarily:**
-- Much slower (visible browser vs HTTP requests)
-- Higher resource usage (browser memory/CPU)
-- Limited to single concurrent request
-- Adds 5-50 seconds per page overhead
-
 **How to test:** Run inspector WITHOUT `--cloudflare` flag first. Only add Cloudflare if it fails.
+
+**Hybrid Mode (Default, Fast - 20-100x faster):**
+Browser verification once per 10 minutes, then fast HTTP requests with cached cookies.
 
 ```json
 {
   "settings": {
     "CLOUDFLARE_ENABLED": true,
+    "CLOUDFLARE_STRATEGY": "hybrid",
+    "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 600,
     "CF_MAX_RETRIES": 5,
     "CF_RETRY_INTERVAL": 1,
     "CF_POST_DELAY": 5
+  }
+}
+```
+
+**Browser-Only Mode (Legacy, Slow):**
+Only use if hybrid mode fails. Browser for every request (slow).
+
+```json
+{
+  "settings": {
+    "CLOUDFLARE_ENABLED": true,
+    "CLOUDFLARE_STRATEGY": "browser_only",
+    "CONCURRENT_REQUESTS": 1
   }
 }
 ```
