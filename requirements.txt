@@ -19,3 +19,4 @@ alembic
 pandas>=2.0.0
 pyarrow>=14.0.0
 nodriver>=0.45.0
+aiohttp
