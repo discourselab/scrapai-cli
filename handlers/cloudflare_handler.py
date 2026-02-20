@@ -1,14 +1,22 @@
 """
 Scrapy download handler for Cloudflare-protected sites.
 
-This handler routes all requests through a persistent nodriver browser session
-that can solve Cloudflare challenges and reuse the verified session.
+This handler uses a hybrid approach:
+1. Browser verification (once per 25 min) to get CF cookies
+2. Fast HTTP requests with cached cookies for subsequent requests
+3. Automatic fallback to browser if cookies become invalid
+
+Strategies:
+- 'hybrid': Browser once + HTTP with cookies (fast, default)
+- 'browser_only': Browser for every request (slow, legacy)
 """
 
 import asyncio
 import logging
-from typing import Callable
+import time
+from typing import Callable, Dict, Optional
 
+import aiohttp
 from scrapy.http import HtmlResponse, Request
 from scrapy.utils.defer import deferred_from_coro
 from twisted.internet import defer
@@ -19,23 +27,39 @@ logger = logging.getLogger(__name__)
 
 class CloudflareDownloadHandler:
     """
-    Scrapy download handler that uses persistent nodriver browser
-    for Cloudflare bypass.
+    Hybrid Cloudflare handler with cookie caching.
 
-    This handler:
-    1. Opens a persistent browser when spider starts
-    2. Solves Cloudflare challenge on first request
-    3. Reuses verified session for all subsequent requests
-    4. Closes browser when spider closes
+    Strategies:
+    1. HYBRID (default, fast):
+       - Browser verification once per 25 minutes
+       - HTTP requests with cached cookies
+       - 20-100x faster than browser-only
 
-    NOTE: Browser instance is shared across all handler instances (class-level)
-    to prevent Scrapy from creating multiple browsers when running concurrent requests.
+    2. BROWSER_ONLY (legacy, slow):
+       - Browser for every request
+       - Most reliable, but slow
+
+    Cookie Management:
+    - Cookies cached per spider
+    - Proactive refresh before expiry (25 min)
+    - Automatic fallback to browser on block
+
+    Settings:
+    - CLOUDFLARE_STRATEGY: 'hybrid' or 'browser_only' (default: 'hybrid')
+    - CLOUDFLARE_COOKIE_REFRESH_THRESHOLD: seconds before refresh (default: 1500)
     """
 
     # Class-level (shared) browser state
     _shared_browser = None
     _browser_started = False
     _browser_startup_lock = asyncio.Lock()  # Protect browser startup (1 at a time)
+
+    # Cookie cache: {spider_name: {'cookies': {}, 'user_agent': str, 'timestamp': float}}
+    _cookie_cache: Dict[str, Dict] = {}
+    _cookie_cache_lock = asyncio.Lock()
+
+    # Default: refresh cookies after 10 minutes
+    DEFAULT_COOKIE_REFRESH_THRESHOLD = 600  # seconds (10 minutes)
 
     def __init__(self, settings, crawler=None):
         """Initialize the handler.
@@ -80,7 +104,7 @@ class CloudflareDownloadHandler:
             logger.info("CloudflareDownloadHandler: No browser to close")
 
     def download_request(self, request: Request, spider) -> Deferred:
-        """Handle request by routing through persistent browser if CF enabled.
+        """Handle request using hybrid or browser-only strategy.
 
         Args:
             request: Scrapy request to download
@@ -97,61 +121,28 @@ class CloudflareDownloadHandler:
         if not cf_enabled:
             from scrapy.core.downloader.handlers.http11 import HTTP11DownloadHandler
             handler = HTTP11DownloadHandler(self.crawler)
-            # Convert async coroutine to Deferred for Twisted
             return deferred_from_coro(handler.download_request(request))
 
-        # CF enabled - use browser
+        # Get strategy
+        strategy = spider_settings.get('CLOUDFLARE_STRATEGY', 'hybrid').lower()
+
+        if strategy == 'browser_only':
+            # Legacy mode: browser for every request
+            return self._browser_only_fetch(request, spider)
+        else:
+            # Hybrid mode: browser once + HTTP with cookies
+            return self._hybrid_fetch(request, spider)
+
+    def _browser_only_fetch(self, request: Request, spider) -> Deferred:
+        """Legacy browser-only mode (slow but reliable)."""
         dfd = Deferred()
 
         async def fetch_async():
-            """Fetch URL using CF browser and return response."""
             try:
-                # Protect browser startup with a lock (prevent multiple browsers)
-                async with CloudflareDownloadHandler._browser_startup_lock:
-                    if not CloudflareDownloadHandler._browser_started:
-                        from utils.cf_browser import CloudflareBrowserClient
-
-                        # Get CF settings from spider
-                        spider_settings = getattr(spider, 'custom_settings', {})
-                        cf_max_retries = spider_settings.get('CF_MAX_RETRIES', 5)
-                        cf_retry_interval = spider_settings.get('CF_RETRY_INTERVAL', 1)
-                        cf_post_delay = spider_settings.get('CF_POST_DELAY', 5)
-
-                        logger.info(
-                            f"CloudflareDownloadHandler: Starting shared browser "
-                            f"(single tab, sequential fetching, retries={cf_max_retries}, "
-                            f"interval={cf_retry_interval}s, delay={cf_post_delay}s)"
-                        )
-
-                        CloudflareDownloadHandler._shared_browser = CloudflareBrowserClient(
-                            headless=False,
-                            cf_max_retries=cf_max_retries,
-                            cf_retry_interval=cf_retry_interval,
-                            post_cf_delay=cf_post_delay
-                        )
-
-                        await CloudflareDownloadHandler._shared_browser.start()
-                        CloudflareDownloadHandler._browser_started = True
-                        logger.info("CloudflareDownloadHandler: Shared browser started (single tab mode)")
-
-                # Fetch using single tab (sequential, lock handled by browser client)
-                logger.debug(f"CloudflareDownloadHandler: Fetching {request.url}")
-
-                # Get wait selector settings
-                spider_settings = getattr(spider, 'custom_settings', {})
-                wait_selector = spider_settings.get('CF_WAIT_SELECTOR')
-                wait_timeout = spider_settings.get('CF_WAIT_TIMEOUT', 10)
-
-                # Fetch through persistent browser with optional wait selector
-                html = await CloudflareDownloadHandler._shared_browser.fetch(
-                    request.url,
-                    wait_selector=wait_selector,
-                    wait_timeout=wait_timeout
-                )
-                logger.debug(f"CloudflareDownloadHandler: Completed {request.url}")
+                await self._ensure_browser_started(spider)
+                html = await self._fetch_with_browser(request.url, spider)
 
                 if html:
-                    # Create Scrapy response
                     response = HtmlResponse(
                         url=request.url,
                         body=html.encode('utf-8'),
@@ -160,21 +151,234 @@ class CloudflareDownloadHandler:
                     )
                     dfd.callback(response)
                 else:
-                    error_msg = f"Failed to fetch {request.url} with Cloudflare bypass"
-                    logger.error(f"CloudflareDownloadHandler: {error_msg}")
-                    dfd.errback(Exception(error_msg))
-
+                    dfd.errback(Exception(f"Failed to fetch {request.url}"))
             except Exception as e:
-                logger.error(f"CloudflareDownloadHandler error for {request.url}: {e}")
+                logger.error(f"Browser fetch error for {request.url}: {e}")
                 dfd.errback(e)
 
-        # Get or create event loop
+        self._schedule_async(fetch_async())
+        return dfd
+
+    def _hybrid_fetch(self, request: Request, spider) -> Deferred:
+        """Hybrid mode: browser once + HTTP with cookies (fast)."""
+        dfd = Deferred()
+
+        async def fetch_async():
+            try:
+                spider_name = spider.name
+
+                # Check if we need cookies (first request or expired)
+                need_refresh = await self._should_refresh_cookies(spider_name, spider)
+
+                if need_refresh:
+                    logger.info(f"[{spider_name}] Getting/refreshing CF cookies via browser")
+                    await self._refresh_cookies(spider_name, request.url, spider)
+
+                # Fetch with HTTP + cookies
+                cached = CloudflareDownloadHandler._cookie_cache.get(spider_name)
+                if not cached:
+                    dfd.errback(Exception("No cookies available after refresh"))
+                    return
+
+                html = await self._fetch_with_http(request.url, cached)
+
+                # Check if blocked
+                if self._is_blocked(html):
+                    logger.warning(f"[{spider_name}] Blocked despite cookies - re-verifying CF")
+                    # Invalidate cache and retry
+                    await self._invalidate_cookies(spider_name)
+                    await self._refresh_cookies(spider_name, request.url, spider)
+                    cached = CloudflareDownloadHandler._cookie_cache[spider_name]
+                    html = await self._fetch_with_http(request.url, cached)
+
+                    if self._is_blocked(html):
+                        # Still blocked - fallback to browser
+                        logger.error(f"[{spider_name}] Still blocked - falling back to browser")
+                        html = await self._fetch_with_browser(request.url, spider)
+
+                if html:
+                    response = HtmlResponse(
+                        url=request.url,
+                        body=html.encode('utf-8'),
+                        encoding='utf-8',
+                        request=request
+                    )
+                    dfd.callback(response)
+                else:
+                    dfd.errback(Exception(f"Failed to fetch {request.url}"))
+
+            except Exception as e:
+                logger.error(f"Hybrid fetch error for {request.url}: {e}")
+                dfd.errback(e)
+
+        self._schedule_async(fetch_async())
+        return dfd
+
+    async def _should_refresh_cookies(self, spider_name: str, spider) -> bool:
+        """Check if cookies need refreshing."""
+        spider_settings = getattr(spider, 'custom_settings', {})
+        threshold = spider_settings.get(
+            'CLOUDFLARE_COOKIE_REFRESH_THRESHOLD',
+            self.DEFAULT_COOKIE_REFRESH_THRESHOLD
+        )
+
+        async with CloudflareDownloadHandler._cookie_cache_lock:
+            if spider_name not in CloudflareDownloadHandler._cookie_cache:
+                return True
+
+            cached = CloudflareDownloadHandler._cookie_cache[spider_name]
+            age = time.time() - cached['timestamp']
+
+            if age > threshold:
+                logger.info(f"[{spider_name}] Cookies aging ({age/60:.1f} min) - refreshing proactively")
+                return True
+
+            return False
+
+    async def _refresh_cookies(self, spider_name: str, url: str, spider):
+        """Get fresh cookies via browser."""
+        await self._ensure_browser_started(spider)
+
+        # Fetch page with browser to get cookies
+        html = await self._fetch_with_browser(url, spider)
+
+        if not html:
+            raise Exception(f"Failed to verify CF for {url}")
+
+        # Extract cookies from browser
+        cookies, user_agent = await self._extract_cookies_from_browser()
+
+        # Cache cookies
+        async with CloudflareDownloadHandler._cookie_cache_lock:
+            CloudflareDownloadHandler._cookie_cache[spider_name] = {
+                'cookies': cookies,
+                'user_agent': user_agent,
+                'timestamp': time.time()
+            }
+
+        logger.info(f"[{spider_name}] Cached {len(cookies)} cookies (cf_clearance: {cookies.get('cf_clearance', 'N/A')[:20]}...)")
+
+    async def _invalidate_cookies(self, spider_name: str):
+        """Invalidate cached cookies."""
+        async with CloudflareDownloadHandler._cookie_cache_lock:
+            if spider_name in CloudflareDownloadHandler._cookie_cache:
+                del CloudflareDownloadHandler._cookie_cache[spider_name]
+                logger.info(f"[{spider_name}] Cookie cache invalidated")
+
+    async def _fetch_with_http(self, url: str, cached: Dict) -> Optional[str]:
+        """Fetch URL with HTTP + cached cookies."""
+        try:
+            timeout = aiohttp.ClientTimeout(total=60)
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    url,
+                    cookies=cached['cookies'],
+                    headers={'User-Agent': cached['user_agent']},
+                    timeout=timeout
+                ) as response:
+                    html = await response.text()
+                    logger.debug(f"HTTP fetch: {url} -> {response.status} ({len(html)} bytes)")
+                    return html
+        except Exception as e:
+            logger.error(f"HTTP fetch failed for {url}: {e}")
+            return None
+
+    def _is_blocked(self, html: Optional[str]) -> bool:
+        """Check if response indicates CF block or challenge."""
+        if not html:
+            return True
+
+        html_lower = html.lower()
+
+        blocked_indicators = [
+            # CF challenge pages
+            ('cloudflare' in html_lower and 'checking your browser' in html_lower),
+            'just a moment' in html_lower and 'cloudflare' in html_lower,
+            '<title>just a moment...</title>' in html_lower,
+
+            # CF block pages
+            'sorry, you have been blocked' in html_lower,
+            'access denied' in html_lower and 'cloudflare' in html_lower,
+            'error 1020' in html_lower,  # CF Access Denied
+            'error 1015' in html_lower,  # CF Rate Limited
+
+            # Very short response (likely challenge page)
+            (len(html) < 5000 and 'cloudflare' in html_lower),
+        ]
+
+        is_blocked = any(blocked_indicators)
+
+        if is_blocked:
+            logger.debug(f"Detected CF block/challenge in response ({len(html)} bytes)")
+
+        return is_blocked
+
+    async def _ensure_browser_started(self, spider):
+        """Ensure browser is started (thread-safe)."""
+        async with CloudflareDownloadHandler._browser_startup_lock:
+            if not CloudflareDownloadHandler._browser_started:
+                from utils.cf_browser import CloudflareBrowserClient
+
+                spider_settings = getattr(spider, 'custom_settings', {})
+                cf_max_retries = spider_settings.get('CF_MAX_RETRIES', 5)
+                cf_retry_interval = spider_settings.get('CF_RETRY_INTERVAL', 1)
+                cf_post_delay = spider_settings.get('CF_POST_DELAY', 5)
+
+                logger.info("Starting shared browser for CF verification")
+
+                CloudflareDownloadHandler._shared_browser = CloudflareBrowserClient(
+                    headless=False,
+                    cf_max_retries=cf_max_retries,
+                    cf_retry_interval=cf_retry_interval,
+                    post_cf_delay=cf_post_delay
+                )
+
+                await CloudflareDownloadHandler._shared_browser.start()
+                CloudflareDownloadHandler._browser_started = True
+                logger.info("Browser started successfully")
+
+    async def _fetch_with_browser(self, url: str, spider) -> Optional[str]:
+        """Fetch URL using browser."""
+        spider_settings = getattr(spider, 'custom_settings', {})
+        wait_selector = spider_settings.get('CF_WAIT_SELECTOR')
+        wait_timeout = spider_settings.get('CF_WAIT_TIMEOUT', 10)
+
+        html = await CloudflareDownloadHandler._shared_browser.fetch(
+            url,
+            wait_selector=wait_selector,
+            wait_timeout=wait_timeout
+        )
+
+        logger.debug(f"Browser fetch: {url} -> {len(html) if html else 0} bytes")
+        return html
+
+    async def _extract_cookies_from_browser(self):
+        """Extract cookies and user-agent from browser."""
+        if not CloudflareDownloadHandler._shared_browser:
+            raise Exception("Browser not started")
+
+        tab = CloudflareDownloadHandler._shared_browser.tab
+        if not tab:
+            raise Exception("No browser tab available")
+
+        # Get cookies via CDP
+        import nodriver as uc
+        cookies_cdp = await tab.send(uc.cdp.network.get_cookies())
+        cookies = {c.name: c.value for c in cookies_cdp if c.name}  # Filter empty names
+
+        # Get user agent
+        try:
+            user_agent = await tab.evaluate('navigator.userAgent')
+        except Exception:
+            user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+
+        return cookies, user_agent
+
+    def _schedule_async(self, coro):
+        """Schedule async coroutine in event loop."""
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             loop = asyncio.get_event_loop()
 
-        # Schedule async fetch
-        asyncio.ensure_future(fetch_async(), loop=loop)
-
-        return dfd
+        asyncio.ensure_future(coro, loop=loop)
