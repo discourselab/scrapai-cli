@@ -346,6 +346,10 @@ def handle_setup_command():
                 "Bash(psql:*)"
             ]
             new_deny = [
+                "Edit(scrapai)",
+                "Update(scrapai)",
+                "Edit(.claude/*)",
+                "Update(.claude/*)",
                 "Write(**/*.py)",
                 "Edit(**/*.py)",
                 "Update(**/*.py)",
@@ -356,7 +360,8 @@ def handle_setup_command():
                 "Write(**/*password*)",
                 "Write(**/*secret*)",
                 "WebFetch",
-                "WebSearch"
+                "WebSearch",
+                "Bash(rm:*)"
             ]
 
             # Read existing settings if file exists
