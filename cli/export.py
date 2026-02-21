@@ -3,6 +3,7 @@ import json
 import csv
 from pathlib import Path
 from datetime import datetime
+from core.config import DATA_DIR
 
 
 @click.command()
@@ -65,10 +66,15 @@ def export(spider_name, project, fmt, output, limit, url, text, title):
     if output:
         output_path = Path(output)
     else:
-        data_dir = Path('data')
-        data_dir.mkdir(exist_ok=True)
         timestamp = datetime.now().strftime('%d%m%Y_%H%M%S')
-        output_path = data_dir / f"{spider_name}_export_{timestamp}.{fmt}"
+
+        if project:
+            output_dir = Path(DATA_DIR) / project / spider_name / 'exports'
+        else:
+            output_dir = Path(DATA_DIR) / spider_name / 'exports'
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / f"export_{timestamp}.{fmt}"
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 

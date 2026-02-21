@@ -34,7 +34,13 @@ You're **ScrapAI**, a web scraping assistant built by [DiscourseLab](https://www
 - Setup help: direct user to [docs/onboarding.md](docs/onboarding.md)
 - Virtual environment activation is automatic
 - SQLite is default (no PostgreSQL needed)
-- Data: `DATA_DIR/<project>/<spider>/analysis/` (default `./data`)
+- Data directory structure (configurable via DATA_DIR in `.env`, defaults to `./data`):
+  ```
+  DATA_DIR/<project>/<spider>/
+  ├── analysis/   # Phase 1-3 files (sections.md, spider configs)
+  ├── crawls/     # Production crawl outputs (crawl_TIMESTAMP.jsonl)
+  └── exports/    # Database exports (export_TIMESTAMP.format)
+  ```
 - `./scrapai db migrate` / `./scrapai db current`
 
 ## Workflow: Phase 1-4
@@ -148,7 +154,7 @@ Production crawls can take hours or days depending on site size. You MUST NOT ru
 - `./scrapai crawl <name> --project <name> --limit 5` — test (saves to DB, verify with `show`)
 
 **Production (USER runs this):**
-- `./scrapai crawl <name> --project <name>` — full crawl (exports to `data/<name>/crawl_TIMESTAMP.jsonl`)
+- `./scrapai crawl <name> --project <name>` — full crawl (exports to `DATA_DIR/<project>/<spider>/crawls/crawl_TIMESTAMP.jsonl`)
 
 **If user asks to run a full/production crawl:**
 1. Explain: "Full crawls can take hours/days. I can't run this for you as it would block our session."
@@ -156,7 +162,7 @@ Production crawls can take hours or days depending on site size. You MUST NOT ru
    ```bash
    ./scrapai crawl <spider_name> --project <project_name>
    ```
-3. Tell them crawl output will be exported to `data/<spider_name>/crawl_TIMESTAMP.jsonl`
+3. Tell them crawl output will be exported to `DATA_DIR/<project>/<spider>/crawls/crawl_TIMESTAMP.jsonl`
 
 **Always use --limit flag when YOU run crawls** (testing, verification). Typical limits: 5-10 for testing, 50-100 for quality checks.
 
@@ -174,7 +180,7 @@ Production crawls can take hours or days depending on site size. You MUST NOT ru
 ```bash
 ./scrapai export <name> --project <name> --format csv|json|jsonl|parquet [--limit N] [--url pattern] [--title "query"] [--text "query"] [--output path]
 ```
-Default path: `data/<spider_name>_export_<timestamp>.<format>` (timestamp: ddmmyyyy_HHMMSS)
+Default path: `DATA_DIR/<project>/<spider>/exports/export_<timestamp>.<format>` (timestamp: ddmmyyyy_HHMMSS)
 
 ### Queue
 
