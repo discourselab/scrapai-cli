@@ -68,7 +68,10 @@ class SitemapDatabaseSpider(SitemapSpider):
                         callback = r.callback if r.callback else 'parse_article'
                         self.sitemap_rules.append((pattern, callback))
 
-        logger.info(f"Sitemap rules configured: {self.sitemap_rules}")
+            # If rules are defined, log what will be filtered
+            logger.info(f"Sitemap URL filtering enabled - only matching URLs will be scraped")
+
+        logger.info(f"Sitemap rules: {self.sitemap_rules}")
 
         # Apply settings
         if spider.settings:
@@ -130,46 +133,67 @@ class SitemapDatabaseSpider(SitemapSpider):
 
         logger.info(f"Using strategies: {strategies}")
 
-        # Log page processing
-        logger.info(f"Processing {response.url} (Length: {len(response.body)})")
-
-        # Get title from title tag (before extraction)
-        title_tag = response.css('title::text').get()
-        if title_tag:
-            logger.info(f"Title tag: {title_tag.strip()}")
-
-        # Import SmartExtractor
-        from core.extractors import SmartExtractor
-
-        # Check for infinite scroll setting
-        infinite_scroll = self.custom_settings.get('INFINITE_SCROLL', False)
-
-        if infinite_scroll:
-            max_scrolls = self.custom_settings.get('MAX_SCROLLS', 5)
-            scroll_delay = self.custom_settings.get('SCROLL_DELAY', 1.0)
-            logger.info(f"Infinite scroll enabled: {max_scrolls} scrolls with {scroll_delay}s delay")
-
         # Get custom selectors if configured
         custom_selectors = self.custom_settings.get('CUSTOM_SELECTORS', {})
 
-        # Initialize extractor with settings
-        extractor = SmartExtractor(
-            strategies=strategies,
-            custom_selectors=custom_selectors,
-            spider_settings=self.custom_settings
+        # Initialize extractor
+        from core.extractors import SmartExtractor
+        extractor = SmartExtractor(strategies=strategies, custom_selectors=custom_selectors)
+
+        # Extract
+        logger.info(f"Processing {response.url} (Length: {len(response.text)})")
+        title_hint = response.css('title::text').get()
+        if title_hint:
+            logger.info(f"Title tag: {title_hint}")
+
+        # Check if HTML should be included in output
+        include_html = self.settings.getbool('INCLUDE_HTML_IN_OUTPUT', False)
+
+        # Get Playwright wait configuration
+        wait_for_selector = self.custom_settings.get('PLAYWRIGHT_WAIT_SELECTOR')
+        wait_delay = self.custom_settings.get('PLAYWRIGHT_DELAY', 0)
+
+        # Get infinite scroll configuration
+        enable_scroll = self.custom_settings.get('INFINITE_SCROLL', False)
+        max_scrolls = self.custom_settings.get('MAX_SCROLLS', 5)
+        scroll_delay = self.custom_settings.get('SCROLL_DELAY', 1.0)
+
+        # Log configuration
+        if wait_for_selector:
+            logger.info(f"Playwright will wait for selector: {wait_for_selector}")
+        if wait_delay and float(wait_delay) > 0:
+            logger.info(f"Playwright will wait additional {wait_delay} seconds")
+        if enable_scroll:
+            logger.info(f"Infinite scroll enabled: {max_scrolls} scrolls with {scroll_delay}s delay")
+
+        # Use async extraction
+        article = await extractor.extract_async(
+            response.url,
+            response.text,
+            title_hint=title_hint,
+            include_html=include_html,
+            wait_for_selector=wait_for_selector,
+            additional_delay=float(wait_delay) if wait_delay else 0,
+            enable_scroll=bool(enable_scroll),
+            max_scrolls=int(max_scrolls) if max_scrolls else 5,
+            scroll_delay=float(scroll_delay) if scroll_delay else 1.0
         )
 
-        # Extract article data
-        article = await extractor.extract(response)
-
         if article:
+            # Convert Pydantic model to dict
+            item = article.dict()
+
+            # Add spider metadata
+            item['spider_name'] = self.spider_name
+            item['spider_id'] = self.spider_config.id
+            item['source'] = 'sitemap_spider'
             # Check item limit for immediate stop
             self._items_scraped += 1
             if self._item_limit and self._items_scraped >= self._item_limit:
                 logger.info(f"Reached item limit ({self._item_limit}), stopping spider immediately")
                 raise CloseSpider(f'Item limit reached: {self._item_limit}')
 
-            yield article
+            yield item
         else:
             logger.warning(f"Failed to extract article from {response.url}")
 
