@@ -38,6 +38,8 @@ ScrapAI offers two strategies for bypassing Cloudflare protection:
 }
 ```
 
+**Note**: Do NOT set `CONCURRENT_REQUESTS` - uses Scrapy default (16) for parallel crawling.
+
 **When to use:**
 - Production crawls (default)
 - Large-scale scraping (hundreds/thousands of pages)
@@ -58,10 +60,13 @@ ScrapAI offers two strategies for bypassing Cloudflare protection:
 {
   "settings": {
     "CLOUDFLARE_ENABLED": true,
-    "CLOUDFLARE_STRATEGY": "browser_only"
+    "CLOUDFLARE_STRATEGY": "browser_only",
+    "CONCURRENT_REQUESTS": 1
   }
 }
 ```
+
+**Note**: `CONCURRENT_REQUESTS: 1` is REQUIRED - single browser session only.
 
 **When to use:**
 - Hybrid mode fails (cookies get blocked repeatedly)
@@ -125,7 +130,7 @@ Sites with Cloudflare protection typically show:
 }
 ```
 
-**Note**: `CONCURRENT_REQUESTS: 1` is NOT required for hybrid mode (cookies work with parallel requests). Only required for browser-only mode.
+**Note**: Do NOT set `CONCURRENT_REQUESTS` for hybrid mode - uses Scrapy default (16 concurrent requests). HTTP requests with cached cookies work in parallel.
 
 ### Browser-Only Mode (Legacy, Slow)
 
@@ -142,7 +147,7 @@ Sites with Cloudflare protection typically show:
 }
 ```
 
-**Note**: `CONCURRENT_REQUESTS: 1` is REQUIRED for browser-only mode (single browser session).
+**Note**: `CONCURRENT_REQUESTS: 1` is REQUIRED for browser-only mode (single browser session can only handle one request at a time).
 
 ## Available Settings
 
@@ -220,7 +225,7 @@ This ensures the extractor gets clean HTML with the correct title for each page.
 - **First request**: 5-50 seconds (browser verification + cookie extraction)
 - **Subsequent requests**: 1-2 seconds (fast HTTP with cookies)
 - **Cookie lifetime**: ~25 minutes (proactive refresh at 10 min threshold)
-- **Parallel crawling**: SUPPORTED (cookies work with multiple concurrent requests)
+- **Parallel crawling**: SUPPORTED (uses Scrapy default: 16 concurrent requests)
 - **Speed improvement**: 20-100x faster than browser-only mode
 - **Resource usage**: Low (browser only used every 10 minutes)
 
