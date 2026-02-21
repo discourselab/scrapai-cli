@@ -46,12 +46,9 @@ DELTAFETCH_ENABLED = False
 DELTAFETCH_DIR = '.scrapy/deltafetch'
 DELTAFETCH_RESET = False
 
-# Cloudflare bypass download handler
-# This will be activated when spider has CLOUDFLARE_ENABLED=True
-DOWNLOAD_HANDLERS = {
-    'http': 'handlers.cloudflare_handler.CloudflareDownloadHandler',
-    'https': 'handlers.cloudflare_handler.CloudflareDownloadHandler',
-}
+# Cloudflare handler is NOT enabled globally
+# Only set when spider has CLOUDFLARE_ENABLED=True in custom_settings
+# This prevents conflicts with normal HTTP requests
 
 # Enable and configure HTTP caching
 HTTPCACHE_ENABLED = False
