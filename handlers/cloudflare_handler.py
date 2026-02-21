@@ -121,7 +121,7 @@ class CloudflareDownloadHandler:
         if not cf_enabled:
             from scrapy.core.downloader.handlers.http11 import HTTP11DownloadHandler
             handler = HTTP11DownloadHandler.from_crawler(self.crawler)
-            return handler.download_request(request, spider)
+            return handler.download_request(request)
 
         # Get strategy
         strategy = spider_settings.get('CLOUDFLARE_STRATEGY', 'hybrid').lower()
