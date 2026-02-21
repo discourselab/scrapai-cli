@@ -1,8 +1,5 @@
 # Scrapy settings for scrapai_project
 
-# Use asyncio reactor for full async/await support (required for nodriver/Playwright)
-TWISTED_REACTOR = 'twisted.internet.asyncioreactor.AsyncioSelectorReactor'
-
 BOT_NAME = 'scrapai'
 
 SPIDER_MODULES = ['spiders']
