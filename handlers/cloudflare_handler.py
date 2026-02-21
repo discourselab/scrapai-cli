@@ -14,13 +14,10 @@ Strategies:
 import asyncio
 import logging
 import time
-from typing import Callable, Dict, Optional
+from typing import Dict, Optional
 
 import aiohttp
 from scrapy.http import HtmlResponse, Request
-from scrapy.utils.defer import deferred_from_coro
-from twisted.internet import defer
-from twisted.internet.defer import Deferred
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +100,7 @@ class CloudflareDownloadHandler:
         else:
             logger.info("CloudflareDownloadHandler: No browser to close")
 
-    def download_request(self, request: Request, spider) -> Deferred:
+    async def download_request(self, request: Request, spider):
         """Handle request using hybrid or browser-only strategy.
 
         Args:
@@ -111,7 +108,7 @@ class CloudflareDownloadHandler:
             spider: Scrapy spider instance
 
         Returns:
-            Deferred that will fire with HtmlResponse or error
+            HtmlResponse
         """
         # Check if Cloudflare mode is enabled for this spider
         spider_settings = getattr(spider, 'custom_settings', {})
@@ -121,98 +118,83 @@ class CloudflareDownloadHandler:
         if not cf_enabled:
             from scrapy.core.downloader.handlers.http11 import HTTP11DownloadHandler
             handler = HTTP11DownloadHandler.from_crawler(self.crawler)
-            return handler.download_request(request)
+            return await handler.download_request(request)
 
         # Get strategy
         strategy = spider_settings.get('CLOUDFLARE_STRATEGY', 'hybrid').lower()
 
         if strategy == 'browser_only':
             # Legacy mode: browser for every request
-            return self._browser_only_fetch(request, spider)
+            return await self._browser_only_fetch(request, spider)
         else:
             # Hybrid mode: browser once + HTTP with cookies
-            return self._hybrid_fetch(request, spider)
+            return await self._hybrid_fetch(request, spider)
 
-    def _browser_only_fetch(self, request: Request, spider) -> Deferred:
+    async def _browser_only_fetch(self, request: Request, spider):
         """Legacy browser-only mode (slow but reliable)."""
-        dfd = Deferred()
+        try:
+            await self._ensure_browser_started(spider)
+            html = await self._fetch_with_browser(request.url, spider)
 
-        async def fetch_async():
-            try:
-                await self._ensure_browser_started(spider)
-                html = await self._fetch_with_browser(request.url, spider)
+            if html:
+                return HtmlResponse(
+                    url=request.url,
+                    body=html.encode('utf-8'),
+                    encoding='utf-8',
+                    request=request
+                )
+            else:
+                raise Exception(f"Failed to fetch {request.url}")
+        except Exception as e:
+            logger.error(f"Browser fetch error for {request.url}: {e}")
+            raise
 
-                if html:
-                    response = HtmlResponse(
-                        url=request.url,
-                        body=html.encode('utf-8'),
-                        encoding='utf-8',
-                        request=request
-                    )
-                    dfd.callback(response)
-                else:
-                    dfd.errback(Exception(f"Failed to fetch {request.url}"))
-            except Exception as e:
-                logger.error(f"Browser fetch error for {request.url}: {e}")
-                dfd.errback(e)
-
-        self._schedule_async(fetch_async())
-        return dfd
-
-    def _hybrid_fetch(self, request: Request, spider) -> Deferred:
+    async def _hybrid_fetch(self, request: Request, spider):
         """Hybrid mode: browser once + HTTP with cookies (fast)."""
-        dfd = Deferred()
+        try:
+            spider_name = spider.name
 
-        async def fetch_async():
-            try:
-                spider_name = spider.name
+            # Check if we need cookies (first request or expired)
+            need_refresh = await self._should_refresh_cookies(spider_name, spider)
 
-                # Check if we need cookies (first request or expired)
-                need_refresh = await self._should_refresh_cookies(spider_name, spider)
+            if need_refresh:
+                logger.info(f"[{spider_name}] Getting/refreshing CF cookies via browser")
+                await self._refresh_cookies(spider_name, request.url, spider)
 
-                if need_refresh:
-                    logger.info(f"[{spider_name}] Getting/refreshing CF cookies via browser")
-                    await self._refresh_cookies(spider_name, request.url, spider)
+            # Fetch with HTTP + cookies
+            cached = CloudflareDownloadHandler._cookie_cache.get(spider_name)
+            if not cached:
+                raise Exception("No cookies available after refresh")
 
-                # Fetch with HTTP + cookies
-                cached = CloudflareDownloadHandler._cookie_cache.get(spider_name)
-                if not cached:
-                    dfd.errback(Exception("No cookies available after refresh"))
-                    return
+            html = await self._fetch_with_http(request.url, cached)
 
+            # Check if blocked
+            if self._is_blocked(html):
+                logger.warning(f"[{spider_name}] Blocked despite cookies - re-verifying CF")
+                # Invalidate cache and retry
+                await self._invalidate_cookies(spider_name)
+                await self._refresh_cookies(spider_name, request.url, spider)
+                cached = CloudflareDownloadHandler._cookie_cache[spider_name]
                 html = await self._fetch_with_http(request.url, cached)
 
-                # Check if blocked
                 if self._is_blocked(html):
-                    logger.warning(f"[{spider_name}] Blocked despite cookies - re-verifying CF")
-                    # Invalidate cache and retry
-                    await self._invalidate_cookies(spider_name)
-                    await self._refresh_cookies(spider_name, request.url, spider)
-                    cached = CloudflareDownloadHandler._cookie_cache[spider_name]
-                    html = await self._fetch_with_http(request.url, cached)
+                    # Still blocked - fallback to browser
+                    logger.error(f"[{spider_name}] Still blocked - falling back to browser")
+                    html = await self._fetch_with_browser(request.url, spider)
 
-                    if self._is_blocked(html):
-                        # Still blocked - fallback to browser
-                        logger.error(f"[{spider_name}] Still blocked - falling back to browser")
-                        html = await self._fetch_with_browser(request.url, spider)
+            if html:
+                return HtmlResponse(
+                    url=request.url,
+                    body=html.encode('utf-8'),
+                    encoding='utf-8',
+                    request=request
+                )
+            else:
+                raise Exception(f"Failed to fetch {request.url}")
 
-                if html:
-                    response = HtmlResponse(
-                        url=request.url,
-                        body=html.encode('utf-8'),
-                        encoding='utf-8',
-                        request=request
-                    )
-                    dfd.callback(response)
-                else:
-                    dfd.errback(Exception(f"Failed to fetch {request.url}"))
-
-            except Exception as e:
-                logger.error(f"Hybrid fetch error for {request.url}: {e}")
-                dfd.errback(e)
-
-        self._schedule_async(fetch_async())
-        return dfd
+        except Exception as e:
+            logger.error(f"Hybrid fetch error for {request.url}: {e}")
+            raise
 
     async def _should_refresh_cookies(self, spider_name: str, spider) -> bool:
         """Check if cookies need refreshing."""
@@ -374,11 +356,3 @@ class CloudflareDownloadHandler:
 
         return cookies, user_agent
 
-    def _schedule_async(self, coro):
-        """Schedule async coroutine in event loop."""
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.get_event_loop()
-
-        asyncio.ensure_future(coro, loop=loop)
