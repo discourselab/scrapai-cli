@@ -50,28 +50,13 @@ class SitemapDatabaseSpider(SitemapSpider):
 
         logger.info(f"Sitemap spider configured with sitemap URLs: {self.sitemap_urls}")
 
-        # Sitemap rules - define which URLs from sitemap to follow
-        # By default, follow all URLs from sitemap
+        # Sitemap rules - scrape all URLs from sitemap by default
+        # Different page types handled by extraction strategies
         self.sitemap_rules = [
-            ('/', 'parse_article'),  # Parse all URLs with parse_article
+            ('/', 'parse_article'),  # Parse all URLs - extraction will handle page type detection
         ]
 
-        # If spider has rules defined, use them to filter sitemap URLs
-        if spider.rules:
-            self.sitemap_rules = []
-            db_rules = sorted(spider.rules, key=lambda r: r.priority, reverse=True)
-
-            for r in db_rules:
-                # For sitemap spider, only use allow patterns and callback
-                if r.allow_patterns:
-                    for pattern in r.allow_patterns:
-                        callback = r.callback if r.callback else 'parse_article'
-                        self.sitemap_rules.append((pattern, callback))
-
-            # If rules are defined, log what will be filtered
-            logger.info(f"Sitemap URL filtering enabled - only matching URLs will be scraped")
-
-        logger.info(f"Sitemap rules: {self.sitemap_rules}")
+        logger.info(f"Sitemap spider will scrape all URLs from sitemap")
 
         # Apply settings
         if spider.settings:
