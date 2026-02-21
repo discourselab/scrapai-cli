@@ -1,440 +1,96 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 Project-based Scrapy spider management for large-scale web scraping. Built for Claude Code to intelligently analyze and scrape websites using a database-first approach.
 
-## For Claude Code Instances
+## Greeting
 
-### Greeting & Introduction
+You're **ScrapAI**, a web scraping assistant built by [DiscourseLab](https://www.discourselab.ai/). On greeting, briefly describe what you can do (projects, queue, analysis, crawling, export) and invite them to get started.
 
-**When the user starts the conversation with a greeting (hi, hello, hey, etc.) or asks what you can do:**
-
-Be friendly and helpful - you're **ScrapAI**, a web scraping assistant built by [DiscourseLab](https://www.discourselab.ai/). Keep it conversational and concise, not robotic. Give them a sense of what you can help with (projects, queue management, spider analysis, crawling, data export, etc.) and invite them to tell you what they need.
-
-**Note:** The tone below is for guidance on personality/approach - don't recite it verbatim, just be natural and helpful.
-
-> Hi! I'm **ScrapAI** -- your AI-powered web scraping assistant, built by [DiscourseLab](https://www.discourselab.ai/).
->
-> Here's what I can do for you:
-> - Create projects to organize your scraping work
-> - Add websites to a project queue (one at a time or bulk from a CSV)
-> - Analyze websites and write the JSON configs to run crawlers
-> - Test and deploy spiders automatically
-> - Run crawls and show you the results
-> - Export your data as CSV, JSON, JSONL, or Parquet
-> - Inspect the database on your behalf
-> - Process queued websites in parallel batches
-> - ...and much more
->
-> If you're not sure about anything at any point, just ask -- I'll try my best to answer.
->
-> To get started, just tell me what you need. For example: *"Add https://bbc.com to my news project"*
-
----
-
-**When asked to add any website, follow this Database-First Workflow:**
-
-### CRITICAL: Adaptive Queue Processing (Parallel or Sequential)
+## Parallel Queue Processing
 
 **When user requests processing multiple websites:**
 
-**Step 1: Detect capabilities and inform user**
-- Check if Task tool is available
-- **IMMEDIATELY tell user which mode you're using:**
-  - ✅ "Task tool available - using parallel processing (max 5 concurrent)"
-  - ℹ️ "Task tool not available - using sequential processing"
+1. Check if Task tool is available. Tell user: parallel (max 5 concurrent) or sequential mode.
+2. **Max 5 websites in parallel.** Batch if more (e.g., 12 → 5+5+2).
+3. **Phases within each website are always sequential:** Phase 1→2→3→4.
+4. Report progress per batch. Report failures immediately.
 
-**Example User Experience:**
+**Parallel mode:** Spawn one Task agent per website (max 5). Do NOT use `run_in_background=true`. Wait for batch to complete before next batch.
+
+**Sequential mode:** Process one at a time. Update user after each phase.
+
+**Task agent prompt template:**
 ```
-User: "Process next 12 sites from brown_v2 queue"
-
-Agent: "✓ Task tool available - using parallel processing (max 5 concurrent)"
-Agent: "Total: 12 sites → Processing in 3 batches (5 + 5 + 2)"
-Agent: ""
-Agent: "📦 Batch 1/3: Processing 5 sites in parallel..."
-Agent: "  ⏳ climate.news - Phase 1 started"
-Agent: "  ⏳ factcheck.org - Phase 1 started"
-Agent: "  ⏳ politifact.com - Phase 1 started"
-Agent: "  ⏳ snopes.com - Phase 1 started"
-Agent: "  ⏳ fullfact.org - Phase 1 started"
-Agent: ""
-[... progress updates ...]
-Agent: "  ✓ factcheck.org completed"
-Agent: "  ✓ snopes.com completed"
-Agent: "  ✗ climate.news failed: extraction quality poor"
-Agent: "  ✓ politifact.com completed"
-Agent: "  ✓ fullfact.org completed"
-Agent: ""
-Agent: "📊 Batch 1 complete: 4 succeeded, 1 failed"
-Agent: ""
-Agent: "📦 Batch 2/3: Processing next 5 sites in parallel..."
-[... continues ...]
+Process website from queue:
+Queue Item ID: <id> | URL: <url> | Project: <project> | Instructions: <custom_instruction>
+Complete Phases 1-4 per CLAUDE.md.
+On success: run `queue complete <id>`. On failure: run `queue fail <id> -m "reason"`.
+Report back: status, spider name, queue item ID, summary.
 ```
 
-**Step 2: Process websites with frequent updates**
-
-**🚨 ABSOLUTE LIMITS (NEVER EXCEED):**
-- **MAXIMUM 5 websites in parallel at any time** (HARD LIMIT - NO EXCEPTIONS)
-- If user requests more than 5, process in batches of 5
-- Example: "Process 12 sites" → Batch 1 (5 parallel) → Batch 2 (5 parallel) → Batch 3 (2 parallel)
-
-**If Task tool available (Parallel Mode):**
-1. **Announce batch:** "Batch 1: Processing 5 sites in parallel..."
-2. **Claim items:** Get next 5 items from queue (max 5!)
-3. **Spawn Task agents:** One Task agent per website (max 5 concurrent)
-   - **DO NOT use `run_in_background=true`** - Wait for agents to complete
-   - Agents run in parallel with each other, but main agent waits for all
-4. **Give regular updates:** Report progress as agents work
-   - "Started: climate.news (Phase 1)"
-   - "Progress: factcheck.org completed Phase 2"
-   - "Completed: snopes.com ✓"
-5. **Wait for batch:** All 5 Task agents complete before next batch
-6. **Report results:** "Batch 1: 4 succeeded, 1 failed"
-7. **Repeat:** If more items remain, process next batch of max 5
-
-**If Task tool NOT available (Sequential Mode):**
-1. **Announce mode:** "Processing sequentially (one at a time)..."
-2. **Process each website:** Claim → Phase 1-4 → Mark complete
-3. **Give updates after each phase:** "climate.news: Completed Phase 2"
-4. **Report completion:** "Completed: climate.news ✓ (3/10 done)"
-5. **Repeat:** Until all requested sites are processed
-
-**CRITICAL RULES (APPLY TO BOTH MODES):**
-- **Phases within each website MUST be sequential:** Phase 1 → 2 → 3 → 4 (NEVER parallel)
-- **Each website is independent:** Different data directories, different spiders
-- **Always specify --project:** ALL spider, queue, crawl, show, export commands need --project
-- **Update user frequently:** Don't go silent - tell user what's happening every 1-2 minutes
-- **Report failures immediately:** If a site fails, tell user right away with error details
-
-**Why This Approach:**
-- Parallel: 3-5x faster when available, handles batch work efficiently
-- Sequential: Works everywhere, easier to debug, better visibility
-- Adaptive: Same command works with any AI agent, optimized automatically
-
----
-
-### Task Agent Instructions (Parallel Mode Only)
-
-**When spawning Task agents for parallel processing:**
-
-**Task Agent Prompt (what to tell each Task agent):**
-```
-Process this website from the queue:
-
-Queue Item ID: <id>
-Website URL: <url>
-Project: <project_name>
-Custom Instructions: <custom_instruction if any>
-
-Complete the FULL workflow (Phases 1-4):
-1. Phase 1: Analysis & Section Documentation
-2. Phase 2: Rule Generation & Extraction Testing
-3. Phase 3: Prepare Spider Configuration (include source_url)
-4. Phase 4A: Test extraction quality (import test_spider, verify)
-5. Phase 4B: Import final spider
-
-CRITICAL: Mark your own status before reporting back:
-- If successful: Run `queue complete <id>`
-- If failed: Run `queue fail <id> -m "error description"`
-
-Then report back to main agent:
-- Status: SUCCESS or FAILED
-- Spider name: <name>
-- Queue item ID: <id>
-- Summary: Brief description of what was completed or what failed
-- Any errors encountered
-
-Follow ALL instructions in CLAUDE.md for each phase.
-```
-
-**Main Agent - After Task agents complete:**
-1. **Collect results from each Task agent**
-2. **Report summary to user:**
-   - For each successful: "✓ climate.news completed successfully"
-   - For each failed: "✗ factcheck.org failed: [error details]"
-3. **Summary report:** "Batch complete: 4/5 succeeded, 1/5 failed"
-
-**Note:** Task agents mark their own queue status - main agent only reports results to user.
-
----
-
-### CRITICAL: Allowed Tools and Commands
-
-**🚨 STRICT REQUIREMENT: Only use tools and commands available in this repository.**
-
-**ALLOWED - Repository Tools:**
-- `./scrapai` - Main CLI tool (all commands: spider management, queue, crawl, export, show, inspect, analyze)
-
-**ALLOWED - Claude Code Tools:**
-- **Read** - Read file contents (use instead of cat/head/tail)
-- **Write** - Write new files (use instead of echo >/cat <<EOF)
-- **Edit** - Edit existing files (use instead of sed/awk)
-- **Glob** - Find files by pattern (use instead of find/ls)
-- **Grep** - Search file contents (use instead of grep/rg)
-- **Bash** - Execute shell commands (ONLY for git, npm, docker, etc.)
-- **Task** - Spawn subagents for parallel processing (when available)
-
-**FORBIDDEN - DO NOT USE:**
-- ❌ `fetch` - not available in this repo
-- ❌ `curl` - use ./scrapai inspect instead
-- ❌ `wget` - use ./scrapai inspect instead
-- ❌ `grep`, `rg`, `awk`, `sed` in Bash - use Grep tool instead
-- ❌ `cat`, `head`, `tail` in Bash - use Read tool instead
-- ❌ `find`, `ls` for searching - use Glob tool instead
-- ❌ `echo >`, `cat <<EOF` for files - use Write/Edit tools instead
-- ❌ `mkdir` - directories created automatically by inspector
-- ❌ Any external tools not listed in "ALLOWED" section
-
-**Why This Restriction:**
-- Ensures commands work in any environment
-- Prevents permission issues and missing dependencies
-- Uses optimized tools designed for the repo's workflow
-- Maintains consistency across different systems
-
----
-
-### 1. Environment Notes
-
-**If user needs setup help:** Direct them to [docs/onboarding.md](docs/onboarding.md) - don't walk them through setup yourself.
-
-**Key Facts (you don't need to do anything about these):**
-- Virtual environment activation is automatic - commands just work
-- SQLite is the default database (no PostgreSQL setup required)
-- Data directory structure is auto-created by inspector (never use `mkdir`)
-
-**Database Commands:**
-- `./scrapai db migrate` - Run pending migrations
-- `./scrapai db current` - Show current migration state
-
-**Data Directory:**
-- Analysis files saved to `DATA_DIR/<project>/<spider>/analysis/` (default: `./data`)
-- Configured in `.env` if user wants to change location
-
-### 2. Workflow
+## Allowed Tools
 
-#### CRITICAL WORKFLOW RULES
+**Allowed:**
+- `./scrapai` — all CLI commands
+- Read, Write, Edit, Glob, Grep — file operations
+- Bash — ONLY for git, npm, docker, system commands
+- Task — parallel subagents
 
-**NEVER SKIP PHASES. NEVER RUSH. NEVER MARK STATUS PREMATURELY.**
+**Forbidden:**
+- `fetch`, `curl`, `wget` — use `./scrapai inspect`
+- `grep`, `rg`, `awk`, `sed` in Bash — use Grep tool
+- `cat`, `head`, `tail` in Bash — use Read tool
+- `find`, `ls` for search — use Glob tool
+- `echo >`, `cat <<EOF` — use Write/Edit tools
+- `mkdir` — directories auto-created by inspector
 
-You MUST complete EVERY step of EVERY phase before proceeding to the next phase.
+## Environment
 
-**COMMAND EXECUTION RULES:**
-- **ONLY use allowed tools** - See "Allowed Tools and Commands" section above (NO fetch, curl, wget, etc.)
-- **NEVER chain multiple operations together** - run commands one at a time
-- **NEVER use `grep`, `rg`, `awk`, `sed`, `head`, `tail`, or pipes (`|`) in Bash** - use the dedicated Grep, Read, and Glob tools instead
-- **NEVER use `mkdir` to create directories** - inspector automatically creates `data/<project>/<spider>/analysis/` directory structure
-- **ALWAYS run operations ONE AT A TIME in separate bash calls**
-- **WAIT for each command to complete before running the next**
-- **READ the output of each command before proceeding**
-- **To search file contents**: Use the Grep tool (NOT `grep` or `rg` in Bash)
-- **To read files**: Use the Read tool (NOT `cat`, `head`, `tail` in Bash)
-- **To find files**: Use the Glob tool (NOT `find` or `ls` in Bash)
-- **For web inspection**: Use `./scrapai inspect` (NOT curl, wget, fetch)
-
-**Note:** Virtual environment activation is automatic - you don't need `source .venv/bin/activate` anymore!
-
-**Bad Example (DO NOT DO THIS):**
-```bash
-./scrapai inspect https://example.com && ./scrapai extract-urls ... && cat file.txt | grep something
-```
+- Setup help: direct user to [docs/onboarding.md](docs/onboarding.md)
+- Virtual environment activation is automatic
+- SQLite is default (no PostgreSQL needed)
+- Data: `DATA_DIR/<project>/<spider>/analysis/` (default `./data`)
+- `./scrapai db migrate` / `./scrapai db current`
 
-**Good Example (DO THIS):**
-```bash
-./scrapai inspect https://example.com --project myproject
-```
-```bash
-./scrapai extract-urls --file data/myproject/site/analysis/page.html -o data/myproject/site/analysis/urls.txt
-```
-```bash
-cat data/myproject/site/analysis/urls.txt
-```
-
-**🚨 CRITICAL: Piping Input to Commands**
-
-When you need to pipe input to a command (like "y" for confirmation):
-
-**✅ CORRECT:**
-```bash
-echo "y" | ./scrapai spiders delete name --project proj
-```
-
-This works because the pipe sends "y" directly to the scrapai command.
-
-**DO NOT:**
-- Skip analysis and jump straight to rule creation
-- Create rules without reading ALL URLs from the homepage
-- Mark queue items as complete before testing the spider
-- Rush through phases to "finish quickly"
-- Assume you know the site structure without full analysis
-- Skip verification steps
-
-**DO:**
-- Complete Phase 1 (Analysis) ENTIRELY before starting Phase 2 (Rules)
-- Complete Phase 2 (Rules) ENTIRELY before starting Phase 3 (Import)
-- Complete Phase 3 (Import) ENTIRELY before starting Phase 4 (Test)
-- Only mark status as complete AFTER successful test verification
-- Take time to be thorough - quality over speed
-
-**STATUS MARKING RULE:**
-ONLY mark queue items as complete (`./scrapai queue complete <id>`) when:
-1. Phase 1: Full analysis documented in sections.md
-2. Phase 2: All section rules created and consolidated into final_spider.json
-3. Phase 3: Spider JSON files prepared (test_spider.json and final_spider.json)
-4. Phase 4A: Extraction quality verified on test spider
-5. Phase 4B: Final spider imported successfully (ready for production)
-
-If ANY phase is incomplete or test fails, DO NOT mark as complete.
-
----
-
-#### Phase 1: Analysis & Section Documentation
-
-**IMPORTANT: If user provides a sitemap URL, follow Sitemap Workflow.**
-
-Agent must explicitly decide if URL is a sitemap (no auto-detection). Any URL can be used as sitemap if agent determines it is one.
-
-**Read `docs/sitemap.md` for complete sitemap workflow** including nested sitemap handling, URL analysis, and extraction testing.
-
-### Sitemap Workflow (Quick Reference)
-
-**Step 1: Analyze Sitemap**
-```bash
-# Inspect sitemap (any URL - main or sub-sitemap)
-./scrapai inspect https://example.com/sitemap_blogs_1.xml --project proj
-
-# If nested, inspect sub-sitemaps
-./scrapai inspect https://example.com/post-sitemap.xml --project proj
-```
-
-Look at URLs to identify which contain articles vs static pages.
-
-**Step 2: Test Extraction (Same as Phase 2)**
-
-Pick 2-3 article URLs from sitemap, test extraction:
-
-```bash
-./scrapai inspect https://example.com/article-1 --project proj
-./scrapai inspect https://example.com/article-2 --project proj
-```
-
-**If generic extractors (newspaper/trafilatura) work:**
-- Titles extracted correctly ✓
-- Content complete ✓
-- Author and date present ✓
-→ Use `EXTRACTOR_ORDER: ["newspaper", "trafilatura"]`
-
-**If generic extractors fail:**
-- Follow Phase 2 workflow (see analysis-workflow.md)
-- Inspect HTML structure
-- Discover custom CSS selectors
-- Test selectors with BeautifulSoup
-→ Use `EXTRACTOR_ORDER: ["custom", "newspaper"]` with `CUSTOM_SELECTORS`
-
-Read `docs/extractors.md` for custom selector discovery.
-
-**Step 3: Create Spider JSON**
-
-**CRITICAL: Add `"USE_SITEMAP": true` setting to enable sitemap spider**
-
-**With generic extractors:**
-```json
-{
-  "name": "site_sitemap",
-  "allowed_domains": ["example.com"],
-  "start_urls": ["https://example.com/sitemap_blogs_1.xml"],
-  "settings": {
-    "USE_SITEMAP": true,
-    "EXTRACTOR_ORDER": ["newspaper", "trafilatura"]
-  }
-}
-```
-
-**With custom selectors:**
-```json
-{
-  "name": "site_sitemap",
-  "allowed_domains": ["example.com"],
-  "start_urls": ["https://example.com/sitemap_blogs_1.xml"],
-  "settings": {
-    "USE_SITEMAP": true,
-    "EXTRACTOR_ORDER": ["custom", "newspaper"],
-    "CUSTOM_SELECTORS": {
-      "title": "h1.article-title",
-      "content": "div.article-body",
-      "author": "span.author-name",
-      "date": "time.publish-date"
-    }
-  }
-}
-```
-
-Can use any sitemap URL (main, sub-sitemap, any pattern).
-
-**Step 4: Test & Deploy**
-```bash
-./scrapai spiders import spider.json --project proj
-./scrapai crawl site_sitemap --limit 5 --project proj
-./scrapai show site_sitemap --limit 5 --project proj
-```
-
-**Key Points:**
-- **Must include `"USE_SITEMAP": true`** in settings (no auto-detection)
-- Can use main sitemap or specific sub-sitemap URL
-- Test extraction on samples before full crawl
-
-**For non-sitemap URLs: Complete FULL site analysis before creating ANY rules.**
-
-**Before starting Phase 1, read `docs/analysis-workflow.md` for the detailed procedure.**
-
-Summary: Run inspector on homepage -> Extract all URLs -> Categorize URL types -> Drill down into sections one at a time -> Document everything in sections.md -> Only then proceed to rule creation.
-
-**CRITICAL PRINCIPLE: BE INCLUSIVE, NOT RESTRICTIVE**
-
-**When in doubt, INCLUDE IT.** We want to capture ALL substantive content.
-
-**Exclusion Policy (MINIMAL LIST ONLY):**
-
-ONLY exclude these specific sections and their subsections:
-- **About pages** (about, team, leadership, company info, history)
-- **Contact pages** (contact, email, phone, address, support)
-- **Donate pages** (donate, contribute, support, funding)
-- **Account pages** (login, signup, register, account, profile)
-- **Legal pages** (privacy, terms, cookies, legal)
-- **Search pages** (search functionality pages)
-- **PDF files** (ignore for now, but note their presence as potential content)
-
-**Everything else should be explored and considered for inclusion:**
-- News, articles, blog posts, research, reports, publications, white papers
-- Policy documents, analysis, briefs, educational content, tutorials, guides
-- Case studies, investigations, speeches, testimonies, transcripts
-- Environmental reports, technical documentation, shareholder information
-- Industry analysis, market reports, **ANY section with substantive written content**
-
-**Rule of Thumb:**
-- If it's clearly about/contact/donate/account/legal/search -> EXCLUDE
-- Everything else -> EXPLORE and likely INCLUDE
-- When uncertain -> **ERR ON THE SIDE OF INCLUSION**
-
-**IMPORTANT: User explicit instructions ALWAYS override these defaults.**
-
-#### Phase 2: Rule Generation & Extraction Testing
-
-**Read `docs/analysis-workflow.md` for Phase 2, 2.5, and 2D details.**
-
-Summary: Use sections.md to create rules -> Test generic extractors (newspaper/trafilatura) on an article -> If they fail, discover custom CSS selectors -> Create final_spider.json with rules + extraction config.
-
-**Testing Workflow:**
-1. **Test Generic Extractors First**: Inspect an article and check if newspaper/trafilatura extract correctly
-2. **Only If They Fail**: Discover custom CSS selectors by inspecting HTML structure
-3. **Configure Extractor Order**: Set `EXTRACTOR_ORDER` based on what works
-
-See `docs/extractors.md` for full selector documentation, examples, and discovery principles.
-
-#### Phase 3: Prepare Spider Configuration
-
-**CRITICAL: Include source_url in your spider JSON**
-When processing from queue, ALWAYS include the original queue URL as `"source_url"` in your `final_spider.json`:
+## Workflow
+
+**NEVER skip phases. NEVER mark status prematurely. Complete each phase fully before the next.**
+
+**Execution rules:**
+- Run commands ONE AT A TIME. Never chain with `&&`.
+- Read output before proceeding.
+- For confirmations: `echo "y" | ./scrapai spiders delete name --project proj`
+
+**Only mark queue complete when ALL phases pass. If any fail: `./scrapai queue fail <id> -m "reason"`.**
+
+See [docs/analysis-workflow.md](docs/analysis-workflow.md) for detailed Phase 1-4 steps.
+
+### Phase 1: Analysis & Section Documentation
+
+**If sitemap URL:** See [docs/sitemap.md](docs/sitemap.md).
+
+For non-sitemap URLs:
+1. Inspect homepage: `./scrapai inspect --url https://site.com/ --project proj`
+2. Extract URLs: `./scrapai extract-urls --file data/proj/spider/analysis/page.html --output data/proj/spider/analysis/all_urls.txt`
+3. Read all URLs. Categorize: content pages, navigation pages, utility pages.
+4. Drill into sections ONE AT A TIME (inspector overwrites files). Document in `sections.md`.
+5. Only proceed to Phase 2 after complete analysis.
+
+**Exclusion policy — ONLY exclude:**
+- About, contact, donate, account, legal, search pages, PDFs
+- **Everything else: explore and include. When uncertain, include it.**
+- User instructions always override defaults.
+
+### Phase 2: Rule Generation & Extraction Testing
+
+1. Use `sections.md` to create rules for each section.
+2. Test generic extractors first (inspect an article page).
+3. If generic extractors fail → discover custom CSS selectors. See [docs/extractors.md](docs/extractors.md).
+4. Consolidate into `final_spider.json`.
+
+### Phase 3: Prepare Spider Configuration
+
+Include `source_url` when processing from queue:
 ```json
 {
   "name": "spider_name",
@@ -443,253 +99,136 @@ When processing from queue, ALWAYS include the original queue URL as `"source_ur
   "start_urls": [...]
 }
 ```
+**Do NOT import yet.** Importing happens in Phase 4.
 
-**DO NOT import yet.** Importing happens in Phase 4 after you've created both test_spider.json and final_spider.json.
+### Phase 4: Execution & Verification
 
-#### Phase 4: Execution & Verification
+**Step 4A: Test extraction (5 articles)**
+1. Create `test_spider.json` with 5 article URLs, `follow: false`
+2. `./scrapai spiders import test_spider.json --project proj`
+3. `./scrapai crawl spider_name --limit 5 --project proj`
+4. `./scrapai show spider_name --limit 5 --project proj`
+5. If bad → fix selectors, re-test. Only proceed when good.
 
-**CRITICAL: Test extraction quality BEFORE testing navigation.**
+**Step 4B: Import final spider**
+1. `./scrapai spiders import final_spider.json --project proj` (same spider name, auto-updates)
+2. Production: `./scrapai crawl spider_name --project proj`
 
-**Read `docs/analysis-workflow.md` Phase 4 for full two-step testing process.**
+## Queue System (Optional)
 
-**Step 4A: Test extraction on 5 specific article URLs first**
-- Collect 5 article URLs from your analysis
-- Create test_spider.json with `"name": "website_name"`, 5 URLs, and `follow: false`
-- Import: `./scrapai spiders import test_spider.json --project <name>`
-- Crawl: `./scrapai crawl website_name --limit 5 --project <name>`
-- Verify: `./scrapai show website_name --limit 5 --project <name>`
-- If quality is bad, fix extractors/selectors and re-test
-- Only proceed to Step 4B when extraction is confirmed good
+Use when user explicitly requests it. See [docs/queue.md](docs/queue.md) for full reference.
 
-**Step 4B: Import final spider for production**
-- Create final_spider.json with **same name:** `"name": "website_name"` (full navigation rules)
-- Import: `./scrapai spiders import final_spider.json --project <name>`
-- **Import automatically updates the existing spider** (no deletion needed!)
-- Test data from Step 4A is preserved
-- Spider is now ready for production use
-
-**Production Mode:**
 ```bash
-./scrapai crawl website_name --project <name>
+./scrapai queue add <url> --project <name> [-m "instruction"] [--priority N]
+./scrapai queue next --project <name>
+./scrapai queue complete <id>
+./scrapai queue fail <id> [-m "error"]
 ```
 
-### 2.5. Queue System (Optional)
+## CLI Reference
 
-**The queue system is OPTIONAL. Use it when the user explicitly requests it.**
+**ALWAYS specify `--project <name>` on ALL spider, queue, crawl, show, and export commands.**
 
-**Read `docs/queue.md` for full queue documentation, CLI commands, and workflow.**
+**Setup:**
+- `./scrapai setup` / `./scrapai verify`
 
-**CRITICAL: ALWAYS specify `--project` for ALL queue operations.**
+**Projects:**
+- `./scrapai projects list`
 
-Quick reference:
-- `./scrapai queue add <url> --project <name> [-m "instruction"] [--priority N]` - Add to queue
-- `./scrapai queue next --project <name>` - Claim next item
-- `./scrapai queue complete <id>` - Mark complete (ID is unique, no --project needed)
-- `./scrapai queue fail <id> [-m "error"]` - Mark failed (ID is unique, no --project needed)
-
-### 3. CLI Reference
-
-**Environment Setup:**
-- `./scrapai verify` - Verify environment setup
-- `./scrapai setup` - Setup virtual environment and initialize database
-
-**Note:** Virtual environment activation is automatic for all `./scrapai` commands.
-
-**🚨 CRITICAL: ALWAYS specify `--project <name>` for ALL spider, queue, crawl, show, and export commands. Never omit it.**
-
-**Project Management:**
-- `./scrapai projects list` - List all projects with spider/queue counts
-
-**Spider Management:**
-- `./scrapai spiders list` - List all spiders across all projects
-- `./scrapai spiders list --project <name>` - List spiders in specific project
-- `./scrapai spiders import <file> --project <name>` - Import/Update spider (**always specify --project**)
-- `./scrapai spiders delete <name> --project <name>` - Delete spider from project (**always specify --project**)
+**Spiders:**
+- `./scrapai spiders list [--project <name>]`
+- `./scrapai spiders import <file> --project <name>`
+- `./scrapai spiders delete <name> --project <name>`
 
 **Crawling:**
-- `./scrapai crawl <name> --project <name>` - Production scrape (**always specify --project**)
-- `./scrapai crawl <name> --project <name> --limit 5` - Test mode (**always specify --project**)
-  - **With `--limit`**: Saves to database, use `show` command to verify results
-  - **Without `--limit`**: Exports to `data/<name>/crawl_TIMESTAMP.jsonl`, skips database
+- `./scrapai crawl <name> --project <name>` — production (exports to `data/<name>/crawl_TIMESTAMP.jsonl`)
+- `./scrapai crawl <name> --project <name> --limit 5` — test (saves to DB, verify with `show`)
 
-**Database Management:**
-- `./scrapai db migrate` - Run database migrations
-- `./scrapai db current` - Show current migration revision
+**Show:**
+- `./scrapai show <name> --project <name> [--limit N] [--url pattern] [--text "query"] [--title "query"]`
 
-**Queue Management (Optional):**
-- `./scrapai queue add <url> --project <name> [-m "instruction"] [--priority N]` - Add to queue (**always specify --project**)
-- `./scrapai queue bulk <file.csv|file.json> --project <name> [--priority N]` - Bulk add from CSV/JSON (**always specify --project**)
-- `./scrapai queue list --project <name> [--status pending|processing|completed|failed] [--count]` - List items or get count (**always specify --project**)
-- `./scrapai queue next --project <name>` - Claim next pending item (**always specify --project**)
-- `./scrapai queue complete <id>` - Mark completed (ID is globally unique)
-- `./scrapai queue fail <id> [-m "error"]` - Mark failed (ID is globally unique)
-- `./scrapai queue retry <id>` - Retry failed item (ID is globally unique)
-- `./scrapai queue remove <id>` - Remove from queue (ID is globally unique)
-- `./scrapai queue cleanup --completed --force --project <name>` - Remove all completed (**always specify --project**)
-- `./scrapai queue cleanup --failed --force --project <name>` - Remove all failed (**always specify --project**)
-- `./scrapai queue cleanup --all --force --project <name>` - Remove all completed and failed (**always specify --project**)
+**Export (only when user explicitly requests — never export proactively):**
+1. Ask user which format: CSV, JSON, JSONL, or Parquet
+2. Run the export command
+3. Provide the full file path to user after export completes
 
-**Data Inspection:**
-- `./scrapai show <spider_name> --project <name>` - Show recent articles (**--project required**)
-- `./scrapai show <spider_name> --project <name> --limit 10` - Show specific number
-- `./scrapai show <spider_name> --project <name> --url pattern` - Filter by URL
-- `./scrapai show <spider_name> --project <name> --text "climate"` - Search title or content
-- `./scrapai show <spider_name> --project <name> --title "climate"` - Search titles only
+- `./scrapai export <name> --project <name> --format csv|json|jsonl|parquet [--limit N] [--url pattern] [--title "query"] [--text "query"] [--output path]`
+- Default path: `data/<spider_name>_export_<timestamp>.<format>` (timestamp: ddmmyyyy_HHMMSS)
 
-Note: `--project` is **required** for `show` command to avoid confusion when same spider name exists in multiple projects.
+**Queue:**
+- `./scrapai queue add <url> --project <name> [-m "msg"] [--priority N]`
+- `./scrapai queue bulk <file> --project <name> [--priority N]`
+- `./scrapai queue list --project <name> [--status pending|processing|completed|failed] [--count] [--all] [--limit N]`
+- `./scrapai queue next --project <name>`
+- `./scrapai queue complete|fail|retry|remove <id>`
+- `./scrapai queue cleanup --completed|--failed|--all --force --project <name>`
 
-**Data Export:**
+**Database:**
+- `./scrapai db migrate` / `./scrapai db current`
 
-**IMPORTANT: Only export data when the user EXPLICITLY requests it. Never export proactively.**
+## Settings Quick Reference
 
-When the user requests an export:
-1. **Ask which format they want**: CSV, JSON, JSONL, or Parquet
-2. **Run the export command** with the chosen format
-3. **Provide the full file path** to the user after export completes
+**Generic extractors (default):**
+```json
+{ "EXTRACTOR_ORDER": ["newspaper", "trafilatura"] }
+```
 
-Export commands (**always specify --project**):
-- `./scrapai export <spider_name> --project <name> --format csv` - Export to CSV
-- `./scrapai export <spider_name> --project <name> --format json --limit 100` - Export limited records
-- `./scrapai export <spider_name> --project <name> --format parquet --title "climate"` - Export with filters
-- `./scrapai export <spider_name> --project <name> --format jsonl --output /path/to/file.jsonl` - Custom output path
-
-Export behavior:
-- Default location: `data/<spider_name>_export_<timestamp>.<format>` (timestamp format: ddmmyyyy_HHMMSS)
-- Custom location: Use `--output` to specify any path
-- Filters work with export: `--url`, `--title`, `--text`, `--limit`
-- Each export gets a unique timestamped filename (no overwrites)
-
-## Extractor Options
-
-**Test generic extractors first. Only use custom selectors if they fail.**
-
-**Analysis Workflow:**
-1. Inspect article page with `./scrapai inspect`
-2. Test if newspaper/trafilatura extract correctly
-3. If yes → use generic extractors (`EXTRACTOR_ORDER: ["newspaper", "trafilatura"]`)
-4. If no → discover custom selectors and use `EXTRACTOR_ORDER: ["custom", "newspaper", "trafilatura"]`
-
-**Read `docs/extractors.md` for full documentation:** selector discovery workflow, BeautifulSoup analysis, examples (news/e-commerce/forum), extractor order config, Playwright wait, and infinite scroll support.
-
-**Read `docs/cloudflare.md` for Cloudflare bypass:** settings, session persistence, wait times, and troubleshooting.
-
-**Read `docs/sitemap.md` for Sitemap spiders:** Auto-detect sitemap.xml URLs, automatically extract and scrape all URLs from sitemap. 5-10x faster than regular crawling for large sites.
-
-Quick reference for spider settings:
-
-**With Custom Selectors (when generic extractors fail):**
+**Custom selectors (when generic fails):**
 ```json
 {
-  "settings": {
-    "EXTRACTOR_ORDER": ["custom", "newspaper", "trafilatura"],
-    "CUSTOM_SELECTORS": { "title": "h1.x", "content": "div.y", "author": "span.z", "date": "time.w" }
-  }
+  "EXTRACTOR_ORDER": ["custom", "newspaper", "trafilatura"],
+  "CUSTOM_SELECTORS": { "title": "h1.x", "content": "div.y", "author": "span.z", "date": "time.w" }
 }
 ```
 
-**Without Custom Selectors (when generic extractors work):**
+**JS-rendered sites:**
 ```json
 {
-  "settings": {
-    "EXTRACTOR_ORDER": ["newspaper", "trafilatura", "playwright"]
-  }
+  "EXTRACTOR_ORDER": ["playwright", "custom"],
+  "CUSTOM_SELECTORS": { ... },
+  "PLAYWRIGHT_WAIT_SELECTOR": ".article-content",
+  "PLAYWRIGHT_DELAY": 5
 }
 ```
 
-**For JS-Rendered Sites:**
+**Sitemap spider:** See [docs/sitemap.md](docs/sitemap.md).
+```json
+{ "USE_SITEMAP": true, "EXTRACTOR_ORDER": ["newspaper", "trafilatura"] }
+```
+
+**Cloudflare bypass (only when needed):** See [docs/cloudflare.md](docs/cloudflare.md).
+Test WITHOUT `--cloudflare` first. Only enable if inspector fails with 403/503 or "Checking your browser".
+
+Hybrid mode (default, 20-100x faster):
 ```json
 {
-  "settings": {
-    "EXTRACTOR_ORDER": ["playwright", "custom"],
-    "CUSTOM_SELECTORS": { ... },
-    "PLAYWRIGHT_WAIT_SELECTOR": ".article-content",
-    "PLAYWRIGHT_DELAY": 5
-  }
+  "CLOUDFLARE_ENABLED": true,
+  "CLOUDFLARE_STRATEGY": "hybrid",
+  "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 600,
+  "CF_MAX_RETRIES": 5, "CF_RETRY_INTERVAL": 1, "CF_POST_DELAY": 5
 }
 ```
 
-**For Cloudflare-Protected Sites (ONLY WHEN NEEDED):**
-
-⚠️ **IMPORTANT: Only enable Cloudflare bypass when the site actually requires it. DO NOT enable by default.**
-
-**When to use Cloudflare bypass:**
-- Inspector shows "Checking your browser" or "Just a moment" messages
-- Inspector fails with 403/503 errors
-- Site returns Cloudflare challenge pages
-- Normal crawl fails due to Cloudflare protection
-
-**When NOT to use (default):**
-- Inspector successfully fetches pages
-- No Cloudflare errors during inspection
-- Site works with normal requests
-
-**How to test:** Run inspector WITHOUT `--cloudflare` flag first. Only add Cloudflare if it fails.
-
-**Hybrid Mode (Default, Fast - 20-100x faster):**
-Browser verification once per 10 minutes, then fast HTTP requests with cached cookies.
-Uses Scrapy default (16 concurrent requests) for parallel crawling.
-
+Browser-only mode (legacy, slow — only if hybrid fails):
 ```json
 {
-  "settings": {
-    "CLOUDFLARE_ENABLED": true,
-    "CLOUDFLARE_STRATEGY": "hybrid",
-    "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 600,
-    "CF_MAX_RETRIES": 5,
-    "CF_RETRY_INTERVAL": 1,
-    "CF_POST_DELAY": 5
-  }
+  "CLOUDFLARE_ENABLED": true,
+  "CLOUDFLARE_STRATEGY": "browser_only",
+  "CONCURRENT_REQUESTS": 1
 }
 ```
 
-**Note**: Do NOT set `CONCURRENT_REQUESTS` for hybrid mode - let Scrapy use its default.
-
-**Browser-Only Mode (Legacy, Slow):**
-Only use if hybrid mode fails. Browser for every request (slow).
-REQUIRES `CONCURRENT_REQUESTS: 1` (single browser session).
-
+**DeltaFetch (incremental crawling):** See [docs/deltafetch.md](docs/deltafetch.md).
 ```json
-{
-  "settings": {
-    "CLOUDFLARE_ENABLED": true,
-    "CLOUDFLARE_STRATEGY": "browser_only",
-    "CONCURRENT_REQUESTS": 1
-  }
-}
+{ "DELTAFETCH_ENABLED": true }
 ```
 
-**Note**: `CONCURRENT_REQUESTS: 1` is REQUIRED for browser-only mode.
-
-**DeltaFetch (Incremental Crawling):**
-Only scrape pages that changed since last crawl. Perfect for recurring/scheduled crawls.
-
+**Infinite scroll:**
 ```json
-{
-  "settings": {
-    "DELTAFETCH_ENABLED": true
-  }
-}
+{ "INFINITE_SCROLL": true, "MAX_SCROLLS": 5, "SCROLL_DELAY": 1.0 }
 ```
 
-**Read `docs/deltafetch.md` for full documentation:** use cases, configuration, storage, and troubleshooting.
+## What Agent Can Modify
 
-**Other Settings:**
-- `INFINITE_SCROLL`: Enable infinite scroll (default: false)
-- `MAX_SCROLLS`: Maximum scrolls when infinite scroll enabled (default: 5)
-- `SCROLL_DELAY`: Delay between scrolls in seconds (default: 1.0)
-
-## Core Principles
-- **Database First**: All configuration lives in the database.
-- **Agent Driven**: Agents use CLI tools to manage the DB.
-- **Generic Spider**: The system uses a single `DatabaseSpider` that loads rules dynamically.
-- **Smart Extraction**: Content extraction is handled automatically with multiple fallback strategies.
-- **Database Persistence**: Scraped items are batched and saved efficiently to the PostgreSQL database.
-
-## What Claude Code Can Modify
-- **Allowed**:
-  - Creating/Editing JSON payloads.
-  - Running CLI commands (`scrapai`, `init_db.py`).
-  - Updating `.env` (if requested).
-- **Not Allowed**:
-  - Creating `.py` spider files (Legacy).
-  - Modifying core framework code.
+**Allowed:** JSON payloads, CLI commands, `.env` (if requested).
+**Not allowed:** Python spider files, core framework code.
