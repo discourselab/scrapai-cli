@@ -46,6 +46,11 @@ Report back: status, spider name, queue item ID, summary.
 - `python`, `python3` in Bash — use `./scrapai analyze` for HTML analysis
 - Any external tools not listed in "Allowed" section above
 
+**NEVER read or grep HTML files directly.** Do not use Read, Grep, or any tool to open `page.html` or other HTML files. HTML is only processed through these commands:
+- `./scrapai inspect <url>` — fetch and save HTML
+- `./scrapai extract-urls --file <html>` — extract URLs from saved HTML
+- `./scrapai analyze <html>` — analyze HTML structure, test selectors, find fields
+
 ## Environment
 
 - Setup help: direct user to [docs/onboarding.md](docs/onboarding.md)
@@ -88,11 +93,12 @@ For non-sitemap URLs:
 **Read [docs/analysis-workflow.md](docs/analysis-workflow.md) for Phase 2 details.**
 
 1. Use `sections.md` to create rules for each section.
-2. **Test generic extractors first:** Inspect an article page and check if newspaper/trafilatura extract correctly:
+2. **Test generic extractors first:** Inspect an article page and analyze its structure:
    ```bash
    ./scrapai inspect https://website.com/article-url --project proj
+   ./scrapai analyze data/proj/spider/analysis/page.html
    ```
-   Read `page.html`. If it has clean `<article>` tags / semantic HTML → generic extractors work.
+   If it has clean `<article>` tags / semantic HTML → generic extractors work.
 3. **If generic extractors fail** → discover custom CSS selectors using `./scrapai analyze`:
    ```bash
    ./scrapai analyze data/proj/spider/analysis/page.html

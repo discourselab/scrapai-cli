@@ -14,7 +14,7 @@ Follow Phases 1-4 in order. Never skip phases.
 ./scrapai inspect https://website.com/ --project proj
 ```
 
-Read `page.html` and `analysis.json` immediately after.
+Then use `./scrapai extract-urls` and `./scrapai analyze` to process the saved HTML. Do NOT read `page.html` directly.
 
 ### Step 2: Extract ALL URLs
 
@@ -32,7 +32,7 @@ Review ALL URLs from `all_urls.txt`:
 
 ### Step 4: Drill Into Sections (ONE AT A TIME)
 
-Inspector overwrites `page.html` and `analysis.json` each run. Process sequentially:
+Inspector overwrites `page.html` each run. Process sequentially:
 
 1. Inspect one section URL
 2. Read output files immediately
@@ -54,7 +54,7 @@ Update `sections.md`. Repeat for each section.
 
 ```
 data/<project>/<spider>/analysis/
-├── page.html, analysis.json
+├── page.html
 ├── all_urls.txt
 ├── sections.md
 ├── section_rules_*.json
@@ -195,7 +195,7 @@ Verify ALL phases passed:
 
 ## Common Failures & Recovery
 
-**Inspector overwrites files:** NEVER run multiple inspectors in parallel. Each run overwrites `page.html` and `analysis.json`. Always read output immediately before next inspector run.
+**Inspector overwrites files:** NEVER run multiple inspectors in parallel. Each run overwrites `page.html`. Always process output (extract-urls, analyze) before next inspector run.
 
 **Cloudflare during analysis:** If inspector shows "Checking your browser" or 403/503, re-run with `--cloudflare`. Note this for Phase 4 — add `CLOUDFLARE_ENABLED: true` to spider settings. If inspector works fine, do NOT enable Cloudflare.
 
