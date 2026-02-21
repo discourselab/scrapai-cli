@@ -286,9 +286,39 @@ If ANY phase is incomplete or test fails, DO NOT mark as complete.
 
 #### Phase 1: Analysis & Section Documentation
 
-**IMPORTANT: If user provides a sitemap.xml URL, skip to Phase 3 directly.**
+**IMPORTANT: If user provides a sitemap.xml URL, you still need to analyze which URLs to scrape.**
 
-Sitemap URLs are auto-detected (e.g., `https://example.com/sitemap.xml`). These don't need analysis - just create spider JSON with sitemap URL as start_urls. See `docs/sitemap.md` for details.
+Sitemap URLs are auto-detected (e.g., `https://example.com/sitemap.xml`). While you skip navigation analysis, you MUST:
+1. Inspect the sitemap to see what URL patterns it contains
+2. Create rules to filter which URLs to scrape (e.g., only `/articles/`, not `/about` or `/contact`)
+3. Not all sitemap URLs are articles - filter out homepage, category pages, about pages, etc.
+
+**Example sitemap analysis:**
+```bash
+# Inspect sitemap
+curl -s https://example.com/sitemap.xml | grep '<loc>' | head -20
+
+# Output shows:
+# https://example.com/
+# https://example.com/about
+# https://example.com/contact
+# https://example.com/articles/2024/story-1
+# https://example.com/articles/2024/story-2
+# https://example.com/category/news
+
+# Rule: Only scrape /articles/ URLs
+{
+  "rules": [
+    {
+      "allow": ["/articles/[0-9]{4}/"],
+      "callback": "parse_article",
+      "follow": false
+    }
+  ]
+}
+```
+
+See `docs/sitemap.md` for details.
 
 **For non-sitemap URLs: Complete FULL site analysis before creating ANY rules.**
 
