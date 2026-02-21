@@ -286,37 +286,27 @@ If ANY phase is incomplete or test fails, DO NOT mark as complete.
 
 #### Phase 1: Analysis & Section Documentation
 
-**IMPORTANT: If user provides a sitemap.xml URL, you still need to analyze which URLs to scrape.**
+**IMPORTANT: If user provides a sitemap.xml URL, skip analysis and crawl everything.**
 
-Sitemap URLs are auto-detected (e.g., `https://example.com/sitemap.xml`). While you skip navigation analysis, you MUST:
-1. Inspect the sitemap to see what URL patterns it contains
-2. Create rules to filter which URLs to scrape (e.g., only `/articles/`, not `/about` or `/contact`)
-3. Not all sitemap URLs are articles - filter out homepage, category pages, about pages, etc.
+Sitemap URLs are auto-detected (e.g., `https://example.com/sitemap.xml`). Simple workflow:
+1. Create spider JSON with sitemap URL as start_urls
+2. Use default rules (scrapes all URLs from sitemap)
+3. Let extraction strategies handle different page types
+4. Some pages will fail extraction (homepage, about, etc.) - that's expected and okay
 
-**Example sitemap analysis:**
-```bash
-# Inspect sitemap
-curl -s https://example.com/sitemap.xml | grep '<loc>' | head -20
-
-# Output shows:
-# https://example.com/
-# https://example.com/about
-# https://example.com/contact
-# https://example.com/articles/2024/story-1
-# https://example.com/articles/2024/story-2
-# https://example.com/category/news
-
-# Rule: Only scrape /articles/ URLs
+**Sitemap spider config (minimal):**
+```json
 {
-  "rules": [
-    {
-      "allow": ["/articles/[0-9]{4}/"],
-      "callback": "parse_article",
-      "follow": false
-    }
-  ]
+  "name": "site_sitemap",
+  "allowed_domains": ["example.com"],
+  "start_urls": ["https://example.com/sitemap.xml"],
+  "settings": {
+    "EXTRACTOR_ORDER": ["newspaper", "trafilatura"]
+  }
 }
 ```
+
+No rules needed - automatically scrapes all URLs. Extraction will succeed for articles, fail gracefully for non-article pages.
 
 See `docs/sitemap.md` for details.
 
