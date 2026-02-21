@@ -129,40 +129,6 @@ Requires `playwright` in `EXTRACTOR_ORDER`. Set `follow: false` in rules.
 
 **Common mistakes:** selector matches multiple elements (gets first, often wrong); selector targets sidebar/footer instead of main content; overly generic selectors like `div.text`; guessing without testing on actual HTML.
 
-## Manual Analysis Fallback (BeautifulSoup)
-
-If `./scrapai analyze` is insufficient:
-
-```python
-from bs4 import BeautifulSoup
-with open('data/proj/spider/analysis/page.html') as f:
-    soup = BeautifulSoup(f.read(), 'lxml')
-
-# Titles
-for tag in ['h1', 'h2']:
-    for el in soup.find_all(tag):
-        classes = '.'.join(el.get('class', []))
-        print(f"{tag}.{classes}: {el.get_text()[:60]}")
-
-# Content containers (sorted by text length)
-for el in soup.find_all(['article', 'div', 'section']):
-    classes = el.get('class', [])
-    if any(w in str(classes).lower() for w in ['article','content','body','text','post']):
-        print(f"{el.name}.{'.'.join(classes)}: {len(el.get_text(strip=True))} chars")
-
-# Dates
-for el in soup.find_all(['time', 'span', 'div']):
-    classes = el.get('class', [])
-    if any(w in str(classes).lower() for w in ['date','time','published']):
-        print(f"{el.name}.{'.'.join(classes)}: {el.get_text()[:30]}")
-
-# Authors
-for el in soup.find_all(['span', 'div', 'a']):
-    classes = el.get('class', [])
-    if any(w in str(classes).lower() for w in ['author','byline','writer']):
-        print(f"{el.name}.{'.'.join(classes)}: {el.get_text()[:30]}")
-```
-
 ## Identifying JS-Rendered Sites
 
 Signs that `page.html` needs Playwright:
