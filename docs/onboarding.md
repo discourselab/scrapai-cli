@@ -204,8 +204,9 @@ Import it:
 ./scrapai export spider_name --project myproject --format csv
 
 # Database operations
-./scrapai db migrate  # Run database migrations
-./scrapai db current  # Show current migration version
+./scrapai db migrate                              # Run database migrations
+./scrapai db current                              # Show current migration version
+./scrapai db transfer sqlite:///scrapai.db        # Transfer data from old database
 ```
 
 ## Troubleshooting
@@ -252,16 +253,27 @@ If you need PostgreSQL for production or multi-machine deployments:
    ```
 
 3. **Update .env**
-   ```bash
-   cp .env.example .env
-   # Edit .env and change DATABASE_URL to:
-   # DATABASE_URL=postgresql://user:password@localhost:5432/scrapai
+   ```
+   DATABASE_URL=postgresql://user:password@localhost:5432/scrapai
    ```
 
 4. **Run migrations**
    ```bash
    ./scrapai db migrate
    ```
+
+5. **Transfer existing data** (if you have spiders/data in SQLite)
+   ```bash
+   # Copy everything from your old SQLite database
+   ./scrapai db transfer sqlite:///scrapai.db
+
+   # Or skip scraped articles (transfer only spiders and queue)
+   ./scrapai db transfer sqlite:///scrapai.db --skip-items
+   ```
+
+   This copies all spiders (with rules and settings), scraped items, and queue entries from the old database into your new PostgreSQL database.
+
+   **Note:** Update `DATABASE_URL` in `.env` *before* running the transfer. The command reads from the source URL you provide and writes to whatever `DATABASE_URL` is currently set to.
 
 ## Need Help?
 
