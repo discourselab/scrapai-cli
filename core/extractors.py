@@ -8,8 +8,6 @@ import newspaper
 import trafilatura
 from bs4 import BeautifulSoup
 from .schemas import ScrapedArticle
-from utils.newspaper_parser import NewspaperParser # Reuse existing proxy logic if possible, or reimplement
-from utils.browser import run_browser_task
 
 logger = logging.getLogger(__name__)
 
@@ -244,49 +242,7 @@ class SmartExtractor:
         self.strategies = strategies or ['newspaper', 'trafilatura', 'playwright']
         self.custom_selectors = custom_selectors
 
-    def extract(self, url: str, html: str, title_hint: str = None, include_html: bool = False) -> Optional[ScrapedArticle]:
-        """
-        Attempt extraction using configured strategies in order.
-
-        If custom selectors are provided, tries 'custom' strategy first if in strategies list,
-        otherwise tries generic extractors (newspaper, trafilatura).
-        Falls back to next strategy if one fails.
-        """
-        # Build list of extractors to try based on strategies
-        extractors = []
-
-        for strategy in self.strategies:
-            if strategy == 'custom':
-                if self.custom_selectors:
-                    extractors.append(('custom', CustomExtractor(self.custom_selectors)))
-                else:
-                    logger.debug(f"Skipping 'custom' strategy - no custom selectors provided")
-            elif strategy == 'newspaper':
-                extractors.append(('newspaper', NewspaperExtractor()))
-            elif strategy == 'trafilatura':
-                extractors.append(('trafilatura', TrafilaturaExtractor()))
-            elif strategy == 'playwright':
-                # Playwright handled separately in async method
-                logger.debug(f"Skipping 'playwright' in sync extract (use extract_async)")
-
-        # Try each extractor in order
-        for name, extractor in extractors:
-            logger.info(f"Trying {name} extractor for {url}")
-            try:
-                result = extractor.extract(url, html, title_hint, include_html)
-                if result:
-                    logger.info(f"Successfully extracted {url} using {name}")
-                    return result
-                else:
-                    logger.debug(f"{name} extractor returned no result for {url}")
-            except Exception as e:
-                logger.debug(f"{name} extractor failed for {url}: {e}")
-
-        # All extractors failed
-        logger.error(f"All extractors failed for {url}")
-        return None
-
-    async def extract_async(self, url: str, html: str, title_hint: str = None, include_html: bool = False,
+    async def extract(self, url: str, html: str, title_hint: str = None, include_html: bool = False,
                            wait_for_selector: str = None, additional_delay: float = 0,
                            enable_scroll: bool = False, max_scrolls: int = 5, scroll_delay: float = 1.0) -> Optional[ScrapedArticle]:
         """
@@ -410,21 +366,3 @@ class SmartExtractor:
             logger.error(traceback.format_exc())
         return None
 
-    def _extract_with_playwright(self, url: str, title_hint: str = None, include_html: bool = False) -> Optional[ScrapedArticle]:
-        """Fetch via Playwright and extract using Trafilatura"""
-        try:
-            # Define async task
-            async def fetch_task(browser):
-                if await browser.goto(url):
-                    return await browser.get_html()
-                return None
-
-            # Run sync
-            html = asyncio.run(run_browser_task(fetch_task))
-
-            if html:
-                # Try Trafilatura on rendered HTML
-                return TrafilaturaExtractor().extract(url, html, title_hint, include_html)
-        except Exception as e:
-            logger.error(f"Playwright fetch failed: {e}")
-        return None
