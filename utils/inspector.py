@@ -6,7 +6,7 @@ This tool downloads and analyzes HTML from a source URL to help with creating sc
 It's designed to be used as part of the scraper development process.
 
 Usage:
-    python -m utils.inspector --url https://example.com/fact-checks
+    python -m utils.inspector https://example.com/fact-checks
 """
 
 import os

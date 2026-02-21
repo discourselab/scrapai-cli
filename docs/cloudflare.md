@@ -12,10 +12,10 @@ Only enable when the site requires it. Test WITHOUT `--cloudflare` first.
 
 ```bash
 # Normal inspection
-./scrapai inspect --url https://example.com --project proj
+./scrapai inspect https://example.com --project proj
 
 # With Cloudflare bypass
-./scrapai inspect --url https://example.com --project proj --cloudflare
+./scrapai inspect https://example.com --project proj --cloudflare
 ```
 
 ## Hybrid Mode (Default)

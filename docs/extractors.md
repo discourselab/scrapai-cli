@@ -6,7 +6,7 @@ Test generic extractors (newspaper, trafilatura) first. Only use custom selector
 
 **Step 1: Inspect article page**
 ```bash
-./scrapai inspect --url https://example.com/article-url --project proj
+./scrapai inspect https://example.com/article-url --project proj
 ```
 
 **Step 2: Analyze HTML structure**
