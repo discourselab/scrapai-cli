@@ -15,8 +15,8 @@ class ScrapaiPipeline:
 
 class DatabasePipeline:
     def __init__(self):
-        from core.db import get_db
-        self.db = next(get_db())
+        from core.db import SessionLocal
+        self.db = SessionLocal()
         self.buffer = []
         self.batch_size = 100
         
@@ -29,6 +29,7 @@ class DatabasePipeline:
     def close_spider(self, spider):
         if self.buffer:
             self._flush(spider)
+        self.db.close()
             
     def _flush(self, spider):
         from core.models import ScrapedItem
