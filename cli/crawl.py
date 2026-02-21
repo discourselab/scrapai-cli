@@ -3,6 +3,7 @@ import subprocess
 import sys
 import os
 from datetime import datetime
+from core.config import DATA_DIR
 
 
 @click.command()
@@ -84,10 +85,14 @@ def _run_spider(project_name, spider_name, output_file=None, limit=None, timeout
 
         if not output_file:
             now = datetime.now()
-            date_folder = now.strftime('%Y-%m-%d')
-            output_dir = f'data/{spider_name}/{date_folder}'
+            timestamp = now.strftime('%d%m%Y_%H%M%S')
+
+            if project_name:
+                output_dir = f'{DATA_DIR}/{project_name}/{spider_name}/crawls'
+            else:
+                output_dir = f'{DATA_DIR}/{spider_name}/crawls'
+
             os.makedirs(output_dir, exist_ok=True)
-            timestamp = now.strftime('%H%M%S')
             output_file = f'{output_dir}/crawl_{timestamp}.jsonl'
 
         cmd.extend(['-o', output_file])

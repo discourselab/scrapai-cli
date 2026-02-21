@@ -53,12 +53,17 @@ Update `sections.md`. Repeat for each section.
 ### File Structure
 
 ```
-data/<project>/<spider>/analysis/
-├── page.html
-├── all_urls.txt
-├── sections.md
-├── section_rules_*.json
-└── final_spider.json
+DATA_DIR/<project>/<spider>/
+├── analysis/
+│   ├── page.html
+│   ├── all_urls.txt
+│   ├── sections.md
+│   ├── section_rules_*.json
+│   └── final_spider.json
+├── crawls/
+│   └── crawl_TIMESTAMP.jsonl
+└── exports/
+    └── export_TIMESTAMP.format
 ```
 
 ---
@@ -207,6 +212,6 @@ Re-create test_spider.json, re-import, re-test. Do NOT proceed to 4B until extra
 
 **Do NOT add Cloudflare by default in test_spider.json.** Only add if you confirmed CF protection during analysis. It adds major overhead (visible browser, slower crawling).
 
-**Directory creation:** Never use `mkdir`. Inspector auto-creates `data/<project>/<spider>/analysis/`. DATA_DIR is configurable in `.env`.
+**Directory creation:** Never use `mkdir`. Inspector auto-creates `DATA_DIR/<project>/<spider>/analysis/`. Crawl and export commands auto-create their subdirectories. DATA_DIR is configurable in `.env` (default: `./data`).
 
 **Do NOT inspect individual content pages** during Phase 1. Extractors handle content extraction — you only need URL patterns and navigation structure.
