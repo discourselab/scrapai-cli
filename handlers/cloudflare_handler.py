@@ -100,16 +100,18 @@ class CloudflareDownloadHandler:
         else:
             logger.info("CloudflareDownloadHandler: No browser to close")
 
-    async def download_request(self, request: Request, spider):
+    async def download_request(self, request: Request):
         """Handle request using hybrid or browser-only strategy.
 
         Args:
             request: Scrapy request to download
-            spider: Scrapy spider instance
 
         Returns:
             HtmlResponse
         """
+        # Get spider from crawler
+        spider = self.crawler.spider
+
         # Check if Cloudflare mode is enabled for this spider
         spider_settings = getattr(spider, 'custom_settings', {})
         cf_enabled = spider_settings.get('CLOUDFLARE_ENABLED', False)
