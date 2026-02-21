@@ -18,7 +18,77 @@ def auto_activate_venv():
             os.execv(venv_python, [venv_python] + sys.argv)
             return
 
-# Auto-activate venv (except for setup/verify which may not have deps yet)
+def run_setup_standalone():
+    """Run setup without click (works before deps are installed)."""
+    import subprocess
+    from pathlib import Path
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    venv_path = Path(script_dir) / '.venv'
+    venv_python = venv_path / 'bin' / 'python'
+
+    print("🚀 Setting up ScrapAI environment...")
+
+    # Create venv
+    if not venv_path.exists():
+        print("📦 Creating virtual environment...")
+        try:
+            subprocess.run([sys.executable, '-m', 'venv', '.venv'], check=True, cwd=script_dir)
+            print("✅ Virtual environment created")
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Failed to create virtual environment: {e}")
+            sys.exit(1)
+    else:
+        print("✅ Virtual environment already exists")
+
+    # Install deps
+    requirements_path = Path(script_dir) / 'requirements.txt'
+    if requirements_path.exists():
+        print("📋 Installing requirements...")
+        try:
+            subprocess.run([str(venv_python), '-m', 'pip', 'install', '--upgrade', 'pip'],
+                         check=True, cwd=script_dir, capture_output=True)
+            subprocess.run([str(venv_python), '-m', 'pip', 'install', '-r', 'requirements.txt'],
+                         check=True, cwd=script_dir, capture_output=True)
+            print("✅ Requirements installed")
+
+            print("🌐 Installing Playwright browsers...")
+            subprocess.run([str(venv_python), '-m', 'playwright', 'install'],
+                         check=True, cwd=script_dir, capture_output=True)
+            print("✅ Playwright browsers installed")
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Failed to install requirements: {e}")
+            sys.exit(1)
+    else:
+        print("⚠️  requirements.txt not found")
+
+    # Re-exec with venv python to run the rest of setup (db init, claude config)
+    # which benefits from having click available
+    os.execv(str(venv_python), [str(venv_python)] + sys.argv)
+
+
+# Handle setup before deps exist - bootstrap with stdlib only
+if len(sys.argv) > 1 and sys.argv[1] == 'setup':
+    # Check if we're already in the venv (deps available)
+    in_venv = hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
+    if not in_venv:
+        # No venv yet - run standalone bootstrap, then re-exec
+        run_setup_standalone()
+        sys.exit(0)
+
+# Handle verify before deps exist
+if len(sys.argv) > 1 and sys.argv[1] == 'verify':
+    in_venv = hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
+    if not in_venv:
+        venv_exists = os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.venv'))
+        if venv_exists:
+            auto_activate_venv()
+        else:
+            print("❌ Virtual environment not found")
+            print("   Run: ./scrapai setup")
+            sys.exit(1)
+
+# Auto-activate venv for all other commands
 if len(sys.argv) > 1 and sys.argv[1] not in ['setup', 'verify', '--help', '-h']:
     auto_activate_venv()
 
