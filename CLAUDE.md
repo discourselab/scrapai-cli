@@ -286,29 +286,98 @@ If ANY phase is incomplete or test fails, DO NOT mark as complete.
 
 #### Phase 1: Analysis & Section Documentation
 
-**IMPORTANT: If user provides a sitemap.xml URL, skip analysis and crawl everything.**
+**IMPORTANT: If user provides a sitemap URL, follow Sitemap Workflow.**
 
-Sitemap URLs are auto-detected (e.g., `https://example.com/sitemap.xml`). Simple workflow:
-1. Create spider JSON with sitemap URL as start_urls
-2. Use default rules (scrapes all URLs from sitemap)
-3. Let extraction strategies handle different page types
-4. Some pages will fail extraction (homepage, about, etc.) - that's expected and okay
+Agent must explicitly decide if URL is a sitemap (no auto-detection). Any URL can be used as sitemap if agent determines it is one.
 
-**Sitemap spider config (minimal):**
+**Read `docs/sitemap.md` for complete sitemap workflow** including nested sitemap handling, URL analysis, and extraction testing.
+
+### Sitemap Workflow (Quick Reference)
+
+**Step 1: Analyze Sitemap**
+```bash
+# Inspect sitemap (any URL - main or sub-sitemap)
+./scrapai inspect https://example.com/sitemap_blogs_1.xml --project proj
+
+# If nested, inspect sub-sitemaps
+./scrapai inspect https://example.com/post-sitemap.xml --project proj
+```
+
+Look at URLs to identify which contain articles vs static pages.
+
+**Step 2: Test Extraction (Same as Phase 2)**
+
+Pick 2-3 article URLs from sitemap, test extraction:
+
+```bash
+./scrapai inspect https://example.com/article-1 --project proj
+./scrapai inspect https://example.com/article-2 --project proj
+```
+
+**If generic extractors (newspaper/trafilatura) work:**
+- Titles extracted correctly ✓
+- Content complete ✓
+- Author and date present ✓
+→ Use `EXTRACTOR_ORDER: ["newspaper", "trafilatura"]`
+
+**If generic extractors fail:**
+- Follow Phase 2 workflow (see analysis-workflow.md)
+- Inspect HTML structure
+- Discover custom CSS selectors
+- Test selectors with BeautifulSoup
+→ Use `EXTRACTOR_ORDER: ["custom", "newspaper"]` with `CUSTOM_SELECTORS`
+
+Read `docs/extractors.md` for custom selector discovery.
+
+**Step 3: Create Spider JSON**
+
+**CRITICAL: Add `"USE_SITEMAP": true` setting to enable sitemap spider**
+
+**With generic extractors:**
 ```json
 {
   "name": "site_sitemap",
   "allowed_domains": ["example.com"],
-  "start_urls": ["https://example.com/sitemap.xml"],
+  "start_urls": ["https://example.com/sitemap_blogs_1.xml"],
   "settings": {
+    "USE_SITEMAP": true,
     "EXTRACTOR_ORDER": ["newspaper", "trafilatura"]
   }
 }
 ```
 
-No rules needed - automatically scrapes all URLs. Extraction will succeed for articles, fail gracefully for non-article pages.
+**With custom selectors:**
+```json
+{
+  "name": "site_sitemap",
+  "allowed_domains": ["example.com"],
+  "start_urls": ["https://example.com/sitemap_blogs_1.xml"],
+  "settings": {
+    "USE_SITEMAP": true,
+    "EXTRACTOR_ORDER": ["custom", "newspaper"],
+    "CUSTOM_SELECTORS": {
+      "title": "h1.article-title",
+      "content": "div.article-body",
+      "author": "span.author-name",
+      "date": "time.publish-date"
+    }
+  }
+}
+```
 
-See `docs/sitemap.md` for details.
+Can use any sitemap URL (main, sub-sitemap, any pattern).
+
+**Step 4: Test & Deploy**
+```bash
+./scrapai spiders import spider.json --project proj
+./scrapai crawl site_sitemap --limit 5 --project proj
+./scrapai show site_sitemap --limit 5 --project proj
+```
+
+**Key Points:**
+- **Must include `"USE_SITEMAP": true`** in settings (no auto-detection)
+- Can use main sitemap or specific sub-sitemap URL
+- Test extraction on samples before full crawl
 
 **For non-sitemap URLs: Complete FULL site analysis before creating ANY rules.**
 
