@@ -101,18 +101,18 @@ class DatabaseSpider(CrawlSpider):
 
                 self.custom_settings[s.key] = val
 
-        # Check if Cloudflare mode enabled
+        # Check if Cloudflare mode enabled and set DOWNLOAD_HANDLERS BEFORE Scrapy reads settings
         cf_enabled = self.custom_settings.get('CLOUDFLARE_ENABLED', False)
 
         if cf_enabled:
             # Enable CF download handler only for this spider
             logger.info(f"Cloudflare bypass mode enabled for {self.spider_name}")
-            if not getattr(self, 'custom_settings', None):
-                self.custom_settings = {}
+            # CRITICAL: Must set DOWNLOAD_HANDLERS in custom_settings BEFORE spider starts
             self.custom_settings['DOWNLOAD_HANDLERS'] = {
                 'http': 'handlers.cloudflare_handler.CloudflareDownloadHandler',
                 'https': 'handlers.cloudflare_handler.CloudflareDownloadHandler',
             }
+            logger.info(f"Set DOWNLOAD_HANDLERS: {self.custom_settings.get('DOWNLOAD_HANDLERS')}")
         # If not CF enabled, use default Scrapy HTTP handler (no custom_settings needed)
 
     def parse_start_url(self, response):
@@ -127,6 +127,19 @@ class DatabaseSpider(CrawlSpider):
     def from_crawler(cls, crawler, *args, **kwargs):
         """Called by Scrapy to create spider instance from crawler."""
         spider = super(DatabaseSpider, cls).from_crawler(crawler, *args, **kwargs)
+
+        # After spider is initialized, check if Cloudflare mode is enabled
+        # and update crawler settings directly (this ensures handlers are applied)
+        if hasattr(spider, 'custom_settings'):
+            cf_enabled = spider.custom_settings.get('CLOUDFLARE_ENABLED', False)
+            if cf_enabled:
+                logger.info(f"[from_crawler] Applying Cloudflare handlers to crawler settings")
+                crawler.settings.set('DOWNLOAD_HANDLERS', {
+                    'http': 'handlers.cloudflare_handler.CloudflareDownloadHandler',
+                    'https': 'handlers.cloudflare_handler.CloudflareDownloadHandler',
+                }, priority='spider')
+                logger.info(f"[from_crawler] DOWNLOAD_HANDLERS applied: {crawler.settings.get('DOWNLOAD_HANDLERS')}")
+
         # Read CLOSESPIDER_ITEMCOUNT from settings for immediate stop logic
         spider._item_limit = crawler.settings.getint('CLOSESPIDER_ITEMCOUNT', 0)
         if spider._item_limit:
