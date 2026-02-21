@@ -168,7 +168,7 @@ def main():
     # show command
     show_parser = subparsers.add_parser('show', help='Show scraped articles from database')
     show_parser.add_argument('spider_name', help='Spider name to show articles from')
-    show_parser.add_argument('--project', help='Project name (optional - if not specified, shows first match)')
+    show_parser.add_argument('--project', required=True, help='Project name (required)')
     show_parser.add_argument('--limit', '-l', type=int, default=5, help='Number of articles to show (default: 5)')
     show_parser.add_argument('--url', help='Show only articles containing this URL pattern')
     show_parser.add_argument('--text', '-t', help='Show only articles containing this text in title or content')
@@ -1288,19 +1288,14 @@ def handle_show_command(args):
 
     db = next(get_db())
 
-    # Find spider by name
-    query = db.query(Spider).filter(Spider.name == args.spider_name)
+    # Find spider by name and project (project is required)
+    spider = db.query(Spider).filter(
+        Spider.name == args.spider_name,
+        Spider.project == args.project
+    ).first()
 
-    # Filter by project if specified
-    if hasattr(args, 'project') and args.project:
-        query = query.filter(Spider.project == args.project)
-        project_msg = f" in project '{args.project}'"
-    else:
-        project_msg = ""
-
-    spider = query.first()
     if not spider:
-        print(f"❌ Spider '{args.spider_name}'{project_msg} not found in database.")
+        print(f"❌ Spider '{args.spider_name}' not found in project '{args.project}'")
         return
 
     # Build query

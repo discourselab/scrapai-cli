@@ -526,13 +526,13 @@ Quick reference:
 - `./scrapai queue cleanup --all --force --project <name>` - Remove all completed and failed (**always specify --project**)
 
 **Data Inspection:**
-- `./scrapai show <spider_name> --project <name>` - Show recent articles (**always specify --project**)
-- `./scrapai show <spider_name> --project <name> --limit 10` - Show specific number (**always specify --project**)
-- `./scrapai show <spider_name> --project <name> --url pattern` - Filter by URL (**always specify --project**)
-- `./scrapai show <spider_name> --project <name> --text "climate"` - Search title or content (**always specify --project**)
-- `./scrapai show <spider_name> --project <name> --title "climate"` - Search titles only (**always specify --project**)
+- `./scrapai show <spider_name> --project <name>` - Show recent articles (**--project required**)
+- `./scrapai show <spider_name> --project <name> --limit 10` - Show specific number
+- `./scrapai show <spider_name> --project <name> --url pattern` - Filter by URL
+- `./scrapai show <spider_name> --project <name> --text "climate"` - Search title or content
+- `./scrapai show <spider_name> --project <name> --title "climate"` - Search titles only
 
-Note: `--project` is technically optional for `show` and `export` commands (defaults to first match), but **strongly recommended** to avoid confusion when spider names exist in multiple projects.
+Note: `--project` is **required** for `show` command to avoid confusion when same spider name exists in multiple projects.
 
 **Data Export:**
 
