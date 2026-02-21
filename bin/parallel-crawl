@@ -1,0 +1,133 @@
+#!/bin/bash
+# Parallel crawler using GNU parallel
+# Usage:
+#   bin/parallel-crawl <project>                    # All spiders in project
+#   bin/parallel-crawl <project> spider1 spider2    # Selected spiders
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$SCRIPT_DIR"
+
+if [ $# -eq 0 ]; then
+    echo "Usage: bin/parallel-crawl <project> [spider1 spider2 ...]"
+    echo ""
+    echo "Examples:"
+    echo "  bin/parallel-crawl brown_v2                    # Run all spiders in project"
+    echo "  bin/parallel-crawl brown_v2 spider1 spider2    # Run specific spiders"
+    exit 1
+fi
+
+if ! command -v parallel &> /dev/null; then
+    echo "❌ GNU parallel is not installed"
+    echo ""
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "  brew install parallel"
+    else
+        echo "  sudo apt-get install parallel"
+    fi
+    exit 1
+fi
+
+PROJECT="$1"
+shift
+
+# Get spider list
+source .venv/bin/activate
+
+if [ $# -eq 0 ]; then
+    echo "📋 Getting all spiders from project: $PROJECT"
+    SPIDERS=$(./scrapai spiders list --project "$PROJECT" 2>/dev/null | grep '•' | awk '{print $2}')
+else
+    SPIDERS="$@"
+fi
+
+SPIDER_COUNT=$(echo "$SPIDERS" | wc -w)
+
+if [ "$SPIDER_COUNT" -eq 0 ]; then
+    echo "❌ No spiders to crawl"
+    exit 1
+fi
+
+# Count Cloudflare-enabled spiders
+CF_COUNT=$(python3 -c "
+from core.db import get_db
+from core.models import Spider
+import sys
+
+db = next(get_db())
+names = sys.argv[1:]
+count = 0
+for name in names:
+    spider = db.query(Spider).filter(Spider.name == name, Spider.project == '$PROJECT').first()
+    if spider:
+        for s in spider.settings:
+            if s.key == 'CLOUDFLARE_ENABLED' and str(s.value).lower() in ('true', '1'):
+                count += 1
+                break
+print(count)
+" $SPIDERS)
+
+REGULAR_COUNT=$((SPIDER_COUNT - CF_COUNT))
+
+# Auto-detect parallelism from system resources
+CPU_CORES=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    TOTAL_MEM=$(sysctl -n hw.memsize)
+    AVAILABLE_MEM_MB=$((TOTAL_MEM / 1024 / 1024 * 70 / 100))
+else
+    AVAILABLE_MEM_MB=$(free -m | awk '/^Mem:/ {print $7}')
+fi
+
+# Memory per spider: regular 200MB, Cloudflare 500MB
+if [ "$CF_COUNT" -eq 0 ]; then
+    MEM_PER_SPIDER=200
+    SPIDER_TYPE="regular"
+elif [ "$CF_COUNT" -eq "$SPIDER_COUNT" ]; then
+    MEM_PER_SPIDER=500
+    SPIDER_TYPE="Cloudflare"
+else
+    MEM_PER_SPIDER=$(( (REGULAR_COUNT * 200 + CF_COUNT * 500) / SPIDER_COUNT ))
+    SPIDER_TYPE="mixed (${CF_COUNT} CF + ${REGULAR_COUNT} regular)"
+fi
+
+MEM_PARALLEL=$(( (AVAILABLE_MEM_MB - 2048) / MEM_PER_SPIDER ))
+CPU_PARALLEL=$(( CPU_CORES * 80 / 100 ))
+PARALLEL=$(( MEM_PARALLEL < CPU_PARALLEL ? MEM_PARALLEL : CPU_PARALLEL ))
+[ "$PARALLEL" -lt 2 ] && PARALLEL=2
+[ "$PARALLEL" -gt 20 ] && PARALLEL=20
+
+echo ""
+echo "=========================================="
+echo "Parallel Crawler"
+echo "=========================================="
+echo "Project:  $PROJECT"
+echo "Spiders:  $SPIDER_COUNT ($SPIDER_TYPE)"
+echo "Parallel: $PARALLEL jobs"
+echo "Timeout:  8h per spider"
+echo "=========================================="
+echo ""
+
+read -p "Continue? (y/N): " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Cancelled."
+    exit 0
+fi
+
+echo ""
+echo "Starting parallel crawl..."
+echo ""
+
+# Run crawls in parallel (worker inlined)
+echo "$SPIDERS" | tr ' ' '\n' | parallel \
+    -j "$PARALLEL" \
+    --timeout 8h \
+    --halt soon,fail=50% \
+    --line-buffer \
+    --tagstring "[{.}]" \
+    "cd $SCRIPT_DIR && source .venv/bin/activate && ./scrapai crawl {} --project $PROJECT"
+
+echo ""
+echo "Done."
