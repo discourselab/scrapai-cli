@@ -5,45 +5,49 @@ import os
 from pathlib import Path
 
 
-@click.command()
-def setup():
+@click.command(context_settings=dict(ignore_unknown_options=True))
+@click.argument('args', nargs=-1, type=click.UNPROCESSED)
+def setup(args):
     """Setup virtual environment and database"""
+    skip_deps = '--skip-deps' in args
+
     click.echo("🚀 Setting up ScrapAI environment...")
 
     script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     venv_path = Path('.venv')
     venv_python = venv_path / 'bin' / 'python'
 
-    if not venv_path.exists():
-        click.echo("📦 Creating virtual environment...")
-        try:
-            subprocess.run([sys.executable, '-m', 'venv', '.venv'], check=True, cwd=script_dir)
-            click.echo("✅ Virtual environment created")
-        except subprocess.CalledProcessError as e:
-            click.echo(f"❌ Failed to create virtual environment: {e}")
-            sys.exit(1)
-    else:
-        click.echo("✅ Virtual environment already exists")
+    if not skip_deps:
+        if not venv_path.exists():
+            click.echo("📦 Creating virtual environment...")
+            try:
+                subprocess.run([sys.executable, '-m', 'venv', '.venv'], check=True, cwd=script_dir)
+                click.echo("✅ Virtual environment created")
+            except subprocess.CalledProcessError as e:
+                click.echo(f"❌ Failed to create virtual environment: {e}")
+                sys.exit(1)
+        else:
+            click.echo("✅ Virtual environment already exists")
 
-    requirements_path = Path('requirements.txt')
-    if requirements_path.exists():
-        click.echo("📋 Installing requirements...")
-        try:
-            subprocess.run([str(venv_python), '-m', 'pip', 'install', '--upgrade', 'pip'],
-                         check=True, cwd=script_dir, capture_output=True)
-            subprocess.run([str(venv_python), '-m', 'pip', 'install', '-r', 'requirements.txt'],
-                         check=True, cwd=script_dir, capture_output=True)
-            click.echo("✅ Requirements installed")
+        requirements_path = Path('requirements.txt')
+        if requirements_path.exists():
+            click.echo("📋 Installing requirements...")
+            try:
+                subprocess.run([str(venv_python), '-m', 'pip', 'install', '--upgrade', 'pip'],
+                             check=True, cwd=script_dir, capture_output=True)
+                subprocess.run([str(venv_python), '-m', 'pip', 'install', '-r', 'requirements.txt'],
+                             check=True, cwd=script_dir, capture_output=True)
+                click.echo("✅ Requirements installed")
 
-            click.echo("🌐 Installing Playwright browsers...")
-            subprocess.run([str(venv_python), '-m', 'playwright', 'install'],
-                         check=True, cwd=script_dir, capture_output=True)
-            click.echo("✅ Playwright browsers installed")
-        except subprocess.CalledProcessError as e:
-            click.echo(f"❌ Failed to install requirements: {e}")
-            sys.exit(1)
-    else:
-        click.echo("⚠️  requirements.txt not found")
+                click.echo("🌐 Installing Playwright browsers...")
+                subprocess.run([str(venv_python), '-m', 'playwright', 'install'],
+                             check=True, cwd=script_dir, capture_output=True)
+                click.echo("✅ Playwright browsers installed")
+            except subprocess.CalledProcessError as e:
+                click.echo(f"❌ Failed to install requirements: {e}")
+                sys.exit(1)
+        else:
+            click.echo("⚠️  requirements.txt not found")
 
     env_file = Path('.env')
     env_example = Path('.env.example')
