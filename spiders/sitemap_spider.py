@@ -96,6 +96,19 @@ class SitemapDatabaseSpider(SitemapSpider):
     def from_crawler(cls, crawler, *args, **kwargs):
         """Called by Scrapy to create spider instance from crawler."""
         spider = super(SitemapDatabaseSpider, cls).from_crawler(crawler, *args, **kwargs)
+
+        # After spider is initialized, check if Cloudflare mode is enabled
+        # and update crawler settings directly (this ensures handlers are applied)
+        if hasattr(spider, 'custom_settings'):
+            cf_enabled = spider.custom_settings.get('CLOUDFLARE_ENABLED', False)
+            if cf_enabled:
+                logger.info(f"[from_crawler] Applying Cloudflare handlers to crawler settings")
+                crawler.settings.set('DOWNLOAD_HANDLERS', {
+                    'http': 'handlers.cloudflare_handler.CloudflareDownloadHandler',
+                    'https': 'handlers.cloudflare_handler.CloudflareDownloadHandler',
+                }, priority='spider')
+                logger.info(f"[from_crawler] DOWNLOAD_HANDLERS applied: {crawler.settings.get('DOWNLOAD_HANDLERS')}")
+
         spider._item_limit = crawler.settings.getint('CLOSESPIDER_ITEMCOUNT', 0)
         if spider._item_limit:
             logger.info(f"Item limit set to {spider._item_limit} for sitemap spider")
