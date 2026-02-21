@@ -1526,7 +1526,15 @@ def run_spider(project_name, spider_name, output_file=None, limit=None, timeout=
                     cf_enabled = True
                     break
 
-        cmd = [sys.executable, '-m', 'scrapy', 'crawl', 'database_spider', '-a', f'spider_name={spider_name}']
+        # Auto-detect spider type (sitemap vs regular crawl)
+        from utils.sitemap_detector import detect_spider_type, get_spider_class_name
+        spider_type = detect_spider_type(db_spider.start_urls)
+        spider_class = get_spider_class_name(spider_type)
+
+        if spider_type == 'sitemap':
+            print(f"🗺️  Sitemap detected - using sitemap spider")
+
+        cmd = [sys.executable, '-m', 'scrapy', 'crawl', spider_class, '-a', f'spider_name={spider_name}']
 
         # Smart storage logic based on --limit flag
         if limit:
