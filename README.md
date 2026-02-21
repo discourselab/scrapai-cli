@@ -16,13 +16,13 @@ Here's what an AI-generated spider config looks like:
 
 ```json
 {
-  "name": "bbc_com",
-  "source_url": "https://www.bbc.com/",
-  "allowed_domains": ["bbc.com"],
+  "name": "bbc_co_uk",
+  "source_url": "https://www.bbc.co.uk/",
+  "allowed_domains": ["bbc.co.uk"],
   "start_urls": [
-    "https://www.bbc.com/",
-    "https://www.bbc.com/news",
-    "https://www.bbc.com/business"
+    "https://www.bbc.co.uk/",
+    "https://www.bbc.co.uk/news",
+    "https://www.bbc.co.uk/business"
   ],
   "rules": [
     {
@@ -46,7 +46,7 @@ Here's what an AI-generated spider config looks like:
 
 That's not a Python file. It's data. It lives in a SQLite/PostgreSQL database. Adding a new website means adding a new row, not writing new code.
 
-For Cloudflare-protected sites, the spider config includes bypass settings:
+**Cloudflare-protected sites work too.** Most scrapers either fail on Cloudflare or resort to rendering every page in a headless browser (slow, expensive, ~1 page/sec). ScrapAI's hybrid mode solves the browser once every 10 minutes, caches the session cookies, then makes fast HTTP requests with those cookies -- same speed as non-Cloudflare sites. 16 concurrent requests, hundreds of pages per minute.
 
 ```json
 {
@@ -73,7 +73,7 @@ For Cloudflare-protected sites, the spider config includes bypass settings:
 }
 ```
 
-Hybrid mode verifies the browser once every 10 minutes, then uses fast HTTP requests with cached cookies -- 20-100x faster than rendering every page.
+The only difference from a regular spider is 5 extra settings. The AI agent detects Cloudflare automatically during analysis and adds them.
 
 ## Architecture
 
