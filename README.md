@@ -57,12 +57,16 @@ You (plain English) → AI Agent → JSON config → Database → DatabaseSpider
 
 | Component | What it does |
 |-----------|-------------|
-| `scrapai` | CLI entry point -- setup, crawl, inspect, import, export, queue management |
-| `spiders/database_spider.py` | Single generic spider that loads config from database at runtime |
+| `scrapai` | Entry point -- auto-activates venv, delegates to `cli/` |
+| `cli/` | Click-based CLI modules -- spiders, queue, crawl, show, export, inspect, etc. |
+| `spiders/database_spider.py` | Generic spider that loads config from database at runtime |
+| `spiders/sitemap_spider.py` | Sitemap-based spider for sites with XML sitemaps |
+| `spiders/base.py` | Shared mixin -- settings loading, CF setup, article extraction |
 | `core/models.py` | SQLAlchemy models -- `Spider`, `SpiderRule`, `SpiderSetting`, `ScrapedItem` |
 | `core/extractors.py` | Extraction chain -- newspaper, trafilatura, custom CSS selectors, Playwright |
 | `handlers/cloudflare_handler.py` | Cloudflare bypass with session persistence |
 | `pipelines.py` | Scrapy pipeline -- batched database writes and JSONL export |
+| `bin/parallel-crawl` | GNU parallel wrapper for running multiple spiders concurrently |
 | `alembic/` | Database migrations |
 | `airflow/` | Production orchestration -- scheduling, monitoring, retry logic |
 
@@ -176,6 +180,10 @@ You can also create spider configs by hand and use the CLI directly:
 # Database
 ./scrapai db migrate                                      # Run migrations
 ./scrapai db current                                      # Show migration version
+
+# Parallel crawling (requires GNU parallel)
+bin/parallel-crawl <project>                              # All spiders in project
+bin/parallel-crawl <project> spider1 spider2              # Selected spiders
 ```
 
 `--project` is required on all spider, queue, crawl, show, and export commands.
@@ -228,6 +236,7 @@ Includes scheduling (cron), monitoring, retry logic, S3-compatible storage uploa
 | [docs/extractors.md](docs/extractors.md) | Extraction chain, custom selectors, Playwright, infinite scroll |
 | [docs/cloudflare.md](docs/cloudflare.md) | Cloudflare bypass and session persistence |
 | [docs/queue.md](docs/queue.md) | Queue system for batch processing |
+| [docs/sitemap.md](docs/sitemap.md) | Sitemap spider setup and usage |
 | [docs/projects.md](docs/projects.md) | Project isolation and organization |
 | [CLAUDE.md](CLAUDE.md) | Full AI agent instructions (auto-loaded by Claude Code) |
 
