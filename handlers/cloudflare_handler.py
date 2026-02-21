@@ -18,6 +18,7 @@ from typing import Dict, Optional
 
 import aiohttp
 from scrapy.http import HtmlResponse, Request
+from twisted.internet import defer
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ class CloudflareDownloadHandler:
         else:
             logger.info("CloudflareDownloadHandler: No browser to close")
 
-    async def download_request(self, request: Request, spider):
+    def download_request(self, request: Request, spider):
         """Handle request using hybrid or browser-only strategy.
 
         Note: This handler is only used when spider explicitly enables
@@ -111,8 +112,13 @@ class CloudflareDownloadHandler:
             spider: Spider instance (passed by Scrapy)
 
         Returns:
-            HtmlResponse
+            Deferred that resolves to HtmlResponse
         """
+        # Wrap the async coroutine in a Deferred for Scrapy's synchronous middleware
+        return defer.ensureDeferred(self._download_request_async(request, spider))
+
+    async def _download_request_async(self, request: Request, spider):
+        """Async implementation of download_request."""
         spider_settings = getattr(spider, 'custom_settings', {})
 
         # Get strategy (hybrid by default)
