@@ -1526,13 +1526,20 @@ def run_spider(project_name, spider_name, output_file=None, limit=None, timeout=
                     cf_enabled = True
                     break
 
-        # Auto-detect spider type (sitemap vs regular crawl)
-        from utils.sitemap_detector import detect_spider_type, get_spider_class_name
-        spider_type = detect_spider_type(db_spider.start_urls)
-        spider_class = get_spider_class_name(spider_type)
+        # Check if spider explicitly configured as sitemap spider
+        use_sitemap = False
+        if db_spider.settings:
+            for setting in db_spider.settings:
+                if setting.key == "USE_SITEMAP" and str(setting.value).lower() in ["true", "1"]:
+                    use_sitemap = True
+                    break
 
-        if spider_type == 'sitemap':
-            print(f"🗺️  Sitemap detected - using sitemap spider")
+        # Select spider class based on configuration
+        if use_sitemap:
+            spider_class = 'sitemap_database_spider'
+            print(f"🗺️  Using sitemap spider")
+        else:
+            spider_class = 'database_spider'
 
         cmd = [sys.executable, '-m', 'scrapy', 'crawl', spider_class, '-a', f'spider_name={spider_name}']
 
