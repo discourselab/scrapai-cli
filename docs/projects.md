@@ -1,80 +1,31 @@
-# Project System
+# Projects
 
-Projects isolate spiders, queue items, and scraped data from each other. Every operation should specify which project it belongs to.
+Projects isolate spiders, queue items, and scraped data. **Always specify `--project <name>`.**
 
-## Why Projects Matter
+Without `--project`, commands default to "default" project, mixing data.
 
-- **Data isolation**: Spiders in project "brown" don't mix with project "climate"
-- **Clean organization**: Each project has its own queue, spiders, and data
-- **No accidental overlap**: Without `--project`, everything goes to "default" which gets messy fast
-
-## Listing All Projects
-
-To see what projects exist in your system:
+## List Projects
 
 ```bash
 ./scrapai projects list
 ```
 
-Example output:
-```
-📁 Available Projects:
-  • project_name_1
-    Spiders: 10, Queue items: 25
-  • project_name_2
-    Spiders: 5, Queue items: 12
-  • default
-    Spiders: 3, Queue items: 0
-```
+## Commands That Need --project
 
-## ALWAYS Specify --project
-
-**Every command that supports --project MUST have it specified. Never omit it.**
-
-If you omit `--project`, the command defaults to the "default" project. This causes:
-- Spiders from different projects mixed together
-- Queue items claimed from wrong project
-- Confusion about which data belongs where
-
-## Commands That Require --project
-
-**Spider Management:**
 ```bash
-# Import spider - ALWAYS specify project
-./scrapai spiders import <file> --project <name>
-```
-```bash
-# List spiders in a specific project
 ./scrapai spiders list --project <name>
-```
-```bash
-# List ALL spiders across all projects (no --project needed here)
-./scrapai spiders list
-```
-
-**Queue Management:**
-```bash
-# Add to queue - specify which project's queue
-./scrapai queue add <url> --project <name> [-m "instruction"] [--priority N]
-```
-```bash
-# Claim next item from a specific project's queue
+./scrapai spiders import <file> --project <name>
+./scrapai spiders delete <name> --project <name>
+./scrapai crawl <name> --project <name>
+./scrapai show <name> --project <name>
+./scrapai export <name> --project <name> --format csv
+./scrapai queue add <url> --project <name>
+./scrapai queue list --project <name>
 ./scrapai queue next --project <name>
+./scrapai queue cleanup --all --force --project <name>
 ```
 
-## Project Workflow
+**Exception:** `./scrapai spiders list` (no --project) lists ALL spiders across all projects.
 
-When processing a website (whether direct or from queue):
-
-1. **Know your project name** before starting any work
-2. **Import with --project**: `./scrapai spiders import final_spider.json --project <name>`
-3. **Queue operations with --project**: `./scrapai queue next --project <name>`
-4. **Verify in the right project**: `./scrapai spiders list --project <name>`
-
-## Queue + Project Isolation
-
-When processing queue items:
-- The queue item has a project field
-- **ALWAYS use that project name** for the spider import
-- Example: Queue item says project "brown" -> `./scrapai spiders import file.json --project brown`
-- Never import a spider to a different project than the queue item's project
+**Exception:** Queue status commands use globally unique IDs, no --project needed:
+`queue complete <id>`, `queue fail <id>`, `queue retry <id>`, `queue remove <id>`

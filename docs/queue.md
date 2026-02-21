@@ -1,100 +1,52 @@
-# Queue System (Optional)
+# Queue System
 
-**The queue system is OPTIONAL. Use it when the user explicitly requests it.**
+Optional. Use when the user explicitly requests it. Always specify `--project`.
 
-## When to Use Queue vs Direct Processing
+## Commands
 
-**Direct Processing (Default):**
-```
-User: "Add this website: https://example.com"
-Claude Code: [Immediately processes: analyze -> rules -> import -> test]
-```
-
-**Queue Mode (When User Requests):**
-```
-User: "Add climate.news to the queue"
-Claude Code: [Adds to queue for later processing]
-
-User: "Process the next one in the queue"
-Claude Code: [Gets next item, then processes it]
-```
-
-## Queue CLI Commands
-
-**Add to Queue:**
+**Add:**
 ```bash
-./scrapai queue add <url> [-m "custom instruction"] [--priority N] [--project NAME]
+./scrapai queue add <url> --project NAME [-m "instruction"] [--priority N]
 ```
 
-**List Queue:**
+**Bulk add:**
 ```bash
-# By default: shows 5 pending/processing items (excludes failed/completed)
-./scrapai queue list --project NAME
-```
-```bash
-# Show more items
-./scrapai queue list --project NAME --limit 20
-```
-```bash
-# Show all items including failed and completed
-./scrapai queue list --project NAME --all --limit 50
-```
-```bash
-# Filter by specific status
-./scrapai queue list --project NAME --status pending
-```
-```bash
-./scrapai queue list --project NAME --status completed --limit 10
+./scrapai queue bulk <file.csv|file.json> --project NAME [--priority N]
 ```
 
-**Get Queue Count (just the number):**
+**List:**
 ```bash
-# Count pending/processing items (default)
-./scrapai queue list --project NAME --count
-
-# Count by specific status
-./scrapai queue list --project NAME --status pending --count
-./scrapai queue list --project NAME --status completed --count
-./scrapai queue list --project NAME --status failed --count
-./scrapai queue list --project NAME --status processing --count
+./scrapai queue list --project NAME                          # 5 pending/processing (default)
+./scrapai queue list --project NAME --limit 20               # more items
+./scrapai queue list --project NAME --all --limit 50         # include completed/failed
+./scrapai queue list --project NAME --status pending         # filter by status
+./scrapai queue list --project NAME --count                  # just the count
+./scrapai queue list --project NAME --status failed --count  # count by status
 ```
 
-**Claim Next Item (Atomic - Safe for Concurrent Use):**
+**Claim next:**
 ```bash
-./scrapai queue next [--project NAME]
-# Returns: ID, URL, custom_instruction, priority
+./scrapai queue next --project NAME
 ```
 
-**Update Status (by ID - no project needed):**
+**Update status (ID is globally unique, no --project needed):**
 ```bash
-# Mark as completed
 ./scrapai queue complete <id>
-```
-```bash
-# Mark as failed
 ./scrapai queue fail <id> [-m "error message"]
-```
-```bash
-# Retry a failed item
 ./scrapai queue retry <id>
-```
-```bash
-# Remove from queue
 ./scrapai queue remove <id>
 ```
 
-**Note:** Queue item IDs are globally unique, so `--project` is not needed for these commands.
-
-**Bulk Add from File (JSON or CSV):**
+**Cleanup:**
 ```bash
-# From JSON file (array of objects with "url" field)
-./scrapai queue bulk urls.json --project NAME [--priority N]
-
-# From CSV file (columns: url, name/custom_instruction, priority)
-./scrapai queue bulk urls.csv --project NAME [--priority N]
+./scrapai queue cleanup --completed --force --project NAME
+./scrapai queue cleanup --failed --force --project NAME
+./scrapai queue cleanup --all --force --project NAME
 ```
 
-**JSON format example:**
+## Bulk File Formats
+
+**JSON:**
 ```json
 [
   {"url": "https://site1.com", "name": "Focus on research articles"},
@@ -103,7 +55,7 @@ Claude Code: [Gets next item, then processes it]
 ]
 ```
 
-**CSV format example:**
+**CSV:**
 ```csv
 url,name,priority
 https://site1.com,Focus on research articles,5
@@ -111,70 +63,27 @@ https://site2.com,,10
 https://site3.com,Include all news sections,
 ```
 
-**Bulk Cleanup:**
-```bash
-./scrapai queue cleanup --completed --force --project NAME  # Remove all completed
-```
-```bash
-./scrapai queue cleanup --failed --force --project NAME     # Remove all failed
-```
-```bash
-./scrapai queue cleanup --all --force --project NAME        # Remove all completed and failed
-```
+## Queue Processing Workflow
 
-## Queue Workflow for Claude Code
+1. `./scrapai queue next --project NAME` — claim next item
+2. Note: ID, URL, project, custom_instruction
+3. If custom_instruction exists: use it to override CLAUDE.md defaults
+4. Run Phases 1-4. Include `"source_url": "<queue_url>"` in final_spider.json.
+5. Import spider with `--project` matching queue project.
+6. On success: `./scrapai queue complete <id>`
+7. On failure: `./scrapai queue fail <id> -m "error description"`
 
-**When user says "Add X to queue":**
-1. Run `./scrapai queue add <url> -m "custom instruction if provided" --priority N --project <project_name>`
-2. Confirm addition with queue ID
-3. Do NOT process immediately
+## Custom Instruction Handling
 
-**When user says "Process next in queue":**
-1. Run `./scrapai queue next --project <project_name>` to claim next item
-2. Note the ID, URL, project, and custom_instruction from output
-3. **If custom_instruction exists**: Use it to override CLAUDE.md defaults during analysis
-4. Follow the full workflow (Phases 1-4):
-   - Phase 1: Analysis & Section Documentation
-   - Phase 2: Rule Generation
-   - Phase 3: Prepare spider JSONs (**IMPORTANT**: Include `"source_url": "<queue_url>"` in final_spider.json)
-   - Phase 4A: Import test_spider.json, verify extraction quality
-   - Phase 4B: Import final_spider.json **with --project parameter matching the queue project** (ready for production)
-5. **If successful**: `./scrapai queue complete <id>`
-6. **If failed**: `./scrapai queue fail <id> -m "error description"`
+When `queue next` returns a `custom_instruction`, use it to override CLAUDE.md defaults during analysis.
+Example: instruction "Focus only on research articles" → only create rules for research article URL patterns, skip other content sections.
 
-**CRITICAL: Project Isolation**
-- **ALWAYS** import spiders with `--project <name>` matching the queue project
-- Example: Processing brown queue -> `./scrapai spiders import file.json --project brown`
-- Never omit --project - it will default to "default" and mix up your data
-- Maintains clean project separation
+## Direct vs Queue
 
-## Queue Features
+- User says "Add this website: X" → process immediately (Phases 1-4), no queue
+- User says "Add X to the queue" → `queue add` only, do NOT process
+- User says "Process next" → `queue next` then Phases 1-4
 
-- **Project Isolation**: Multiple projects can have separate queues (default: "default")
-- **Priority System**: Higher priority items processed first (default: 5)
-- **Custom Instructions**: Per-site instructions override CLAUDE.md defaults
-- **Concurrent Safe**: Multiple team members can work simultaneously without conflicts
-- **Atomic Claiming**: `queue next` uses PostgreSQL locking to prevent duplicate work
-- **Audit Trail**: Tracks who's processing what, when completed/failed
+## Project Isolation
 
-## Example: Queue with Custom Instructions
-
-```
-User: "Add climate.news to the queue and focus only on research articles"
-Claude Code runs:
-  ./scrapai queue add https://climate.news -m "Focus only on research articles" --priority 10 --project <project_name>
-
-Later...
-
-User: "Process the next one"
-Claude Code runs:
-  ./scrapai queue next --project <project_name>
-  # Output: ID: 1, URL: https://climate.news, Instructions: Focus only on research articles
-
-  # During analysis, Claude Code remembers:
-  # "USER INSTRUCTION: Focus only on research articles"
-  # This overrides the default content focus rules
-
-  # After successful processing:
-  ./scrapai queue complete 1
-```
+NEVER omit `--project` when importing spiders from queue. Without it, spider defaults to "default" project, mixing data across projects. Always match the queue item's project.
