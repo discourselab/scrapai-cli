@@ -70,7 +70,7 @@ See [docs/analysis-workflow.md](docs/analysis-workflow.md) for detailed Phase 1-
 **If sitemap URL:** See [docs/sitemap.md](docs/sitemap.md).
 
 For non-sitemap URLs:
-1. Inspect homepage: `./scrapai inspect --url https://site.com/ --project proj`
+1. Inspect homepage: `./scrapai inspect https://site.com/ --project proj`
 2. Extract URLs: `./scrapai extract-urls --file data/proj/spider/analysis/page.html --output data/proj/spider/analysis/all_urls.txt`
 3. Read all URLs. Categorize: content pages, navigation pages, utility pages.
 4. Drill into sections ONE AT A TIME (inspector overwrites files). Document in `sections.md`.

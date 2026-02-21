@@ -11,7 +11,7 @@ Follow Phases 1-4 in order. Never skip phases.
 ### Step 1: Inspect Homepage
 
 ```bash
-./scrapai inspect --url https://website.com/ --project proj
+./scrapai inspect https://website.com/ --project proj
 ```
 
 Read `page.html` and `analysis.json` immediately after.
@@ -40,7 +40,7 @@ Inspector overwrites `page.html` and `analysis.json` each run. Process sequentia
 4. Move to next section
 
 ```bash
-./scrapai inspect --url https://example.com/news/ --project proj
+./scrapai inspect https://example.com/news/ --project proj
 ```
 Read analysis. Extract section URLs:
 ```bash
@@ -73,7 +73,7 @@ For each section, create rule files based on discovered URL patterns.
 
 Inspect an article page:
 ```bash
-./scrapai inspect --url https://website.com/article-url --project proj
+./scrapai inspect https://website.com/article-url --project proj
 ```
 
 If inspector shows "Checking your browser" or 403/503 → re-run with `--cloudflare`.
