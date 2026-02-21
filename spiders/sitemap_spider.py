@@ -82,11 +82,15 @@ class SitemapDatabaseSpider(SitemapSpider):
         cf_enabled = self.custom_settings.get('CLOUDFLARE_ENABLED', False)
 
         if cf_enabled:
+            # Enable CF download handler only for this spider
             logger.info(f"Cloudflare bypass mode enabled for sitemap spider {self.spider_name}")
-        else:
             if not getattr(self, 'custom_settings', None):
                 self.custom_settings = {}
-            self.custom_settings['DOWNLOAD_HANDLERS'] = {}
+            self.custom_settings['DOWNLOAD_HANDLERS'] = {
+                'http': 'handlers.cloudflare_handler.CloudflareDownloadHandler',
+                'https': 'handlers.cloudflare_handler.CloudflareDownloadHandler',
+            }
+        # If not CF enabled, use default Scrapy HTTP handler
 
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):

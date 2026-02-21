@@ -105,15 +105,15 @@ class DatabaseSpider(CrawlSpider):
         cf_enabled = self.custom_settings.get('CLOUDFLARE_ENABLED', False)
 
         if cf_enabled:
-            # Enable CF download handler
+            # Enable CF download handler only for this spider
             logger.info(f"Cloudflare bypass mode enabled for {self.spider_name}")
-            # Handler will be loaded from settings.py DOWNLOAD_HANDLERS
-        else:
-            # Use default Scrapy HTTP downloader
-            # Override DOWNLOAD_HANDLERS to use default
             if not getattr(self, 'custom_settings', None):
                 self.custom_settings = {}
-            self.custom_settings['DOWNLOAD_HANDLERS'] = {}
+            self.custom_settings['DOWNLOAD_HANDLERS'] = {
+                'http': 'handlers.cloudflare_handler.CloudflareDownloadHandler',
+                'https': 'handlers.cloudflare_handler.CloudflareDownloadHandler',
+            }
+        # If not CF enabled, use default Scrapy HTTP handler (no custom_settings needed)
 
     def parse_start_url(self, response):
         """
