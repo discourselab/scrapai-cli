@@ -36,6 +36,16 @@ DOWNLOADER_MIDDLEWARES = {
     'middlewares.SmartProxyMiddleware': 350,
 }
 
+# Spider middlewares
+SPIDER_MIDDLEWARES = {
+    'scrapy_deltafetch.DeltaFetch': 100,
+}
+
+# DeltaFetch settings (disabled by default, enable per-spider)
+DELTAFETCH_ENABLED = False
+DELTAFETCH_DIR = '.scrapy/deltafetch'
+DELTAFETCH_RESET = False
+
 # Cloudflare bypass download handler
 # This will be activated when spider has CLOUDFLARE_ENABLED=True
 DOWNLOAD_HANDLERS = {

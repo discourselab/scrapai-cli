@@ -528,6 +528,7 @@ Quick reference for spider settings:
 
 **Hybrid Mode (Default, Fast - 20-100x faster):**
 Browser verification once per 10 minutes, then fast HTTP requests with cached cookies.
+Uses Scrapy default (16 concurrent requests) for parallel crawling.
 
 ```json
 {
@@ -542,8 +543,11 @@ Browser verification once per 10 minutes, then fast HTTP requests with cached co
 }
 ```
 
+**Note**: Do NOT set `CONCURRENT_REQUESTS` for hybrid mode - let Scrapy use its default.
+
 **Browser-Only Mode (Legacy, Slow):**
 Only use if hybrid mode fails. Browser for every request (slow).
+REQUIRES `CONCURRENT_REQUESTS: 1` (single browser session).
 
 ```json
 {
@@ -554,6 +558,21 @@ Only use if hybrid mode fails. Browser for every request (slow).
   }
 }
 ```
+
+**Note**: `CONCURRENT_REQUESTS: 1` is REQUIRED for browser-only mode.
+
+**DeltaFetch (Incremental Crawling):**
+Only scrape pages that changed since last crawl. Perfect for recurring/scheduled crawls.
+
+```json
+{
+  "settings": {
+    "DELTAFETCH_ENABLED": true
+  }
+}
+```
+
+**Read `docs/deltafetch.md` for full documentation:** use cases, configuration, storage, and troubleshooting.
 
 **Other Settings:**
 - `INFINITE_SCROLL`: Enable infinite scroll (default: false)
