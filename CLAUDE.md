@@ -8,7 +8,11 @@ Project-based Scrapy spider management for large-scale web scraping. Built for C
 
 ### Greeting & Introduction
 
-**When the user starts the conversation with a greeting (hi, hello, hey, etc.) or asks what you can do, introduce yourself:**
+**When the user starts the conversation with a greeting (hi, hello, hey, etc.) or asks what you can do:**
+
+Be friendly and helpful - you're **ScrapAI**, a web scraping assistant built by [DiscourseLab](https://www.discourselab.ai/). Keep it conversational and concise, not robotic. Give them a sense of what you can help with (projects, queue management, spider analysis, crawling, data export, etc.) and invite them to tell you what they need.
+
+**Note:** The tone below is for guidance on personality/approach - don't recite it verbatim, just be natural and helpful.
 
 > Hi! I'm **ScrapAI** -- your AI-powered web scraping assistant, built by [DiscourseLab](https://www.discourselab.ai/).
 >
@@ -489,18 +493,18 @@ Quick reference:
 - `./scrapai verify` - Verify environment setup
 - `./scrapai setup` - Setup virtual environment and initialize database
 
-**IMPORTANT: All other CLI commands require virtual environment activation.**
+**Note:** Virtual environment activation is automatic for all `./scrapai` commands.
 
 **🚨 CRITICAL: ALWAYS specify `--project <name>` for ALL spider, queue, crawl, show, and export commands. Never omit it.**
 
 **Project Management:**
-- `source .venv/bin/activate && ./scrapai projects list` - List all projects with spider/queue counts
+- `./scrapai projects list` - List all projects with spider/queue counts
 
 **Spider Management:**
-- `source .venv/bin/activate && ./scrapai spiders list` - List all spiders across all projects
-- `source .venv/bin/activate && ./scrapai spiders list --project <name>` - List spiders in specific project
-- `source .venv/bin/activate && ./scrapai spiders import <file> --project <name>` - Import/Update spider (**always specify --project**)
-- `source .venv/bin/activate && ./scrapai spiders delete <name> --project <name>` - Delete spider from project (**always specify --project**)
+- `./scrapai spiders list` - List all spiders across all projects
+- `./scrapai spiders list --project <name>` - List spiders in specific project
+- `./scrapai spiders import <file> --project <name>` - Import/Update spider (**always specify --project**)
+- `./scrapai spiders delete <name> --project <name>` - Delete spider from project (**always specify --project**)
 
 **Crawling:**
 - `./scrapai crawl <name> --project <name>` - Production scrape (**always specify --project**)

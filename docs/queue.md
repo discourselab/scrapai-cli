@@ -23,64 +23,64 @@ Claude Code: [Gets next item, then processes it]
 
 **Add to Queue:**
 ```bash
-source .venv/bin/activate && ./scrapai queue add <url> [-m "custom instruction"] [--priority N] [--project NAME]
+./scrapai queue add <url> [-m "custom instruction"] [--priority N] [--project NAME]
 ```
 
 **List Queue:**
 ```bash
 # By default: shows 5 pending/processing items (excludes failed/completed)
-source .venv/bin/activate && ./scrapai queue list --project NAME
+./scrapai queue list --project NAME
 ```
 ```bash
 # Show more items
-source .venv/bin/activate && ./scrapai queue list --project NAME --limit 20
+./scrapai queue list --project NAME --limit 20
 ```
 ```bash
 # Show all items including failed and completed
-source .venv/bin/activate && ./scrapai queue list --project NAME --all --limit 50
+./scrapai queue list --project NAME --all --limit 50
 ```
 ```bash
 # Filter by specific status
-source .venv/bin/activate && ./scrapai queue list --project NAME --status pending
+./scrapai queue list --project NAME --status pending
 ```
 ```bash
-source .venv/bin/activate && ./scrapai queue list --project NAME --status completed --limit 10
+./scrapai queue list --project NAME --status completed --limit 10
 ```
 
 **Get Queue Count (just the number):**
 ```bash
 # Count pending/processing items (default)
-source .venv/bin/activate && ./scrapai queue list --project NAME --count
+./scrapai queue list --project NAME --count
 
 # Count by specific status
-source .venv/bin/activate && ./scrapai queue list --project NAME --status pending --count
-source .venv/bin/activate && ./scrapai queue list --project NAME --status completed --count
-source .venv/bin/activate && ./scrapai queue list --project NAME --status failed --count
-source .venv/bin/activate && ./scrapai queue list --project NAME --status processing --count
+./scrapai queue list --project NAME --status pending --count
+./scrapai queue list --project NAME --status completed --count
+./scrapai queue list --project NAME --status failed --count
+./scrapai queue list --project NAME --status processing --count
 ```
 
 **Claim Next Item (Atomic - Safe for Concurrent Use):**
 ```bash
-source .venv/bin/activate && ./scrapai queue next [--project NAME]
+./scrapai queue next [--project NAME]
 # Returns: ID, URL, custom_instruction, priority
 ```
 
 **Update Status (by ID - no project needed):**
 ```bash
 # Mark as completed
-source .venv/bin/activate && ./scrapai queue complete <id>
+./scrapai queue complete <id>
 ```
 ```bash
 # Mark as failed
-source .venv/bin/activate && ./scrapai queue fail <id> [-m "error message"]
+./scrapai queue fail <id> [-m "error message"]
 ```
 ```bash
 # Retry a failed item
-source .venv/bin/activate && ./scrapai queue retry <id>
+./scrapai queue retry <id>
 ```
 ```bash
 # Remove from queue
-source .venv/bin/activate && ./scrapai queue remove <id>
+./scrapai queue remove <id>
 ```
 
 **Note:** Queue item IDs are globally unique, so `--project` is not needed for these commands.
@@ -88,10 +88,10 @@ source .venv/bin/activate && ./scrapai queue remove <id>
 **Bulk Add from File (JSON or CSV):**
 ```bash
 # From JSON file (array of objects with "url" field)
-source .venv/bin/activate && ./scrapai queue bulk urls.json --project NAME [--priority N]
+./scrapai queue bulk urls.json --project NAME [--priority N]
 
 # From CSV file (columns: url, name/custom_instruction, priority)
-source .venv/bin/activate && ./scrapai queue bulk urls.csv --project NAME [--priority N]
+./scrapai queue bulk urls.csv --project NAME [--priority N]
 ```
 
 **JSON format example:**
@@ -113,24 +113,24 @@ https://site3.com,Include all news sections,
 
 **Bulk Cleanup:**
 ```bash
-source .venv/bin/activate && ./scrapai queue cleanup --completed --force --project NAME  # Remove all completed
+./scrapai queue cleanup --completed --force --project NAME  # Remove all completed
 ```
 ```bash
-source .venv/bin/activate && ./scrapai queue cleanup --failed --force --project NAME     # Remove all failed
+./scrapai queue cleanup --failed --force --project NAME     # Remove all failed
 ```
 ```bash
-source .venv/bin/activate && ./scrapai queue cleanup --all --force --project NAME        # Remove all completed and failed
+./scrapai queue cleanup --all --force --project NAME        # Remove all completed and failed
 ```
 
 ## Queue Workflow for Claude Code
 
 **When user says "Add X to queue":**
-1. Run `source .venv/bin/activate && ./scrapai queue add <url> -m "custom instruction if provided" --priority N --project <project_name>`
+1. Run `./scrapai queue add <url> -m "custom instruction if provided" --priority N --project <project_name>`
 2. Confirm addition with queue ID
 3. Do NOT process immediately
 
 **When user says "Process next in queue":**
-1. Run `source .venv/bin/activate && ./scrapai queue next --project <project_name>` to claim next item
+1. Run `./scrapai queue next --project <project_name>` to claim next item
 2. Note the ID, URL, project, and custom_instruction from output
 3. **If custom_instruction exists**: Use it to override CLAUDE.md defaults during analysis
 4. Follow the full workflow (Phases 1-4):
@@ -139,12 +139,12 @@ source .venv/bin/activate && ./scrapai queue cleanup --all --force --project NAM
    - Phase 3: Prepare spider JSONs (**IMPORTANT**: Include `"source_url": "<queue_url>"` in final_spider.json)
    - Phase 4A: Import test_spider.json, verify extraction quality
    - Phase 4B: Import final_spider.json **with --project parameter matching the queue project** (ready for production)
-5. **If successful**: `source .venv/bin/activate && ./scrapai queue complete <id>`
-6. **If failed**: `source .venv/bin/activate && ./scrapai queue fail <id> -m "error description"`
+5. **If successful**: `./scrapai queue complete <id>`
+6. **If failed**: `./scrapai queue fail <id> -m "error description"`
 
 **CRITICAL: Project Isolation**
 - **ALWAYS** import spiders with `--project <name>` matching the queue project
-- Example: Processing brown queue -> `source .venv/bin/activate && ./scrapai spiders import file.json --project brown`
+- Example: Processing brown queue -> `./scrapai spiders import file.json --project brown`
 - Never omit --project - it will default to "default" and mix up your data
 - Maintains clean project separation
 
@@ -162,13 +162,13 @@ source .venv/bin/activate && ./scrapai queue cleanup --all --force --project NAM
 ```
 User: "Add climate.news to the queue and focus only on research articles"
 Claude Code runs:
-  source .venv/bin/activate && ./scrapai queue add https://climate.news -m "Focus only on research articles" --priority 10 --project <project_name>
+  ./scrapai queue add https://climate.news -m "Focus only on research articles" --priority 10 --project <project_name>
 
 Later...
 
 User: "Process the next one"
 Claude Code runs:
-  source .venv/bin/activate && ./scrapai queue next --project <project_name>
+  ./scrapai queue next --project <project_name>
   # Output: ID: 1, URL: https://climate.news, Instructions: Focus only on research articles
 
   # During analysis, Claude Code remembers:
@@ -176,5 +176,5 @@ Claude Code runs:
   # This overrides the default content focus rules
 
   # After successful processing:
-  source .venv/bin/activate && ./scrapai queue complete 1
+  ./scrapai queue complete 1
 ```

@@ -12,8 +12,8 @@ Project-based Scrapy spider management for large-scale web scraping with databas
 - ✅ Process ONE website at a time (sequential only, never parallel)
 - ✅ Follow 4-phase workflow: Analysis → Rules → Import → Test
 - ✅ Complete ALL steps before marking status
-- ✅ Use virtual environment: `source .venv/bin/activate && <command>`
-- ✅ Run ONE command at a time (no chaining except venv activation)
+- ✅ Run commands directly: `./scrapai <command>` (venv activation is automatic)
+- ✅ Run ONE command at a time (no chaining)
 
 **See CLAUDE.md for:**
 - Complete workflow documentation (4 phases)

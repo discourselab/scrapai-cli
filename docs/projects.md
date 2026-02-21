@@ -13,7 +13,7 @@ Projects isolate spiders, queue items, and scraped data from each other. Every o
 To see what projects exist in your system:
 
 ```bash
-source .venv/bin/activate && ./scrapai projects list
+./scrapai projects list
 ```
 
 Example output:
@@ -41,25 +41,25 @@ If you omit `--project`, the command defaults to the "default" project. This cau
 **Spider Management:**
 ```bash
 # Import spider - ALWAYS specify project
-source .venv/bin/activate && ./scrapai spiders import <file> --project <name>
+./scrapai spiders import <file> --project <name>
 ```
 ```bash
 # List spiders in a specific project
-source .venv/bin/activate && ./scrapai spiders list --project <name>
+./scrapai spiders list --project <name>
 ```
 ```bash
 # List ALL spiders across all projects (no --project needed here)
-source .venv/bin/activate && ./scrapai spiders list
+./scrapai spiders list
 ```
 
 **Queue Management:**
 ```bash
 # Add to queue - specify which project's queue
-source .venv/bin/activate && ./scrapai queue add <url> --project <name> [-m "instruction"] [--priority N]
+./scrapai queue add <url> --project <name> [-m "instruction"] [--priority N]
 ```
 ```bash
 # Claim next item from a specific project's queue
-source .venv/bin/activate && ./scrapai queue next --project <name>
+./scrapai queue next --project <name>
 ```
 
 ## Project Workflow
@@ -67,9 +67,9 @@ source .venv/bin/activate && ./scrapai queue next --project <name>
 When processing a website (whether direct or from queue):
 
 1. **Know your project name** before starting any work
-2. **Import with --project**: `source .venv/bin/activate && ./scrapai spiders import final_spider.json --project <name>`
-3. **Queue operations with --project**: `source .venv/bin/activate && ./scrapai queue next --project <name>`
-4. **Verify in the right project**: `source .venv/bin/activate && ./scrapai spiders list --project <name>`
+2. **Import with --project**: `./scrapai spiders import final_spider.json --project <name>`
+3. **Queue operations with --project**: `./scrapai queue next --project <name>`
+4. **Verify in the right project**: `./scrapai spiders list --project <name>`
 
 ## Queue + Project Isolation
 

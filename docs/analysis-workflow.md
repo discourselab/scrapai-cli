@@ -27,10 +27,10 @@ The most common mistake is creating spider rules without complete site analysis.
 ### Step 1: Extract ALL URLs from Homepage
 
 ```bash
-source .venv/bin/activate && ./scrapai extract-urls --file data/<project>/<spider>/analysis/page.html --output data/<project>/<spider>/analysis/all_urls.txt
+./scrapai extract-urls --file data/<project>/<spider>/analysis/page.html --output data/<project>/<spider>/analysis/all_urls.txt
 ```
 ```bash
-source .venv/bin/activate && cat data/<project>/<spider>/analysis/all_urls.txt
+cat data/<project>/<spider>/analysis/all_urls.txt
 ```
 
 ### Step 2: Categorize Every URL Type
@@ -91,10 +91,10 @@ Example - sequential section drilling (ONE at a time):
 ```
 ```bash
 # Step 2: IMMEDIATELY read and document before moving on
-source .venv/bin/activate && cat data/<project>/example_com/analysis/analysis.json
+cat data/<project>/example_com/analysis/analysis.json
 ```
 ```bash
-source .venv/bin/activate && ./scrapai extract-urls --file data/<project>/example_com/analysis/page.html --output data/<project>/example_com/analysis/news_urls.txt
+./scrapai extract-urls --file data/<project>/example_com/analysis/page.html --output data/<project>/example_com/analysis/news_urls.txt
 ```
 ```bash
 # Step 3: Update sections.md with findings
@@ -103,10 +103,10 @@ source .venv/bin/activate && ./scrapai extract-urls --file data/<project>/exampl
 ```
 ```bash
 # Step 5: IMMEDIATELY read and document
-source .venv/bin/activate && cat data/<project>/example_com/analysis/analysis.json
+cat data/<project>/example_com/analysis/analysis.json
 ```
 ```bash
-source .venv/bin/activate && ./scrapai extract-urls --file data/<project>/example_com/analysis/page.html --output data/<project>/example_com/analysis/policy_urls.txt
+./scrapai extract-urls --file data/<project>/example_com/analysis/page.html --output data/<project>/example_com/analysis/policy_urls.txt
 ```
 ```bash
 # Step 6: Update sections.md with findings
@@ -470,15 +470,15 @@ Debugging both extraction AND navigation together is difficult. Instead:
 
 3. **Import and test:**
    ```bash
-   source .venv/bin/activate && ./scrapai spiders import data/<project>/<spider>/analysis/test_spider.json --project <project_name>
+   ./scrapai spiders import data/<project>/<spider>/analysis/test_spider.json --project <project_name>
    ```
    ```bash
-   source .venv/bin/activate && ./scrapai crawl website_name --limit 5 --project <project_name>
+   ./scrapai crawl website_name --limit 5 --project <project_name>
    ```
 
 4. **Verify extraction quality:**
    ```bash
-   source .venv/bin/activate && ./scrapai show website_name --limit 5 --project <project_name>
+   ./scrapai show website_name --limit 5 --project <project_name>
    ```
 
 5. **Check quality:**
@@ -514,7 +514,7 @@ Debugging both extraction AND navigation together is difficult. Instead:
 
    Import (this automatically updates the existing spider):
    ```bash
-   source .venv/bin/activate && ./scrapai spiders import data/<project>/<spider>/analysis/final_spider.json --project <project_name>
+   ./scrapai spiders import data/<project>/<spider>/analysis/final_spider.json --project <project_name>
    ```
 
    **What happens:**
@@ -526,14 +526,14 @@ Debugging both extraction AND navigation together is difficult. Instead:
 
 **Note:** If you ever need to delete a spider:
 ```bash
-# Correct syntax - pipe AFTER venv activation
-source .venv/bin/activate && echo "y" | ./scrapai spiders delete spider_name --project <project_name>
+# Correct syntax - pipe "y" to confirm deletion
+echo "y" | ./scrapai spiders delete spider_name --project <project_name>
 ```
 
 **Production Mode:**
 ```bash
 # Full scrape - exports to files, no database cost
-source .venv/bin/activate && ./scrapai crawl website_name --project <project_name>
+./scrapai crawl website_name --project <project_name>
 ```
 
 ### Before Marking Queue Item as Complete
@@ -548,11 +548,11 @@ source .venv/bin/activate && ./scrapai crawl website_name --project <project_nam
 
 **ONLY IF ALL ABOVE ARE TRUE**, mark as complete:
 ```bash
-source .venv/bin/activate && ./scrapai queue complete <id>
+./scrapai queue complete <id>
 ```
 
 **If test fails or extraction is wrong:**
 ```bash
 # DO NOT mark as complete. Instead, mark as failed with reason:
-source .venv/bin/activate && ./scrapai queue fail <id> -m "Extraction failed: [specific reason]"
+./scrapai queue fail <id> -m "Extraction failed: [specific reason]"
 ```
