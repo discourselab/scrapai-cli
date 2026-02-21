@@ -4,6 +4,7 @@ Dynamically generates spider classes from database.
 This allows Scrapyd and other tools to discover spiders via 'scrapy list'.
 """
 from .database_spider import DatabaseSpider
+from .sitemap_spider import SitemapDatabaseSpider
 
 def _load_spiders_from_db():
     """Create a spider class for each spider in the database"""

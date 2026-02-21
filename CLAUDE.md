@@ -286,7 +286,11 @@ If ANY phase is incomplete or test fails, DO NOT mark as complete.
 
 #### Phase 1: Analysis & Section Documentation
 
-**Complete FULL site analysis before creating ANY rules.**
+**IMPORTANT: If user provides a sitemap.xml URL, skip to Phase 3 directly.**
+
+Sitemap URLs are auto-detected (e.g., `https://example.com/sitemap.xml`). These don't need analysis - just create spider JSON with sitemap URL as start_urls. See `docs/sitemap.md` for details.
+
+**For non-sitemap URLs: Complete FULL site analysis before creating ANY rules.**
 
 **Before starting Phase 1, read `docs/analysis-workflow.md` for the detailed procedure.**
 
@@ -475,6 +479,8 @@ Export behavior:
 **Read `docs/extractors.md` for full documentation:** selector discovery workflow, BeautifulSoup analysis, examples (news/e-commerce/forum), extractor order config, Playwright wait, and infinite scroll support.
 
 **Read `docs/cloudflare.md` for Cloudflare bypass:** settings, session persistence, wait times, and troubleshooting.
+
+**Read `docs/sitemap.md` for Sitemap spiders:** Auto-detect sitemap.xml URLs, automatically extract and scrape all URLs from sitemap. 5-10x faster than regular crawling for large sites.
 
 Quick reference for spider settings:
 
