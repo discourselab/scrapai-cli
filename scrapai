@@ -62,9 +62,8 @@ def run_setup_standalone():
     else:
         print("⚠️  requirements.txt not found")
 
-    # Re-exec with venv python to run the rest of setup (db init, claude config)
-    # which benefits from having click available
-    os.execv(str(venv_python), [str(venv_python)] + sys.argv)
+    # Re-exec with venv python to run db init + claude config only
+    os.execv(str(venv_python), [str(venv_python)] + sys.argv + ['--skip-deps'])
 
 
 # Handle setup before deps exist - bootstrap with stdlib only
