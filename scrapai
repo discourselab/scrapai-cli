@@ -24,7 +24,7 @@ if len(sys.argv) > 1 and sys.argv[1] not in ['setup', 'verify', '--help', '-h']:
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from cli import cli
+from cli import cli  # noqa # type: ignore
 
 if __name__ == '__main__':
     cli()
