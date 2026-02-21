@@ -100,7 +100,7 @@ class CloudflareDownloadHandler:
         else:
             logger.info("CloudflareDownloadHandler: No browser to close")
 
-    async def download_request(self, request: Request):
+    async def download_request(self, request: Request, spider):
         """Handle request using hybrid or browser-only strategy.
 
         Note: This handler is only used when spider explicitly enables
@@ -108,12 +108,11 @@ class CloudflareDownloadHandler:
 
         Args:
             request: Scrapy request to download
+            spider: Spider instance (passed by Scrapy)
 
         Returns:
             HtmlResponse
         """
-        # Get spider from crawler
-        spider = self.crawler.spider
         spider_settings = getattr(spider, 'custom_settings', {})
 
         # Get strategy (hybrid by default)
