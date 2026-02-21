@@ -16,23 +16,23 @@ Here's what an AI-generated spider config looks like:
 
 ```json
 {
-  "name": "oann_com",
-  "source_url": "https://www.oann.com/",
-  "allowed_domains": ["oann.com"],
+  "name": "bbc_com",
+  "source_url": "https://www.bbc.com/",
+  "allowed_domains": ["bbc.com"],
   "start_urls": [
-    "https://www.oann.com/",
-    "https://www.oann.com/category/newsroom/",
-    "https://www.oann.com/category/business/"
+    "https://www.bbc.com/",
+    "https://www.bbc.com/news",
+    "https://www.bbc.com/business"
   ],
   "rules": [
     {
-      "allow": ["/(newsroom|business|commentary)/[^/]+/?$"],
+      "allow": ["/news/articles/[^/]+$", "/business/articles/[^/]+$"],
       "callback": "parse_article",
       "follow": false,
       "priority": 100
     },
     {
-      "allow": ["/category/(newsroom|business|commentary)/?$"],
+      "allow": ["/news/?$", "/business/?$"],
       "follow": true,
       "priority": 50
     }
@@ -45,6 +45,35 @@ Here's what an AI-generated spider config looks like:
 ```
 
 That's not a Python file. It's data. It lives in a SQLite/PostgreSQL database. Adding a new website means adding a new row, not writing new code.
+
+For Cloudflare-protected sites, the spider config includes bypass settings:
+
+```json
+{
+  "name": "thefga_org",
+  "source_url": "https://thefga.org/",
+  "allowed_domains": ["thefga.org"],
+  "start_urls": ["https://thefga.org/"],
+  "rules": [
+    {
+      "allow": ["/research/[^/]+/?$", "/blog/[^/]+/?$", "/op-eds/[^/]+/?$"],
+      "callback": "parse_article",
+      "follow": true,
+      "priority": 0
+    }
+  ],
+  "settings": {
+    "EXTRACTOR_ORDER": ["newspaper", "trafilatura"],
+    "CLOUDFLARE_ENABLED": true,
+    "CLOUDFLARE_STRATEGY": "hybrid",
+    "CF_MAX_RETRIES": 5,
+    "CF_RETRY_INTERVAL": 1,
+    "CF_POST_DELAY": 5
+  }
+}
+```
+
+Hybrid mode verifies the browser once every 10 minutes, then uses fast HTTP requests with cached cookies -- 20-100x faster than rendering every page.
 
 ## Architecture
 
