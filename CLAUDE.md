@@ -43,6 +43,8 @@ Report back: status, spider name, queue item ID, summary.
 - `find`, `ls` for search — use Glob tool
 - `echo >`, `cat <<EOF` — use Write/Edit tools
 - `mkdir` — directories auto-created by inspector
+- `python`, `python3` in Bash — use `./scrapai analyze` for HTML analysis
+- Any external tools not listed in "Allowed" section above
 
 ## Environment
 
@@ -83,9 +85,21 @@ For non-sitemap URLs:
 
 ### Phase 2: Rule Generation & Extraction Testing
 
+**Read [docs/analysis-workflow.md](docs/analysis-workflow.md) for Phase 2 details.**
+
 1. Use `sections.md` to create rules for each section.
-2. Test generic extractors first (inspect an article page).
-3. If generic extractors fail → discover custom CSS selectors. See [docs/extractors.md](docs/extractors.md).
+2. **Test generic extractors first:** Inspect an article page and check if newspaper/trafilatura extract correctly:
+   ```bash
+   ./scrapai inspect https://website.com/article-url --project proj
+   ```
+   Read `page.html`. If it has clean `<article>` tags / semantic HTML → generic extractors work.
+3. **If generic extractors fail** → discover custom CSS selectors using `./scrapai analyze`:
+   ```bash
+   ./scrapai analyze data/proj/spider/analysis/page.html
+   ./scrapai analyze data/proj/spider/analysis/page.html --test "h1.article-title"
+   ./scrapai analyze data/proj/spider/analysis/page.html --find "price"
+   ```
+   See [docs/extractors.md](docs/extractors.md) for selector discovery and extractor config.
 4. Consolidate into `final_spider.json`.
 
 ### Phase 3: Prepare Spider Configuration
