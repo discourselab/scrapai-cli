@@ -24,6 +24,12 @@ from twisted.internet import threads
 logger = logging.getLogger(__name__)
 
 
+def _start_event_loop(loop):
+    """Run event loop forever in a dedicated thread."""
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+
 class CloudflareDownloadHandler:
     """
     Hybrid Cloudflare handler with cookie caching.
@@ -53,6 +59,13 @@ class CloudflareDownloadHandler:
     _browser_started = False
     _browser_startup_lock = threading.Lock()  # Protect browser startup (1 at a time)
 
+    # Persistent event loop for all async browser operations
+    # All asyncio.Lock and browser calls run on this single loop,
+    # avoiding "bound to a different event loop" errors with concurrent requests.
+    _event_loop = None
+    _event_loop_thread = None
+    _event_loop_lock = threading.Lock()
+
     # Cookie cache: {spider_name: {'cookies': {}, 'user_agent': str, 'timestamp': float}}
     _cookie_cache: Dict[str, Dict] = {}
     _cookie_cache_lock = threading.Lock()
@@ -75,13 +88,36 @@ class CloudflareDownloadHandler:
         """Create handler from crawler (Scrapy convention)."""
         return cls(crawler.settings, crawler)
 
+    @classmethod
+    def _get_event_loop(cls):
+        """Get or create the persistent event loop (thread-safe)."""
+        with cls._event_loop_lock:
+            if cls._event_loop is None or cls._event_loop.is_closed():
+                cls._event_loop = asyncio.new_event_loop()
+                cls._event_loop_thread = threading.Thread(
+                    target=_start_event_loop,
+                    args=(cls._event_loop,),
+                    daemon=True,
+                    name="cf-event-loop"
+                )
+                cls._event_loop_thread.start()
+                logger.info("CloudflareDownloadHandler: Started persistent event loop thread")
+            return cls._event_loop
+
+    @classmethod
+    def _run_async(cls, coro):
+        """Run a coroutine on the persistent event loop from any thread."""
+        loop = cls._get_event_loop()
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        return future.result()  # Block until complete
+
     def open(self):
         """Called when spider opens - prepare handler."""
         # Browser will be started lazily on first request
         logger.info("CloudflareDownloadHandler: Handler opened (browser will start on first request)")
 
     def close(self):
-        """Called when spider closes - close browser and wait for completion."""
+        """Called when spider closes - close browser and stop event loop."""
         if CloudflareDownloadHandler._browser_started and CloudflareDownloadHandler._shared_browser:
             try:
                 logger.info("CloudflareDownloadHandler: Closing shared browser...")
@@ -101,6 +137,15 @@ class CloudflareDownloadHandler:
                 logger.error(f"CloudflareDownloadHandler: Error closing browser: {e}")
         else:
             logger.info("CloudflareDownloadHandler: No browser to close")
+
+        # Stop the persistent event loop
+        if CloudflareDownloadHandler._event_loop and not CloudflareDownloadHandler._event_loop.is_closed():
+            CloudflareDownloadHandler._event_loop.call_soon_threadsafe(
+                CloudflareDownloadHandler._event_loop.stop
+            )
+            CloudflareDownloadHandler._event_loop = None
+            CloudflareDownloadHandler._event_loop_thread = None
+            logger.info("CloudflareDownloadHandler: Stopped persistent event loop")
 
     def download_request(self, request: Request, spider):
         """Handle request using hybrid or browser-only strategy.
@@ -128,8 +173,10 @@ class CloudflareDownloadHandler:
     def _browser_only_fetch_sync(self, request: Request, spider):
         """Legacy browser-only mode (slow but reliable). Runs in thread."""
         try:
-            # Run async code in new event loop in this thread
-            html = asyncio.run(self._browser_only_fetch_async(request, spider))
+            # Run async code on persistent event loop (shared across all threads)
+            html = CloudflareDownloadHandler._run_async(
+                self._browser_only_fetch_async(request, spider)
+            )
 
             if html:
                 return HtmlResponse(
@@ -153,8 +200,10 @@ class CloudflareDownloadHandler:
     def _hybrid_fetch_sync(self, request: Request, spider):
         """Hybrid mode: browser once + HTTP with cookies (fast). Runs in thread."""
         try:
-            # Run async code in new event loop in this thread
-            html = asyncio.run(self._hybrid_fetch_async(request, spider))
+            # Run async code on persistent event loop (shared across all threads)
+            html = CloudflareDownloadHandler._run_async(
+                self._hybrid_fetch_async(request, spider)
+            )
 
             if html:
                 return HtmlResponse(
