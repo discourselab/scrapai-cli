@@ -1,0 +1,112 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+
+    - name: Install Playwright browsers
+      run: |
+        playwright install chromium
+
+    - name: Run unit tests
+      run: |
+        pytest tests/unit -v -m unit --cov=core --cov=spiders
+
+    - name: Run integration tests
+      run: |
+        pytest tests/integration -v -m integration
+
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  security:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install security tools
+      run: |
+        pip install safety bandit
+
+    - name: Check for security vulnerabilities
+      run: |
+        safety check --json || true
+
+    - name: Run bandit security scan
+      run: |
+        bandit -r core spiders cli handlers utils -f json -o bandit-report.json || true
+
+    - name: Upload security reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+
+  code-quality:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install tools
+      run: |
+        pip install black flake8 mypy
+
+    - name: Check code formatting with Black
+      run: |
+        black --check core spiders cli handlers utils tests
+
+    - name: Lint with flake8
+      run: |
+        flake8 core spiders cli handlers utils tests --count --statistics
+
+    - name: Type check with mypy
+      run: |
+        mypy core --ignore-missing-imports || true

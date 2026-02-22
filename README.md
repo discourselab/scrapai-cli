@@ -269,6 +269,12 @@ Includes scheduling (cron), monitoring, retry logic, S3-compatible storage uploa
 | [docs/projects.md](docs/projects.md) | Project isolation and organization |
 | [CLAUDE.md](CLAUDE.md) | Full AI agent instructions (auto-loaded by Claude Code) |
 
+## Security
+
+Found a security vulnerability? Please see our [Security Policy](SECURITY.md) for responsible disclosure guidelines.
+
+**Do not report security issues through public GitHub issues.** Email: dev@discourselab.ai
+
 ## Contributing
 
 Contributions welcome, particularly in:
