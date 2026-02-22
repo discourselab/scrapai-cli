@@ -45,72 +45,135 @@ def list_spiders(project):
 @spiders.command('import')
 @click.argument('file')
 @click.option('--project', default='default', help='Project name (default: default)')
-def import_spider(file, project):
+@click.option('--skip-validation', is_flag=True, help='Skip Pydantic validation (backward compatibility)')
+def import_spider(file, project, skip_validation):
     """Import spider from JSON file (use "-" for stdin)"""
     from core.db import get_db
     from core.models import Spider, SpiderRule, SpiderSetting
+    from core.schemas import SpiderConfigSchema
+    from pydantic import ValidationError
 
     db = next(get_db())
 
     try:
+        # Load JSON
         if file == '-':
             data = json.load(sys.stdin)
         else:
             with open(file, 'r') as f:
                 data = json.load(f)
 
-        if 'source_url' not in data or not data['source_url']:
-            click.echo("❌ Error: 'source_url' is required in spider JSON")
-            click.echo('   Add the original website URL: "source_url": "https://example.com"')
-            return
+        # Validate with Pydantic schema (unless --skip-validation)
+        if skip_validation:
+            click.echo("⚠️  Skipping validation (--skip-validation flag)")
+            validated = None
+            # Use raw data
+            spider_name = data['name']
+            allowed_domains = data['allowed_domains']
+            start_urls = data['start_urls']
+            source_url = data.get('source_url')
+            rules = data.get('rules', [])
+            settings_dict = data.get('settings', {})
+        else:
+            try:
+                validated = SpiderConfigSchema(**data)
+                spider_name = validated.name
+                allowed_domains = validated.allowed_domains
+                start_urls = validated.start_urls
+                source_url = validated.source_url
+                rules = [r.model_dump() for r in validated.rules]
+                settings_dict = validated.settings.model_dump(exclude_none=True, exclude_unset=True)
+            except ValidationError as e:
+                click.echo("❌ Spider configuration validation failed:")
+                for error in e.errors():
+                    field = ' -> '.join(str(x) for x in error['loc'])
+                    message = error['msg']
+                    click.echo(f"   • {field}: {message}")
+                click.echo("\n💡 Use --skip-validation to bypass validation (not recommended)")
+                return
 
-        existing = db.query(Spider).filter(Spider.name == data['name']).first()
+        # Check for existing spider
+        existing = db.query(Spider).filter(Spider.name == spider_name).first()
         if existing:
-            click.echo(f"⚠️  Spider '{data['name']}' already exists. Updating...")
-            existing.allowed_domains = data['allowed_domains']
-            existing.start_urls = data['start_urls']
-            existing.source_url = data.get('source_url')
+            click.echo(f"⚠️  Spider '{spider_name}' already exists. Updating...")
+            existing.allowed_domains = allowed_domains
+            existing.start_urls = start_urls
+            existing.source_url = source_url
             existing.project = project
 
+            # Delete old rules and settings
             db.query(SpiderRule).filter(SpiderRule.spider_id == existing.id).delete()
             db.query(SpiderSetting).filter(SpiderSetting.spider_id == existing.id).delete()
             spider = existing
         else:
+            # Create new spider
             spider = Spider(
-                name=data['name'],
-                allowed_domains=data['allowed_domains'],
-                start_urls=data['start_urls'],
-                source_url=data.get('source_url'),
+                name=spider_name,
+                allowed_domains=allowed_domains,
+                start_urls=start_urls,
+                source_url=source_url,
                 project=project
             )
             db.add(spider)
             db.flush()
 
-        for r_data in data.get('rules', []):
-            rule = SpiderRule(
-                spider_id=spider.id,
-                allow_patterns=r_data.get('allow'),
-                deny_patterns=r_data.get('deny'),
-                restrict_xpaths=r_data.get('restrict_xpaths'),
-                restrict_css=r_data.get('restrict_css'),
-                callback=r_data.get('callback'),
-                follow=r_data.get('follow', True),
-                priority=r_data.get('priority', 0)
-            )
+        # Add rules
+        for rule_data in rules:
+            # Handle both validated Pydantic objects and raw dicts
+            if isinstance(rule_data, dict):
+                rule = SpiderRule(
+                    spider_id=spider.id,
+                    allow_patterns=rule_data.get('allow'),
+                    deny_patterns=rule_data.get('deny'),
+                    restrict_xpaths=rule_data.get('restrict_xpaths'),
+                    restrict_css=rule_data.get('restrict_css'),
+                    callback=rule_data.get('callback'),
+                    follow=rule_data.get('follow', True),
+                    priority=rule_data.get('priority', 0)
+                )
+            else:
+                # Already a validated Pydantic object
+                rule = SpiderRule(
+                    spider_id=spider.id,
+                    allow_patterns=rule_data.get('allow'),
+                    deny_patterns=rule_data.get('deny'),
+                    restrict_xpaths=rule_data.get('restrict_xpaths'),
+                    restrict_css=rule_data.get('restrict_css'),
+                    callback=rule_data.get('callback'),
+                    follow=rule_data.get('follow', True),
+                    priority=rule_data.get('priority', 0)
+                )
             db.add(rule)
 
-        for k, v in data.get('settings', {}).items():
+        # Add settings
+        for k, v in settings_dict.items():
+            # Convert value to JSON string if it's a list/dict
+            if isinstance(v, (list, dict)):
+                value_str = json.dumps(v)
+                type_name = 'json'
+            else:
+                value_str = str(v)
+                type_name = type(v).__name__
+
             setting = SpiderSetting(
                 spider_id=spider.id,
                 key=k,
-                value=str(v),
-                type=type(v).__name__
+                value=value_str,
+                type=type_name
             )
             db.add(setting)
 
         db.commit()
         click.echo(f"✅ Spider '{spider.name}' imported successfully!")
+        click.echo(f"   Project: {project}")
+        click.echo(f"   Domains: {', '.join(allowed_domains)}")
+        click.echo(f"   Start URLs: {len(start_urls)}")
+        click.echo(f"   Rules: {len(rules)}")
 
+    except json.JSONDecodeError as e:
+        click.echo(f"❌ Invalid JSON file: {e}")
+    except FileNotFoundError:
+        click.echo(f"❌ File not found: {file}")
     except Exception as e:
         db.rollback()
         click.echo(f"❌ Error importing spider: {e}")
