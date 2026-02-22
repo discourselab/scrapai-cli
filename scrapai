@@ -88,7 +88,7 @@ if len(sys.argv) > 1 and sys.argv[1] == 'verify':
             sys.exit(1)
 
 # Auto-activate venv for all other commands
-if len(sys.argv) > 1 and sys.argv[1] not in ['setup', 'verify', '--help', '-h']:
+if len(sys.argv) > 1 and sys.argv[1] not in ['setup', 'verify']:
     auto_activate_venv()
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
