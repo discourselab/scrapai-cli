@@ -15,6 +15,9 @@ outputs/
 projects/*/outputs/
 projects/*/logs/
 
+AUDIT.md
+
+
 .DS_Store
 
 # docs/
