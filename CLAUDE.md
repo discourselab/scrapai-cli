@@ -89,6 +89,8 @@ These are non-negotiable. Violating these will cause failures:
   └── exports/    # Database exports (export_TIMESTAMP.format)
   ```
 - `./scrapai db migrate` / `./scrapai db current`
+- **Proxy support:** See [docs/proxies.md](docs/proxies.md) - SmartProxyMiddleware automatically handles blocking (403/429) by learning which domains need proxies
+- **S3 uploads:** See [docs/s3.md](docs/s3.md) - Automatic upload to object storage (Airflow workflows only, configure in `.env`)
 
 ---
 
@@ -101,6 +103,8 @@ See [docs/analysis-workflow.md](docs/analysis-workflow.md) for detailed Phase 1-
 ### Phase 1: Analysis & Section Documentation
 
 **Goal:** Understand site structure, discover all content sections, document URL patterns.
+
+**Note:** Example file paths below use default `DATA_DIR=./data` setting. Commands automatically use DATA_DIR from .env - no path adjustments needed if user changed DATA_DIR.
 
 **If sitemap URL:** See [docs/sitemap.md](docs/sitemap.md).
 

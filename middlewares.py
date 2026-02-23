@@ -24,22 +24,37 @@ class SmartProxyMiddleware:
     4. Remember domains that need proxies
     """
 
-    def __init__(self):
-        # Load proxy credentials from environment
-        self.proxy_username = os.getenv('DATACENTER_PROXY_USERNAME')
-        self.proxy_password = os.getenv('DATACENTER_PROXY_PASSWORD')
-        self.proxy_host = os.getenv('DATACENTER_PROXY_HOST')
-        self.proxy_port = os.getenv('DATACENTER_PROXY_PORT')
+    def __init__(self, settings=None):
+        # Determine proxy type (datacenter or residential)
+        proxy_type = settings.get('PROXY_TYPE', 'datacenter') if settings else 'datacenter'
+
+        # Load proxy credentials based on type
+        if proxy_type == 'residential':
+            self.proxy_username = os.getenv('RESIDENTIAL_PROXY_USERNAME')
+            self.proxy_password = os.getenv('RESIDENTIAL_PROXY_PASSWORD')
+            self.proxy_host = os.getenv('RESIDENTIAL_PROXY_HOST')
+            self.proxy_port = os.getenv('RESIDENTIAL_PROXY_PORT')
+            proxy_label = "Residential"
+        else:
+            self.proxy_username = os.getenv('DATACENTER_PROXY_USERNAME')
+            self.proxy_password = os.getenv('DATACENTER_PROXY_PASSWORD')
+            self.proxy_host = os.getenv('DATACENTER_PROXY_HOST')
+            self.proxy_port = os.getenv('DATACENTER_PROXY_PORT')
+            proxy_label = "Datacenter"
 
         # Check if proxy is configured
         if all([self.proxy_username, self.proxy_password, self.proxy_host, self.proxy_port]):
             self.proxy_url = f"http://{self.proxy_username}:{self.proxy_password}@{self.proxy_host}:{self.proxy_port}"
             self.proxy_available = True
-            logger.info(f"✅ Datacenter proxy available: {self.proxy_host}:{self.proxy_port}")
+            logger.info(f"✅ {proxy_label} proxy available: {self.proxy_host}:{self.proxy_port}")
             logger.info(f"📋 Strategy: Direct connections first, proxy on 403/429 errors")
         else:
             self.proxy_available = False
-            logger.warning("⚠️  Datacenter proxy not configured - only direct connections available")
+            if proxy_type == 'residential':
+                logger.error(f"❌ Residential proxy requested but RESIDENTIAL_PROXY_* vars not configured in .env")
+                logger.error(f"   Please add residential proxy credentials or use --proxy-type datacenter")
+            else:
+                logger.warning("⚠️  Datacenter proxy not configured - only direct connections available")
 
         # Track domains that require proxy (learned from 403/429 errors)
         self.blocked_domains = set()
@@ -53,7 +68,7 @@ class SmartProxyMiddleware:
 
     @classmethod
     def from_crawler(cls, crawler):
-        middleware = cls()
+        middleware = cls(settings=crawler.settings)
         crawler.signals.connect(middleware.spider_opened, signal=signals.spider_opened)
         crawler.signals.connect(middleware.spider_closed, signal=signals.spider_closed)
         return middleware

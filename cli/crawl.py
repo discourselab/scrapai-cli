@@ -12,9 +12,10 @@ from core.config import DATA_DIR
 @click.option('--output', '-o', default=None, help='Output file path')
 @click.option('--limit', '-l', type=int, default=None, help='Limit number of items')
 @click.option('--timeout', '-t', type=int, default=None, help='Max runtime in seconds')
-def crawl(spider, project, output, limit, timeout):
+@click.option('--proxy-type', type=click.Choice(['datacenter', 'residential'], case_sensitive=False), default='datacenter', help='Proxy type to use when blocked (default: datacenter)')
+def crawl(spider, project, output, limit, timeout, proxy_type):
     """Run a spider"""
-    _run_spider(project, spider, output, limit, timeout)
+    _run_spider(project, spider, output, limit, timeout, proxy_type)
 
 
 @click.command()
@@ -42,7 +43,7 @@ def crawl_all(project, limit):
         _run_spider(project, s.name, None, limit)
 
 
-def _run_spider(project_name, spider_name, output_file=None, limit=None, timeout=None):
+def _run_spider(project_name, spider_name, output_file=None, limit=None, timeout=None, proxy_type='datacenter'):
     """Run a Scrapy spider from database"""
     from core.db import get_db
     from core.models import Spider
@@ -55,6 +56,9 @@ def _run_spider(project_name, spider_name, output_file=None, limit=None, timeout
         return
 
     click.echo(f"🚀 Running DB spider: {spider_name}")
+
+    if proxy_type == 'residential':
+        click.echo(f"🏠 Proxy type: residential (used only when blocked)")
 
     cf_enabled = False
     use_sitemap = False
@@ -72,6 +76,9 @@ def _run_spider(project_name, spider_name, output_file=None, limit=None, timeout
         spider_class = 'database_spider'
 
     cmd = [sys.executable, '-m', 'scrapy', 'crawl', spider_class, '-a', f'spider_name={spider_name}']
+
+    # Pass proxy type to middleware
+    cmd.extend(['-s', f'PROXY_TYPE={proxy_type}'])
 
     if limit:
         click.echo(f"🧪 Test mode: Saving to database (limit: {limit} items)")
