@@ -17,47 +17,91 @@ class SmartProxyMiddleware:
     """
     Intelligent proxy middleware that only uses proxies when encountering rate limits or blocks.
 
-    Strategy:
+    Strategy (auto mode - default):
     1. Start with direct connections (no proxy)
     2. Detect 403/429 errors (blocked/rate-limited)
-    3. Automatically retry with proxy
-    4. Remember domains that need proxies
+    3. Retry with datacenter proxy (if configured)
+    4. If datacenter fails → expert-in-the-loop (ask user to use residential)
+
+    Expert-in-the-loop: Expensive proxies (residential) require explicit user approval.
     """
 
     def __init__(self, settings=None):
-        # Determine proxy type (datacenter or residential)
-        proxy_type = settings.get('PROXY_TYPE', 'datacenter') if settings else 'datacenter'
+        # Determine proxy type (auto, datacenter, or residential)
+        self.proxy_mode = settings.get('PROXY_TYPE', 'auto') if settings else 'auto'
 
-        # Load proxy credentials based on type
-        if proxy_type == 'residential':
-            self.proxy_username = os.getenv('RESIDENTIAL_PROXY_USERNAME')
-            self.proxy_password = os.getenv('RESIDENTIAL_PROXY_PASSWORD')
-            self.proxy_host = os.getenv('RESIDENTIAL_PROXY_HOST')
-            self.proxy_port = os.getenv('RESIDENTIAL_PROXY_PORT')
-            proxy_label = "Residential"
-        else:
-            self.proxy_username = os.getenv('DATACENTER_PROXY_USERNAME')
-            self.proxy_password = os.getenv('DATACENTER_PROXY_PASSWORD')
-            self.proxy_host = os.getenv('DATACENTER_PROXY_HOST')
-            self.proxy_port = os.getenv('DATACENTER_PROXY_PORT')
-            proxy_label = "Datacenter"
+        # Load datacenter proxy credentials
+        dc_username = os.getenv('DATACENTER_PROXY_USERNAME')
+        dc_password = os.getenv('DATACENTER_PROXY_PASSWORD')
+        dc_host = os.getenv('DATACENTER_PROXY_HOST')
+        dc_port = os.getenv('DATACENTER_PROXY_PORT')
 
-        # Check if proxy is configured
-        if all([self.proxy_username, self.proxy_password, self.proxy_host, self.proxy_port]):
-            self.proxy_url = f"http://{self.proxy_username}:{self.proxy_password}@{self.proxy_host}:{self.proxy_port}"
-            self.proxy_available = True
-            logger.info(f"✅ {proxy_label} proxy available: {self.proxy_host}:{self.proxy_port}")
-            logger.info(f"📋 Strategy: Direct connections first, proxy on 403/429 errors")
-        else:
-            self.proxy_available = False
-            if proxy_type == 'residential':
-                logger.error(f"❌ Residential proxy requested but RESIDENTIAL_PROXY_* vars not configured in .env")
-                logger.error(f"   Please add residential proxy credentials or use --proxy-type datacenter")
+        # Load residential proxy credentials
+        res_username = os.getenv('RESIDENTIAL_PROXY_USERNAME')
+        res_password = os.getenv('RESIDENTIAL_PROXY_PASSWORD')
+        res_host = os.getenv('RESIDENTIAL_PROXY_HOST')
+        res_port = os.getenv('RESIDENTIAL_PROXY_PORT')
+
+        # Check what's configured
+        self.datacenter_configured = all([dc_username, dc_password, dc_host, dc_port])
+        self.residential_configured = all([res_username, res_password, res_host, res_port])
+
+        # Determine active proxy based on mode
+        if self.proxy_mode == 'residential':
+            # Explicit residential mode
+            if self.residential_configured:
+                self.proxy_url = f"http://{res_username}:{res_password}@{res_host}:{res_port}"
+                self.proxy_available = True
+                self.active_proxy_type = 'residential'
+                logger.info(f"✅ Residential proxy enabled: {res_host}:{res_port}")
+                logger.info(f"📋 Strategy: Direct → Residential (explicit mode)")
             else:
+                self.proxy_available = False
+                self.active_proxy_type = None
+                logger.error(f"❌ Residential proxy requested but RESIDENTIAL_PROXY_* vars not configured in .env")
+                logger.error(f"   Please add residential proxy credentials")
+        elif self.proxy_mode == 'datacenter':
+            # Explicit datacenter mode
+            if self.datacenter_configured:
+                self.proxy_url = f"http://{dc_username}:{dc_password}@{dc_host}:{dc_port}"
+                self.proxy_available = True
+                self.active_proxy_type = 'datacenter'
+                logger.info(f"✅ Datacenter proxy enabled: {dc_host}:{dc_port}")
+                logger.info(f"📋 Strategy: Direct → Datacenter (explicit mode)")
+            else:
+                self.proxy_available = False
+                self.active_proxy_type = None
                 logger.warning("⚠️  Datacenter proxy not configured - only direct connections available")
+        else:
+            # Auto mode (default): prefer datacenter, escalate to expert-in-the-loop for residential
+            if self.datacenter_configured:
+                self.proxy_url = f"http://{dc_username}:{dc_password}@{dc_host}:{dc_port}"
+                self.proxy_available = True
+                self.active_proxy_type = 'datacenter'
+                logger.info(f"✅ Auto mode: Datacenter proxy available: {dc_host}:{dc_port}")
+                logger.info(f"📋 Strategy: Direct → Datacenter → Expert-in-the-loop")
+                if self.residential_configured:
+                    logger.info(f"💡 Residential proxy detected (will prompt if datacenter fails)")
+            elif self.residential_configured:
+                # No datacenter, but residential available - use it in auto mode
+                self.proxy_url = f"http://{res_username}:{res_password}@{res_host}:{res_port}"
+                self.proxy_available = True
+                self.active_proxy_type = 'residential'
+                logger.info(f"✅ Auto mode: Residential proxy available: {res_host}:{res_port}")
+                logger.info(f"📋 Strategy: Direct → Residential (only proxy configured)")
+            else:
+                self.proxy_available = False
+                self.active_proxy_type = None
+                logger.warning("⚠️  No proxies configured - only direct connections available")
 
         # Track domains that require proxy (learned from 403/429 errors)
         self.blocked_domains = set()
+
+        # Track domains that failed even with current proxy (for expert-in-the-loop)
+        self.failed_with_proxy_domains = set()
+
+        # Flag to show expert-in-the-loop message only once
+        self.expert_message_shown = False
 
         # Statistics
         self.stats = {
@@ -95,6 +139,7 @@ class SmartProxyMiddleware:
     def process_response(self, request, response, spider):
         """
         Detect rate limiting (429) or blocking (403) and retry with proxy.
+        Implements expert-in-the-loop for expensive proxy escalation.
         """
         domain = urlparse(request.url).netloc
 
@@ -102,14 +147,23 @@ class SmartProxyMiddleware:
         if response.status in [403, 429]:
             # Check if we already tried with proxy
             if request.meta.get('proxy'):
-                # Already used proxy and still blocked - give up
-                logger.error(f"❌ Blocked even with proxy ({response.status}): {request.url}")
+                # Already used proxy and still blocked
+                self.failed_with_proxy_domains.add(domain)
+                logger.error(f"❌ Blocked even with {self.active_proxy_type} proxy ({response.status}): {request.url}")
+
+                # Expert-in-the-loop: suggest residential if in auto mode with datacenter
+                if (self.proxy_mode == 'auto' and
+                    self.active_proxy_type == 'datacenter' and
+                    self.residential_configured and
+                    not self.expert_message_shown):
+                    self._show_expert_message(spider)
+
                 return response
 
             # First block - retry with proxy if available
             if self.proxy_available:
                 logger.warning(f"⚠️  Blocked ({response.status}): {request.url}")
-                logger.info(f"🔄 Retrying with datacenter proxy...")
+                logger.info(f"🔄 Retrying with {self.active_proxy_type} proxy...")
 
                 # Remember this domain needs proxy
                 self.blocked_domains.add(domain)
@@ -126,7 +180,29 @@ class SmartProxyMiddleware:
 
         return response
 
+    def _show_expert_message(self, spider):
+        """Show expert-in-the-loop message for residential proxy escalation."""
+        self.expert_message_shown = True
+        logger.warning("")
+        logger.warning("=" * 80)
+        logger.warning("⚠️  EXPERT-IN-THE-LOOP: Datacenter proxy failed for some domains")
+        logger.warning("")
+        logger.warning("🏠 Residential proxy is available but may incur HIGHER COSTS")
+        logger.warning("")
+        logger.warning(f"Blocked domains: {', '.join(sorted(self.failed_with_proxy_domains))}")
+        logger.warning("")
+        logger.warning("To proceed with residential proxy, run:")
+        logger.warning(f"  ./scrapai crawl {spider.name} --project <project> --proxy-type residential")
+        logger.warning("")
+        logger.warning("=" * 80)
+        logger.warning("")
+
     def spider_opened(self, spider):
+        # Store proxy type in spider state for checkpoint tracking
+        if not hasattr(spider, 'state'):
+            spider.state = {}
+        spider.state['proxy_type_used'] = self.proxy_mode
+
         if self.proxy_available:
             logger.info(f"🕷️  Spider '{spider.name}' started - Smart proxy mode enabled")
             logger.info(f"   Strategy: Direct → Proxy on block (403/429)")
@@ -142,3 +218,11 @@ class SmartProxyMiddleware:
         logger.info(f"   Blocked domains: {len(self.blocked_domains)}")
         if self.blocked_domains:
             logger.info(f"   Domains that needed proxy: {', '.join(sorted(self.blocked_domains))}")
+
+        # Show expert-in-the-loop message at end if not shown during crawl
+        if (self.failed_with_proxy_domains and
+            self.proxy_mode == 'auto' and
+            self.active_proxy_type == 'datacenter' and
+            self.residential_configured and
+            not self.expert_message_shown):
+            self._show_expert_message(spider)

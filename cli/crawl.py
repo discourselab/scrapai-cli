@@ -2,6 +2,9 @@ import click
 import subprocess
 import sys
 import os
+import shutil
+import pickle
+from pathlib import Path
 from datetime import datetime
 from core.config import DATA_DIR
 
@@ -12,7 +15,7 @@ from core.config import DATA_DIR
 @click.option('--output', '-o', default=None, help='Output file path')
 @click.option('--limit', '-l', type=int, default=None, help='Limit number of items')
 @click.option('--timeout', '-t', type=int, default=None, help='Max runtime in seconds')
-@click.option('--proxy-type', type=click.Choice(['datacenter', 'residential'], case_sensitive=False), default='datacenter', help='Proxy type to use when blocked (default: datacenter)')
+@click.option('--proxy-type', type=click.Choice(['auto', 'datacenter', 'residential'], case_sensitive=False), default='auto', help='Proxy strategy: auto (smart escalation), datacenter, or residential (default: auto)')
 def crawl(spider, project, output, limit, timeout, proxy_type):
     """Run a spider"""
     _run_spider(project, spider, output, limit, timeout, proxy_type)
@@ -40,7 +43,7 @@ def crawl_all(project, limit):
         click.echo(f"\n{'='*50}")
         click.echo(f"Running: {s.name}")
         click.echo(f"{'='*50}")
-        _run_spider(project, s.name, None, limit)
+        _run_spider(project, s.name, None, limit, None, 'auto')
 
 
 def _run_spider(project_name, spider_name, output_file=None, limit=None, timeout=None, proxy_type='datacenter'):
@@ -57,8 +60,12 @@ def _run_spider(project_name, spider_name, output_file=None, limit=None, timeout
 
     click.echo(f"🚀 Running DB spider: {spider_name}")
 
-    if proxy_type == 'residential':
-        click.echo(f"🏠 Proxy type: residential (used only when blocked)")
+    if proxy_type == 'auto':
+        click.echo(f"🔄 Proxy mode: auto (smart escalation with expert-in-the-loop)")
+    elif proxy_type == 'residential':
+        click.echo(f"🏠 Proxy mode: residential (explicit, used when blocked)")
+    elif proxy_type == 'datacenter':
+        click.echo(f"🏢 Proxy mode: datacenter (explicit, used when blocked)")
 
     cf_enabled = False
     use_sitemap = False
@@ -80,6 +87,8 @@ def _run_spider(project_name, spider_name, output_file=None, limit=None, timeout
     # Pass proxy type to middleware
     cmd.extend(['-s', f'PROXY_TYPE={proxy_type}'])
 
+    # Checkpoint setup for production crawls
+    checkpoint_dir = None
     if limit:
         click.echo(f"🧪 Test mode: Saving to database (limit: {limit} items)")
         click.echo(f"   Use './scrapai show {spider_name}' to verify results")
@@ -89,6 +98,34 @@ def _run_spider(project_name, spider_name, output_file=None, limit=None, timeout
         click.echo(f"📁 Production mode: Exporting to files (database disabled)")
         cmd.extend(['-s', 'ITEM_PIPELINES={"pipelines.ScrapaiPipeline": 300}'])
         cmd.extend(['-s', 'INCLUDE_HTML_IN_OUTPUT=True'])
+
+        # Enable checkpoint for production crawls
+        if project_name:
+            checkpoint_dir = f'{DATA_DIR}/{project_name}/{spider_name}/checkpoint'
+        else:
+            checkpoint_dir = f'{DATA_DIR}/{spider_name}/checkpoint'
+
+        # Check if proxy type changed and clear checkpoint if needed
+        state_file = Path(checkpoint_dir) / 'spider.state'
+        if state_file.exists():
+            try:
+                with open(state_file, 'rb') as f:
+                    state = pickle.load(f)
+                    old_proxy = state.get('proxy_type_used')
+
+                    if old_proxy and old_proxy != proxy_type:
+                        click.echo(f"⚠️  Proxy type changed: {old_proxy} → {proxy_type}")
+                        click.echo(f"🗑️  Clearing checkpoint to ensure all URLs retried with {proxy_type} proxy")
+                        shutil.rmtree(checkpoint_dir)
+                        click.echo(f"♻️  Starting fresh crawl")
+            except Exception as e:
+                # If we can't read state file, just continue (checkpoint might be corrupted)
+                click.echo(f"⚠️  Could not read checkpoint state: {e}")
+                click.echo(f"   Continuing with existing checkpoint")
+
+        cmd.extend(['-s', f'JOBDIR={checkpoint_dir}'])
+        click.echo(f"💾 Checkpoint enabled: {checkpoint_dir}")
+        click.echo(f"   Press Ctrl+C to pause, run same command to resume")
 
         if not output_file:
             now = datetime.now()
@@ -128,4 +165,11 @@ def _run_spider(project_name, spider_name, output_file=None, limit=None, timeout
         else:
             click.echo("🖥️  Display available - using native browser for Cloudflare bypass")
 
-    subprocess.run(cmd)
+    result = subprocess.run(cmd)
+
+    # Cleanup checkpoint on successful completion (production mode only)
+    if checkpoint_dir and result.returncode == 0:
+        checkpoint_path = Path(checkpoint_dir)
+        if checkpoint_path.exists():
+            shutil.rmtree(checkpoint_path)
+            click.echo(f"✓ Checkpoint cleaned up (successful completion)")

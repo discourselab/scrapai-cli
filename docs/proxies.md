@@ -4,18 +4,22 @@ ScrapAI has **SmartProxyMiddleware** that intelligently manages proxy usage to a
 
 ## How It Works
 
-**Strategy:**
+**Auto Mode Strategy (default):**
 1. **Start with direct connections** (fast, free)
 2. **Detect blocking** (403/429 errors)
-3. **Automatically retry with proxy**
+3. **Automatically retry with datacenter proxy** (cheap, fast)
 4. **Learn which domains need proxies**
 5. **Use proxy proactively** for known-blocked domains
+6. **Expert-in-the-loop** if datacenter fails → ask user before using expensive residential
 
-This is smarter than always-on proxy rotation because:
+**Smart cost control:**
 - Direct connections are faster and free
 - Proxies only used when necessary
+- Datacenter proxies preferred (cheaper)
+- Residential proxies require explicit user approval
 - Learns per-domain blocking patterns
 - Reduces proxy bandwidth costs by 80-90%
+- **No surprise costs** - expensive proxies need human approval
 
 ## Setup
 
@@ -72,39 +76,55 @@ Since our SmartProxyMiddleware uses a single proxy connection, **use rotating po
 
 ## Usage
 
-**Datacenter Proxy (default):**
+### Auto Mode (Default) - Expert-in-the-Loop ⭐
+
+**Smart escalation with cost control:**
 ```bash
-# Uses datacenter proxy when blocked (if configured)
+# Auto mode (default) - smart escalation
 ./scrapai crawl spider_name --project proj --limit 10
 
-# Explicit datacenter
+# Explicit auto mode
+./scrapai crawl spider_name --project proj --limit 10 --proxy-type auto
+```
+
+**How auto mode works:**
+1. ✅ Start with direct connections (fast, free)
+2. ✅ On block (403/429) → Try datacenter proxy (cheap, fast)
+3. ⚠️ **Datacenter fails** → **Expert-in-the-loop prompt:**
+   ```
+   ⚠️  EXPERT-IN-THE-LOOP: Datacenter proxy failed for some domains
+   🏠 Residential proxy is available but may incur HIGHER COSTS
+
+   Blocked domains: example.com, site.org
+
+   To proceed with residential proxy, run:
+     ./scrapai crawl spider_name --project proj --proxy-type residential
+   ```
+4. 👤 **User decides** whether to use expensive residential proxies
+
+**Cost protection:** Residential proxies require explicit user approval - no surprise costs!
+
+### Explicit Modes
+
+**Datacenter only:**
+```bash
+# Force datacenter proxy only (even if residential configured)
 ./scrapai crawl spider_name --project proj --limit 10 --proxy-type datacenter
 ```
 
-**Residential Proxy (explicit):**
+**Residential only:**
 ```bash
-# Uses residential proxy when blocked (must be configured in .env)
+# Force residential proxy (explicit approval given)
 ./scrapai crawl spider_name --project proj --limit 10 --proxy-type residential
 ```
 
-**Testing both:**
-```bash
-# Test with datacenter proxies
-./scrapai crawl myspider --project proj --limit 5 --proxy-type datacenter
-
-# Test with residential proxies
-./scrapai crawl myspider --project proj --limit 5 --proxy-type residential
-
-# Compare which works better for your use case
-```
-
-**Important:** Both proxy types follow the same smart strategy:
+**All modes follow smart strategy:**
 - ✅ Start with direct connections (fast, free)
 - ✅ Only use proxy when blocked (403/429 errors)
 - ✅ Learn which domains need proxies
 - ✅ Use proxy proactively for blocked domains
 
-The `--proxy-type` flag only changes **which proxy** to use, not **when** to use it.
+The `--proxy-type` flag controls escalation behavior and cost limits.
 
 ## Configuration
 
