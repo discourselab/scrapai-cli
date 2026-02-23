@@ -293,6 +293,11 @@ Report back: status, spider name, queue item ID, summary.
 
 ### Database
 - `./scrapai db migrate` / `./scrapai db current`
+- `./scrapai db transfer sqlite:///scrapai.db [--skip-items]` — migrate data from SQLite to PostgreSQL (update DATABASE_URL in .env first)
+- `./scrapai db stats` — show counts (spiders, items, queue)
+- `./scrapai db tables` — list all tables with row counts
+- `./scrapai db inspect <table>` — show schema for specific table
+- `./scrapai db query "SELECT * FROM spiders LIMIT 5" [--format table|json|csv]` — read-only SQL queries
 
 ---
 

@@ -8,6 +8,25 @@ Only enable when the site requires it. Test WITHOUT `--cloudflare` first.
 - 403/503 HTTP errors with Cloudflare branding
 - Challenge pages before content loads
 
+## Display Requirements
+
+**Cloudflare bypass requires a visible browser** (not headless) - Cloudflare detects headless browsers and blocks them.
+
+- **macOS/Windows:** Uses native display automatically
+- **Linux desktop:** Uses native display automatically
+- **Linux servers (VPS without GUI):** Auto-detects missing display and uses **Xvfb** (virtual display)
+
+**Installing Xvfb on Linux servers:**
+```bash
+# Debian/Ubuntu
+sudo apt-get install xvfb
+
+# RHEL/CentOS
+sudo yum install xorg-x11-server-Xvfb
+```
+
+The crawler automatically detects your environment and uses Xvfb when no display is available on Linux - no additional configuration needed.
+
 ## Inspector
 
 ```bash
@@ -99,5 +118,3 @@ Only if hybrid fails. Browser for every request. **Requires `CONCURRENT_REQUESTS
 **Title contamination:** If extracted titles show wrong text (e.g., "Related Articles" instead of actual title), set `CF_WAIT_SELECTOR` to the main title element (e.g., `h1.article-title`). This captures HTML before related content loads.
 
 **Wait times:** Initial page load 2s → after selector found +2s → no selector 5s total → small HTML detected +5s → post-CF verification: `CF_POST_DELAY` + 3s.
-
-**Browser must be visible:** Cloudflare detects headless browsers. `headless=False` is required (handled automatically).
