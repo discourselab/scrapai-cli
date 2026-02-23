@@ -20,6 +20,7 @@ from typing import Dict, Optional
 import aiohttp
 from scrapy.http import HtmlResponse, Request
 from twisted.internet import threads
+from settings import USER_AGENT
 
 logger = logging.getLogger(__name__)
 
@@ -98,10 +99,12 @@ class CloudflareDownloadHandler:
                     target=_start_event_loop,
                     args=(cls._event_loop,),
                     daemon=True,
-                    name="cf-event-loop"
+                    name="cf-event-loop",
                 )
                 cls._event_loop_thread.start()
-                logger.info("CloudflareDownloadHandler: Started persistent event loop thread")
+                logger.info(
+                    "CloudflareDownloadHandler: Started persistent event loop thread"
+                )
             return cls._event_loop
 
     @classmethod
@@ -114,11 +117,16 @@ class CloudflareDownloadHandler:
     def open(self):
         """Called when spider opens - prepare handler."""
         # Browser will be started lazily on first request
-        logger.info("CloudflareDownloadHandler: Handler opened (browser will start on first request)")
+        logger.info(
+            "CloudflareDownloadHandler: Handler opened (browser will start on first request)"
+        )
 
     def close(self):
         """Called when spider closes - close browser and stop event loop."""
-        if CloudflareDownloadHandler._browser_started and CloudflareDownloadHandler._shared_browser:
+        if (
+            CloudflareDownloadHandler._browser_started
+            and CloudflareDownloadHandler._shared_browser
+        ):
             try:
                 logger.info("CloudflareDownloadHandler: Closing shared browser...")
 
@@ -126,7 +134,9 @@ class CloudflareDownloadHandler:
                 # driver.stop() is synchronous, so call it directly
                 if CloudflareDownloadHandler._shared_browser.driver:
                     CloudflareDownloadHandler._shared_browser.driver.stop()
-                    logger.info("CloudflareDownloadHandler: Browser stopped successfully")
+                    logger.info(
+                        "CloudflareDownloadHandler: Browser stopped successfully"
+                    )
 
                 # Clean up state
                 CloudflareDownloadHandler._shared_browser = None
@@ -139,7 +149,10 @@ class CloudflareDownloadHandler:
             logger.info("CloudflareDownloadHandler: No browser to close")
 
         # Stop the persistent event loop
-        if CloudflareDownloadHandler._event_loop and not CloudflareDownloadHandler._event_loop.is_closed():
+        if (
+            CloudflareDownloadHandler._event_loop
+            and not CloudflareDownloadHandler._event_loop.is_closed()
+        ):
             CloudflareDownloadHandler._event_loop.call_soon_threadsafe(
                 CloudflareDownloadHandler._event_loop.stop
             )
@@ -160,10 +173,10 @@ class CloudflareDownloadHandler:
         Returns:
             Deferred that resolves to HtmlResponse
         """
-        spider_settings = getattr(spider, 'custom_settings', {})
-        strategy = spider_settings.get('CLOUDFLARE_STRATEGY', 'hybrid').lower()
+        spider_settings = getattr(spider, "custom_settings", {})
+        strategy = spider_settings.get("CLOUDFLARE_STRATEGY", "hybrid").lower()
 
-        if strategy == 'browser_only':
+        if strategy == "browser_only":
             # Legacy mode: browser for every request
             return threads.deferToThread(self._browser_only_fetch_sync, request, spider)
         else:
@@ -181,9 +194,9 @@ class CloudflareDownloadHandler:
             if html:
                 return HtmlResponse(
                     url=request.url,
-                    body=html.encode('utf-8'),
-                    encoding='utf-8',
-                    request=request
+                    body=html.encode("utf-8"),
+                    encoding="utf-8",
+                    request=request,
                 )
             else:
                 raise Exception(f"Failed to fetch {request.url}")
@@ -208,9 +221,9 @@ class CloudflareDownloadHandler:
             if html:
                 return HtmlResponse(
                     url=request.url,
-                    body=html.encode('utf-8'),
-                    encoding='utf-8',
-                    request=request
+                    body=html.encode("utf-8"),
+                    encoding="utf-8",
+                    request=request,
                 )
             else:
                 raise Exception(f"Failed to fetch {request.url}")
@@ -254,10 +267,9 @@ class CloudflareDownloadHandler:
 
     async def _should_refresh_cookies(self, spider_name: str, spider) -> bool:
         """Check if cookies need refreshing."""
-        spider_settings = getattr(spider, 'custom_settings', {})
+        spider_settings = getattr(spider, "custom_settings", {})
         threshold = spider_settings.get(
-            'CLOUDFLARE_COOKIE_REFRESH_THRESHOLD',
-            self.DEFAULT_COOKIE_REFRESH_THRESHOLD
+            "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD", self.DEFAULT_COOKIE_REFRESH_THRESHOLD
         )
 
         with CloudflareDownloadHandler._cookie_cache_lock:
@@ -265,10 +277,12 @@ class CloudflareDownloadHandler:
                 return True
 
             cached = CloudflareDownloadHandler._cookie_cache[spider_name]
-            age = time.time() - cached['timestamp']
+            age = time.time() - cached["timestamp"]
 
             if age > threshold:
-                logger.info(f"[{spider_name}] Cookies aging ({age/60:.1f} min) - refreshing proactively")
+                logger.info(
+                    f"[{spider_name}] Cookies aging ({age/60:.1f} min) - refreshing proactively"
+                )
                 return True
 
             return False
@@ -289,12 +303,14 @@ class CloudflareDownloadHandler:
         # Cache cookies
         with CloudflareDownloadHandler._cookie_cache_lock:
             CloudflareDownloadHandler._cookie_cache[spider_name] = {
-                'cookies': cookies,
-                'user_agent': user_agent,
-                'timestamp': time.time()
+                "cookies": cookies,
+                "user_agent": user_agent,
+                "timestamp": time.time(),
             }
 
-        logger.info(f"[{spider_name}] Cached {len(cookies)} cookies (cf_clearance: {cookies.get('cf_clearance', 'N/A')[:20]}...)")
+        logger.info(
+            f"[{spider_name}] Cached {len(cookies)} cookies (cf_clearance: {cookies.get('cf_clearance', 'N/A')[:20]}...)"
+        )
 
     async def _invalidate_cookies(self, spider_name: str):
         """Invalidate cached cookies."""
@@ -310,12 +326,14 @@ class CloudflareDownloadHandler:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
                     url,
-                    cookies=cached['cookies'],
-                    headers={'User-Agent': cached['user_agent']},
-                    timeout=timeout
+                    cookies=cached["cookies"],
+                    headers={"User-Agent": cached["user_agent"]},
+                    timeout=timeout,
                 ) as response:
                     html = await response.text()
-                    logger.debug(f"HTTP fetch: {url} -> {response.status} ({len(html)} bytes)")
+                    logger.debug(
+                        f"HTTP fetch: {url} -> {response.status} ({len(html)} bytes)"
+                    )
                     return html
         except Exception as e:
             logger.error(f"HTTP fetch failed for {url}: {e}")
@@ -330,18 +348,16 @@ class CloudflareDownloadHandler:
 
         blocked_indicators = [
             # CF challenge pages
-            ('cloudflare' in html_lower and 'checking your browser' in html_lower),
-            'just a moment' in html_lower and 'cloudflare' in html_lower,
-            '<title>just a moment...</title>' in html_lower,
-
+            ("cloudflare" in html_lower and "checking your browser" in html_lower),
+            "just a moment" in html_lower and "cloudflare" in html_lower,
+            "<title>just a moment...</title>" in html_lower,
             # CF block pages
-            'sorry, you have been blocked' in html_lower,
-            'access denied' in html_lower and 'cloudflare' in html_lower,
-            'error 1020' in html_lower,  # CF Access Denied
-            'error 1015' in html_lower,  # CF Rate Limited
-
+            "sorry, you have been blocked" in html_lower,
+            "access denied" in html_lower and "cloudflare" in html_lower,
+            "error 1020" in html_lower,  # CF Access Denied
+            "error 1015" in html_lower,  # CF Rate Limited
             # Very short response (likely challenge page)
-            (len(html) < 5000 and 'cloudflare' in html_lower),
+            (len(html) < 5000 and "cloudflare" in html_lower),
         ]
 
         is_blocked = any(blocked_indicators)
@@ -357,10 +373,10 @@ class CloudflareDownloadHandler:
             if not CloudflareDownloadHandler._browser_started:
                 from utils.cf_browser import CloudflareBrowserClient
 
-                spider_settings = getattr(spider, 'custom_settings', {})
-                cf_max_retries = spider_settings.get('CF_MAX_RETRIES', 5)
-                cf_retry_interval = spider_settings.get('CF_RETRY_INTERVAL', 1)
-                cf_post_delay = spider_settings.get('CF_POST_DELAY', 5)
+                spider_settings = getattr(spider, "custom_settings", {})
+                cf_max_retries = spider_settings.get("CF_MAX_RETRIES", 5)
+                cf_retry_interval = spider_settings.get("CF_RETRY_INTERVAL", 1)
+                cf_post_delay = spider_settings.get("CF_POST_DELAY", 5)
 
                 logger.info("Starting shared browser for CF verification")
 
@@ -368,7 +384,7 @@ class CloudflareDownloadHandler:
                     headless=False,
                     cf_max_retries=cf_max_retries,
                     cf_retry_interval=cf_retry_interval,
-                    post_cf_delay=cf_post_delay
+                    post_cf_delay=cf_post_delay,
                 )
 
                 await CloudflareDownloadHandler._shared_browser.start()
@@ -377,14 +393,12 @@ class CloudflareDownloadHandler:
 
     async def _fetch_with_browser(self, url: str, spider) -> Optional[str]:
         """Fetch URL using browser."""
-        spider_settings = getattr(spider, 'custom_settings', {})
-        wait_selector = spider_settings.get('CF_WAIT_SELECTOR')
-        wait_timeout = spider_settings.get('CF_WAIT_TIMEOUT', 10)
+        spider_settings = getattr(spider, "custom_settings", {})
+        wait_selector = spider_settings.get("CF_WAIT_SELECTOR")
+        wait_timeout = spider_settings.get("CF_WAIT_TIMEOUT", 10)
 
         html = await CloudflareDownloadHandler._shared_browser.fetch(
-            url,
-            wait_selector=wait_selector,
-            wait_timeout=wait_timeout
+            url, wait_selector=wait_selector, wait_timeout=wait_timeout
         )
 
         logger.debug(f"Browser fetch: {url} -> {len(html) if html else 0} bytes")
@@ -401,14 +415,14 @@ class CloudflareDownloadHandler:
 
         # Get cookies via CDP
         import nodriver as uc
+
         cookies_cdp = await tab.send(uc.cdp.network.get_cookies())
         cookies = {c.name: c.value for c in cookies_cdp if c.name}  # Filter empty names
 
         # Get user agent
         try:
-            user_agent = await tab.evaluate('navigator.userAgent')
+            user_agent = await tab.evaluate("navigator.userAgent")
         except Exception:
-            user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+            user_agent = USER_AGENT
 
         return cookies, user_agent
-

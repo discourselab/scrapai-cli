@@ -4,25 +4,57 @@ import logging
 
 
 @click.command()
-@click.argument('url')
-@click.option('--project', default='default', help='Project name')
-@click.option('--output-dir', default=None, help='Directory to save analysis')
-@click.option('--proxy-type', type=click.Choice(['none', 'static', 'residential', 'auto']),
-              default='auto', help='Proxy type to use')
-@click.option('--no-save-html', is_flag=True, help='Do not save the full HTML')
-@click.option('--cloudflare', is_flag=True, help='Use Cloudflare bypass mode')
-@click.option('--log-level', type=click.Choice(['debug', 'info', 'warning', 'error', 'critical']),
-              default='info', help='Set the logging level')
-@click.option('--log-file', default=None, help='Path to log file')
-def inspect_cmd(url, project, output_dir, proxy_type, no_save_html, cloudflare, log_level, log_file):
-    """Inspect a website to help create scrapers"""
+@click.argument("url")
+@click.option("--project", default="default", help="Project name")
+@click.option("--output-dir", default=None, help="Directory to save analysis")
+@click.option(
+    "--proxy-type",
+    type=click.Choice(["none", "static", "residential", "auto"]),
+    default="auto",
+    help="Proxy type to use",
+)
+@click.option("--no-save-html", is_flag=True, help="Do not save the full HTML")
+@click.option("--browser", is_flag=True, help="Use browser for JS-rendered sites")
+@click.option("--cloudflare", is_flag=True, help="Use Cloudflare bypass mode")
+@click.option(
+    "--log-level",
+    type=click.Choice(["debug", "info", "warning", "error", "critical"]),
+    default="info",
+    help="Set the logging level",
+)
+@click.option("--log-file", default=None, help="Path to log file")
+def inspect_cmd(
+    url,
+    project,
+    output_dir,
+    proxy_type,
+    no_save_html,
+    browser,
+    cloudflare,
+    log_level,
+    log_file,
+):
+    """Inspect a website to help create scrapers
+
+    Uses lightweight HTTP by default. Use --browser for JS sites, --cloudflare for protected sites.
+    """
     from utils.inspector import inspect_page
 
     logging.basicConfig(level=getattr(logging, log_level.upper(), logging.INFO))
-    logger = logging.getLogger('inspector')
+    logger = logging.getLogger("inspector")
     logger.info(f"Starting inspection of {url}")
 
+    # Validate flags - can't use both browser and cloudflare
+    if browser and cloudflare:
+        click.echo("❌ ERROR: Cannot use both --browser and --cloudflare")
+        click.echo(
+            "   Choose one: --browser for JS sites, --cloudflare for protected sites"
+        )
+        sys.exit(1)
+
+    # Determine mode
     if cloudflare:
+        mode = "cloudflare"
         from utils.display_helper import needs_xvfb, has_xvfb
 
         if needs_xvfb():
@@ -31,13 +63,26 @@ def inspect_cmd(url, project, output_dir, proxy_type, no_save_html, cloudflare, 
                 click.echo("   No display available and xvfb not installed")
                 click.echo("\nOptions:")
                 click.echo("   1. Install xvfb: sudo apt-get install xvfb")
-                click.echo("   2. Then run: xvfb-run -a ./scrapai inspect <url> --cloudflare")
+                click.echo(
+                    "   2. Then run: xvfb-run -a ./scrapai inspect <url> --cloudflare"
+                )
                 click.echo("   3. Or run on a machine with a display")
                 sys.exit(1)
-            click.echo("🖥️  Headless environment detected - make sure to use: xvfb-run -a ./scrapai inspect ...")
+            click.echo(
+                "🖥️  Headless environment detected - make sure to use: xvfb-run -a ./scrapai inspect ..."
+            )
         else:
-            click.echo("🖥️  Display available - using native browser for Cloudflare bypass")
+            click.echo(
+                "🖥️  Display available - using native browser for Cloudflare bypass"
+            )
+    elif browser:
+        mode = "browser"
+        click.echo("🌐 Using browser for JS-rendered content")
+    else:
+        mode = "http"
+        click.echo("⚡ Using lightweight HTTP fetch")
 
-    inspect_page(url, output_dir, proxy_type, not no_save_html,
-                 use_cloudflare=cloudflare, project=project)
+    inspect_page(
+        url, output_dir, proxy_type, not no_save_html, mode=mode, project=project
+    )
     logger.info("Inspection complete")

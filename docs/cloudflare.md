@@ -30,12 +30,17 @@ The crawler automatically detects your environment and uses Xvfb when no display
 ## Inspector
 
 ```bash
-# Normal inspection
+# Lightweight HTTP (default) - fast, works for most sites
 ./scrapai inspect https://example.com --project proj
 
-# With Cloudflare bypass
+# Browser mode - for JS-rendered sites
+./scrapai inspect https://example.com --project proj --browser
+
+# Cloudflare bypass - for protected sites
 ./scrapai inspect https://example.com --project proj --cloudflare
 ```
+
+**Smart resource usage:** Start with default HTTP (fast). Escalate to `--browser` if content is JS-rendered. Use `--cloudflare` only when site shows "Checking your browser" or 403/503 errors.
 
 ## Hybrid Mode (Default)
 

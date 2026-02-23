@@ -5,6 +5,11 @@ Page Inspector Utility
 This tool downloads and analyzes HTML from a source URL to help with creating scrapers.
 It's designed to be used as part of the scraper development process.
 
+Supports three modes:
+- HTTP (default): Lightweight aiohttp fetch for most sites
+- Browser: Playwright for JS-rendered sites
+- Cloudflare: nodriver for Cloudflare-protected sites
+
 Usage:
     python -m utils.inspector https://example.com/fact-checks
 """
@@ -12,31 +17,45 @@ Usage:
 import os
 import argparse
 import asyncio
+import aiohttp
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 
 from utils.browser import BrowserClient
 from core.config import DATA_DIR
+from settings import USER_AGENT
 
-async def inspect_page_async(url, output_dir=None, proxy_type="auto", save_html=True, use_cloudflare=False, project="default"):
+
+async def inspect_page_async(
+    url,
+    output_dir=None,
+    proxy_type="auto",
+    save_html=True,
+    mode="http",
+    project="default",
+):
     """
-    Inspect a page using browser client and output analysis to help with creating a scraper
+    Inspect a page and output analysis to help with creating a scraper
 
     Args:
         url (str): URL to inspect
         output_dir (str): Directory to save analysis and HTML. If None, a directory is created based on the domain
         proxy_type (str): Proxy type to use (unused now, browser handles this)
         save_html (bool): Whether to save the full HTML
-        use_cloudflare (bool): Whether to use Cloudflare bypass mode
+        mode (str): Fetch mode - 'http' (default), 'browser' (Playwright), or 'cloudflare' (nodriver)
         project (str): Project name for organizing analysis files (default: "default")
 
     Returns:
         dict: Analysis results
     """
     print(f"Inspecting: {url}")
-    if use_cloudflare:
+    if mode == "cloudflare":
         print("Using Cloudflare bypass mode...")
-    
+    elif mode == "browser":
+        print("Using browser for JS-rendered content...")
+    else:
+        print("Using lightweight HTTP fetch...")
+
     # Extract domain for folder name if output_dir is not specified
     if output_dir is None:
         parsed_url = urlparse(url)
@@ -47,7 +66,8 @@ async def inspect_page_async(url, output_dir=None, proxy_type="auto", save_html=
             # Parse Wayback Machine URL structure:
             # https://web.archive.org/web/YYYYMMDDHHMMSS/http://original-domain.com/path
             import re
-            wayback_pattern = r'/web/(\d{8})\d*/(?:https?://)?(?:www\.)?([^/]+)'
+
+            wayback_pattern = r"/web/(\d{8})\d*/(?:https?://)?(?:www\.)?([^/]+)"
             match = re.search(wayback_pattern, url)
 
             if match:
@@ -60,13 +80,15 @@ async def inspect_page_async(url, output_dir=None, proxy_type="auto", save_html=
         else:
             source_id = domain.replace(".", "_")
             output_dir = f"{DATA_DIR}/{project}/{source_id}/analysis"
-    
+
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
 
-    # Choose browser client based on mode
-    if use_cloudflare:
-        # Use nodriver with Cloudflare bypass
+    # Fetch HTML based on mode
+    html_content = None
+
+    if mode == "cloudflare":
+        # Mode 3: Use nodriver with Cloudflare bypass
         from utils.cf_browser import CloudflareBrowserClient
 
         async with CloudflareBrowserClient(headless=False) as browser:
@@ -76,17 +98,8 @@ async def inspect_page_async(url, output_dir=None, proxy_type="auto", save_html=
                 print(f"Failed to fetch page (Cloudflare bypass failed): {url}")
                 return None
 
-            # Save the HTML if requested
-            if save_html:
-                html_file = os.path.join(output_dir, "page.html")
-                with open(html_file, 'w', encoding='utf-8') as f:
-                    f.write(html_content)
-                print(f"Saved HTML to: {html_file}")
-
-            # Parse the HTML
-            soup = BeautifulSoup(html_content, 'html.parser')
-    else:
-        # Use existing Playwright path
+    elif mode == "browser":
+        # Mode 2: Use Playwright for JS-rendered sites
         async with BrowserClient(headless=True) as browser:
             await browser.goto(url)
             html_content = await browser.get_html()
@@ -95,37 +108,99 @@ async def inspect_page_async(url, output_dir=None, proxy_type="auto", save_html=
                 print(f"Failed to fetch page: {url}")
                 return None
 
-            # Save the HTML if requested
-            if save_html:
-                html_file = os.path.join(output_dir, "page.html")
-                with open(html_file, 'w', encoding='utf-8') as f:
-                    f.write(html_content)
-                print(f"Saved HTML to: {html_file}")
+    else:
+        # Mode 1: Use lightweight HTTP fetch (default)
+        try:
+            timeout = aiohttp.ClientTimeout(total=30)
+            headers = {"User-Agent": USER_AGENT}
 
-            # Parse the HTML
-            soup = BeautifulSoup(html_content, 'html.parser')
-    
-    title = soup.title.text if soup.title else "No title"
-    print(f"\nTitle: {title}")
-    print(f"HTML size: {len(html_content)} bytes")
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    url, headers=headers, timeout=timeout
+                ) as response:
+                    if response.status != 200:
+                        print(f"HTTP {response.status} - {url}")
+                        print(
+                            "Hint: Try --browser for JS sites or --cloudflare for protected sites"
+                        )
+                        return None
 
-def inspect_page(url, output_dir=None, proxy_type="auto", save_html=True, use_cloudflare=False, project="default"):
+                    html_content = await response.text()
+
+        except aiohttp.ClientError as e:
+            print(f"Failed to fetch page: {e}")
+            print(
+                "Hint: Try --browser for JS sites or --cloudflare for protected sites"
+            )
+            return None
+        except asyncio.TimeoutError:
+            print(f"Request timed out: {url}")
+            return None
+
+    # Save the HTML if requested
+    if save_html and html_content:
+        html_file = os.path.join(output_dir, "page.html")
+        with open(html_file, "w", encoding="utf-8") as f:
+            f.write(html_content)
+        print(f"Saved HTML to: {html_file}")
+
+    # Parse and analyze the HTML
+    if html_content:
+        soup = BeautifulSoup(html_content, "html.parser")
+        title = soup.title.text if soup.title else "No title"
+        print(f"\nTitle: {title}")
+        print(f"HTML size: {len(html_content)} bytes")
+
+
+def inspect_page(
+    url,
+    output_dir=None,
+    proxy_type="auto",
+    save_html=True,
+    mode="http",
+    project="default",
+):
     """
     Synchronous wrapper for inspect_page_async
+
+    Args:
+        url (str): URL to inspect
+        output_dir (str): Directory to save analysis and HTML
+        proxy_type (str): Proxy type to use (unused)
+        save_html (bool): Whether to save the full HTML
+        mode (str): Fetch mode - 'http' (default), 'browser', or 'cloudflare'
+        project (str): Project name for organizing analysis files
+
+    Returns:
+        dict: Analysis results
     """
-    return asyncio.run(inspect_page_async(url, output_dir, proxy_type, save_html, use_cloudflare, project))
+    return asyncio.run(
+        inspect_page_async(url, output_dir, proxy_type, save_html, mode, project)
+    )
+
 
 def main():
-    parser = argparse.ArgumentParser(description='Inspect a page to help with creating a scraper')
-    parser.add_argument('--url', type=str, required=True, help='URL to inspect')
-    parser.add_argument('--output-dir', type=str, default=None, help='Directory to save analysis')
-    parser.add_argument('--proxy-type', choices=['none', 'static', 'residential', 'auto'], 
-                        default='auto', help='Proxy type to use')
-    parser.add_argument('--no-save-html', action='store_true', help='Do not save the full HTML')
-    
+    parser = argparse.ArgumentParser(
+        description="Inspect a page to help with creating a scraper"
+    )
+    parser.add_argument("--url", type=str, required=True, help="URL to inspect")
+    parser.add_argument(
+        "--output-dir", type=str, default=None, help="Directory to save analysis"
+    )
+    parser.add_argument(
+        "--proxy-type",
+        choices=["none", "static", "residential", "auto"],
+        default="auto",
+        help="Proxy type to use",
+    )
+    parser.add_argument(
+        "--no-save-html", action="store_true", help="Do not save the full HTML"
+    )
+
     args = parser.parse_args()
-    
+
     inspect_page(args.url, args.output_dir, args.proxy_type, not args.no_save_html)
+
 
 if __name__ == "__main__":
     main()
