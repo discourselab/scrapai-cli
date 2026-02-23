@@ -97,6 +97,11 @@ class CloudflareBrowserClient:
                 sandbox=False  # Disable sandbox
             )
             logger.info(f"Started nodriver browser for Cloudflare bypass")
+
+            # Wait for browser to fully initialize before attempting navigation
+            logger.debug("Waiting for browser to fully initialize...")
+            await asyncio.sleep(2)
+            logger.debug("Browser initialization wait complete")
         except Exception as e:
             logger.error(f"Failed to start nodriver browser: {e}")
             raise
