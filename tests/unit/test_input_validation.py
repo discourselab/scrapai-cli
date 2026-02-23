@@ -20,7 +20,7 @@ class TestSpiderNameValidation:
             "name": "valid_spider_name",
             "source_url": "https://example.com",
             "allowed_domains": ["example.com"],
-            "start_urls": ["https://example.com/"]
+            "start_urls": ["https://example.com/"],
         }
         spider = SpiderConfigSchema(**config)
         assert spider.name == "valid_spider_name"
@@ -32,7 +32,7 @@ class TestSpiderNameValidation:
             "name": "spider-with-hyphens",
             "source_url": "https://example.com",
             "allowed_domains": ["example.com"],
-            "start_urls": ["https://example.com/"]
+            "start_urls": ["https://example.com/"],
         }
         spider = SpiderConfigSchema(**config)
         assert spider.name == "spider-with-hyphens"
@@ -44,7 +44,7 @@ class TestSpiderNameValidation:
             "name": "spider with spaces",
             "source_url": "https://example.com",
             "allowed_domains": ["example.com"],
-            "start_urls": ["https://example.com/"]
+            "start_urls": ["https://example.com/"],
         }
         with pytest.raises(ValidationError) as exc_info:
             SpiderConfigSchema(**config)
@@ -63,7 +63,7 @@ class TestSpiderNameValidation:
                 "name": name,
                 "source_url": "https://example.com",
                 "allowed_domains": ["example.com"],
-                "start_urls": ["https://example.com/"]
+                "start_urls": ["https://example.com/"],
             }
             with pytest.raises(ValidationError) as exc_info:
                 SpiderConfigSchema(**config)
@@ -77,15 +77,15 @@ class TestSpiderNameValidation:
         # These should be VALID (keyword is part of normal word)
         valid_names = [
             "news_update_spider",  # contains "update"
-            "article_selector",     # contains "select"
-            "data_insertion_bot",   # contains "insert"
+            "article_selector",  # contains "select"
+            "data_insertion_bot",  # contains "insert"
         ]
         for name in valid_names:
             config = {
                 "name": name,
                 "source_url": "https://example.com",
                 "allowed_domains": ["example.com"],
-                "start_urls": ["https://example.com/"]
+                "start_urls": ["https://example.com/"],
             }
             spider = SpiderConfigSchema(**config)
             assert spider.name == name
@@ -101,7 +101,7 @@ class TestURLValidation:
             "name": "test",
             "source_url": "https://example.com",
             "allowed_domains": ["example.com"],
-            "start_urls": ["https://example.com/page"]
+            "start_urls": ["https://example.com/page"],
         }
         spider = SpiderConfigSchema(**config)
         assert spider.source_url == "https://example.com"
@@ -113,7 +113,7 @@ class TestURLValidation:
             "name": "test",
             "source_url": "http://example.com",
             "allowed_domains": ["example.com"],
-            "start_urls": ["http://example.com/"]
+            "start_urls": ["http://example.com/"],
         }
         spider = SpiderConfigSchema(**config)
         assert spider.source_url == "http://example.com"
@@ -125,7 +125,7 @@ class TestURLValidation:
             "name": "test",
             "source_url": "file:///etc/passwd",
             "allowed_domains": ["example.com"],
-            "start_urls": ["https://example.com/"]
+            "start_urls": ["https://example.com/"],
         }
         with pytest.raises(ValidationError) as exc_info:
             SpiderConfigSchema(**config)
@@ -138,7 +138,7 @@ class TestURLValidation:
             "name": "test",
             "source_url": "ftp://example.com/file",
             "allowed_domains": ["example.com"],
-            "start_urls": ["https://example.com/"]
+            "start_urls": ["https://example.com/"],
         }
         with pytest.raises(ValidationError) as exc_info:
             SpiderConfigSchema(**config)
@@ -151,14 +151,14 @@ class TestURLValidation:
             "http://localhost/admin",
             "http://127.0.0.1/secret",
             "http://0.0.0.0/",
-            "http://[::1]/api"
+            "http://[::1]/api",
         ]
         for url in localhost_urls:
             config = {
                 "name": "test",
                 "source_url": url,
                 "allowed_domains": ["example.com"],
-                "start_urls": ["https://example.com/"]
+                "start_urls": ["https://example.com/"],
             }
             with pytest.raises(ValidationError) as exc_info:
                 SpiderConfigSchema(**config)
@@ -171,14 +171,14 @@ class TestURLValidation:
             "http://192.168.1.1/",
             "http://10.0.0.1/",
             "http://172.16.0.1/",
-            "http://169.254.169.254/metadata"  # AWS metadata endpoint
+            "http://169.254.169.254/metadata",  # AWS metadata endpoint
         ]
         for url in private_ips:
             config = {
                 "name": "test",
                 "source_url": "https://example.com",
                 "allowed_domains": ["example.com"],
-                "start_urls": [url]
+                "start_urls": [url],
             }
             with pytest.raises(ValidationError) as exc_info:
                 SpiderConfigSchema(**config)
@@ -195,7 +195,7 @@ class TestDomainValidation:
             "name": "test",
             "source_url": "https://example.com",
             "allowed_domains": ["example.com", "sub.example.com"],
-            "start_urls": ["https://example.com/"]
+            "start_urls": ["https://example.com/"],
         }
         spider = SpiderConfigSchema(**config)
         assert "example.com" in spider.allowed_domains
@@ -207,7 +207,7 @@ class TestDomainValidation:
             "name": "test",
             "source_url": "https://example.com",
             "allowed_domains": ["localhost"],
-            "start_urls": ["https://example.com/"]
+            "start_urls": ["https://example.com/"],
         }
         with pytest.raises(ValidationError) as exc_info:
             SpiderConfigSchema(**config)
@@ -227,7 +227,7 @@ class TestDomainValidation:
                 "name": "test",
                 "source_url": "https://example.com",
                 "allowed_domains": [domain],
-                "start_urls": ["https://example.com/"]
+                "start_urls": ["https://example.com/"],
             }
             with pytest.raises(ValidationError):
                 SpiderConfigSchema(**config)
@@ -240,10 +240,7 @@ class TestRuleValidation:
     def test_valid_rule(self):
         """Test that valid rules are accepted."""
         rule = SpiderRuleSchema(
-            allow=[r"/article/.*"],
-            deny=[r"/tag/.*"],
-            follow=True,
-            priority=100
+            allow=[r"/article/.*"], deny=[r"/tag/.*"], follow=True, priority=100
         )
         assert rule.follow is True
         assert rule.priority == 100
@@ -340,7 +337,7 @@ class TestCompleteSpiderValidation:
             "name": "minimal_spider",
             "source_url": "https://example.com",
             "allowed_domains": ["example.com"],
-            "start_urls": ["https://example.com/"]
+            "start_urls": ["https://example.com/"],
         }
         spider = SpiderConfigSchema(**config)
         assert spider.name == "minimal_spider"
@@ -360,14 +357,14 @@ class TestCompleteSpiderValidation:
                     "allow": [r"/article/.*"],
                     "deny": [r"/tag/.*"],
                     "follow": True,
-                    "priority": 100
+                    "priority": 100,
                 }
             ],
             "settings": {
                 "EXTRACTOR_ORDER": ["newspaper", "trafilatura"],
                 "CONCURRENT_REQUESTS": 8,
-                "DOWNLOAD_DELAY": 1.5
-            }
+                "DOWNLOAD_DELAY": 1.5,
+            },
         }
         spider = SpiderConfigSchema(**config)
         assert len(spider.rules) == 1
@@ -381,7 +378,7 @@ class TestCompleteSpiderValidation:
             "source_url": "https://example.com",
             "allowed_domains": ["example.com"],
             "start_urls": ["https://example.com/"],
-            "unexpected_field": "value"
+            "unexpected_field": "value",
         }
         with pytest.raises(ValidationError) as exc_info:
             SpiderConfigSchema(**config)

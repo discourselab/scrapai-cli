@@ -9,6 +9,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 def extract_urls_from_html(html_file: str, output_file: str = None) -> List[str]:
     """
     Extract all href URLs from an HTML file.
@@ -27,13 +28,13 @@ def extract_urls_from_html(html_file: str, output_file: str = None) -> List[str]
 
     logger.info(f"Reading HTML from {html_file}")
 
-    with open(html_path, 'r', encoding='utf-8') as f:
-        soup = BeautifulSoup(f, 'html.parser')
+    with open(html_path, "r", encoding="utf-8") as f:
+        soup = BeautifulSoup(f, "html.parser")
 
     # Extract all href attributes from <a> tags
     urls: Set[str] = set()
-    for a in soup.find_all('a', href=True):
-        href = a['href']
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
         if href:  # Skip empty hrefs
             urls.add(href)
 
@@ -47,8 +48,8 @@ def extract_urls_from_html(html_file: str, output_file: str = None) -> List[str]
         output_path = Path(output_file)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(sorted_urls))
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(sorted_urls))
 
         logger.info(f"Saved URLs to {output_file}")
 

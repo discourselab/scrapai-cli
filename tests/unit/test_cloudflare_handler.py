@@ -65,7 +65,7 @@ class TestCookieRefreshLogic:
             "test_spider": {
                 "cookies": {"cf_clearance": "test_token"},
                 "user_agent": "test_agent",
-                "timestamp": time.time()  # Fresh
+                "timestamp": time.time(),  # Fresh
             }
         }
 
@@ -86,7 +86,7 @@ class TestCookieRefreshLogic:
             "test_spider": {
                 "cookies": {"cf_clearance": "old_token"},
                 "user_agent": "test_agent",
-                "timestamp": time.time() - 660  # 11 minutes ago
+                "timestamp": time.time() - 660,  # 11 minutes ago
             }
         }
 
@@ -100,14 +100,16 @@ class TestCookieRefreshLogic:
         handler = CloudflareDownloadHandler({})
         spider = Mock()
         spider.name = "test_spider"
-        spider.custom_settings = {"CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 300}  # 5 min custom
+        spider.custom_settings = {
+            "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 300
+        }  # 5 min custom
 
         # Cookies 6 minutes old (should refresh with 5 min threshold)
         CloudflareDownloadHandler._cookie_cache = {
             "test_spider": {
                 "cookies": {"cf_clearance": "token"},
                 "user_agent": "agent",
-                "timestamp": time.time() - 360  # 6 minutes ago
+                "timestamp": time.time() - 360,  # 6 minutes ago
             }
         }
 
@@ -124,7 +126,7 @@ class TestBlockDetection:
         """Test detection of 'Checking your browser' message."""
         handler = CloudflareDownloadHandler({})
         # Must contain both "cloudflare" and "checking your browser"
-        html = '<html><body><h1>Cloudflare: Checking your browser before accessing...</h1></body></html>'
+        html = "<html><body><h1>Cloudflare: Checking your browser before accessing...</h1></body></html>"
 
         is_blocked = handler._is_blocked(html)
 
@@ -135,7 +137,7 @@ class TestBlockDetection:
         """Test detection of 'Just a moment' message."""
         handler = CloudflareDownloadHandler({})
         # Must contain both "cloudflare" and "just a moment"
-        html = '<html><body><div>Just a moment... Cloudflare</div></body></html>'
+        html = "<html><body><div>Just a moment... Cloudflare</div></body></html>"
 
         is_blocked = handler._is_blocked(html)
 
@@ -146,7 +148,11 @@ class TestBlockDetection:
         """Test that normal HTML is not flagged as blocked."""
         handler = CloudflareDownloadHandler({})
         # Long normal HTML without cloudflare indicators
-        html = '<html><body><h1>Welcome to our site</h1>' + '<p>Content here</p>' * 1000 + '</body></html>'
+        html = (
+            "<html><body><h1>Welcome to our site</h1>"
+            + "<p>Content here</p>" * 1000
+            + "</body></html>"
+        )
 
         is_blocked = handler._is_blocked(html)
 
@@ -156,7 +162,7 @@ class TestBlockDetection:
     def test_block_on_empty_html(self):
         """Test that empty HTML is flagged as blocked."""
         handler = CloudflareDownloadHandler({})
-        html = ''
+        html = ""
 
         is_blocked = handler._is_blocked(html)
 
@@ -177,8 +183,13 @@ class TestStrategySelection:
         request.url = "https://example.com"
 
         # Check which method gets called
-        with patch.object(handler, '_hybrid_fetch_sync', return_value=Mock()) as mock_hybrid:
-            with patch('twisted.internet.threads.deferToThread', side_effect=lambda f, *args: f(*args)):
+        with patch.object(
+            handler, "_hybrid_fetch_sync", return_value=Mock()
+        ) as mock_hybrid:
+            with patch(
+                "twisted.internet.threads.deferToThread",
+                side_effect=lambda f, *args: f(*args),
+            ):
                 handler.download_request(request, spider)
                 mock_hybrid.assert_called_once()
 
@@ -192,8 +203,13 @@ class TestStrategySelection:
         request.url = "https://example.com"
 
         # Check which method gets called
-        with patch.object(handler, '_browser_only_fetch_sync', return_value=Mock()) as mock_browser:
-            with patch('twisted.internet.threads.deferToThread', side_effect=lambda f, *args: f(*args)):
+        with patch.object(
+            handler, "_browser_only_fetch_sync", return_value=Mock()
+        ) as mock_browser:
+            with patch(
+                "twisted.internet.threads.deferToThread",
+                side_effect=lambda f, *args: f(*args),
+            ):
                 handler.download_request(request, spider)
                 mock_browser.assert_called_once()
 
@@ -213,7 +229,7 @@ class TestCookieCacheManagement:
         CloudflareDownloadHandler._cookie_cache[spider_name] = {
             "cookies": cookies,
             "user_agent": user_agent,
-            "timestamp": time.time()
+            "timestamp": time.time(),
         }
 
         cached = CloudflareDownloadHandler._cookie_cache.get(spider_name)
@@ -233,7 +249,7 @@ class TestCookieCacheManagement:
             spider_name: {
                 "cookies": {"cf_clearance": "token"},
                 "user_agent": "agent",
-                "timestamp": time.time()
+                "timestamp": time.time(),
             }
         }
 
@@ -250,18 +266,28 @@ class TestCookieCacheManagement:
             "spider1": {
                 "cookies": {"cf_clearance": "token1"},
                 "user_agent": "agent1",
-                "timestamp": time.time()
+                "timestamp": time.time(),
             },
             "spider2": {
                 "cookies": {"cf_clearance": "token2"},
                 "user_agent": "agent2",
-                "timestamp": time.time()
-            }
+                "timestamp": time.time(),
+            },
         }
 
         # Each spider has its own cookies
-        assert CloudflareDownloadHandler._cookie_cache["spider1"]["cookies"]["cf_clearance"] == "token1"
-        assert CloudflareDownloadHandler._cookie_cache["spider2"]["cookies"]["cf_clearance"] == "token2"
+        assert (
+            CloudflareDownloadHandler._cookie_cache["spider1"]["cookies"][
+                "cf_clearance"
+            ]
+            == "token1"
+        )
+        assert (
+            CloudflareDownloadHandler._cookie_cache["spider2"]["cookies"][
+                "cf_clearance"
+            ]
+            == "token2"
+        )
 
 
 class TestHybridFetchLogic:
@@ -282,12 +308,14 @@ class TestHybridFetchLogic:
             "test_spider": {
                 "cookies": {"cf_clearance": "valid_token"},
                 "user_agent": "Mozilla/5.0",
-                "timestamp": time.time()
+                "timestamp": time.time(),
             }
         }
 
         # Mock HTTP fetch to return non-blocked HTML
-        with patch.object(handler, '_fetch_with_http', new_callable=AsyncMock) as mock_http:
+        with patch.object(
+            handler, "_fetch_with_http", new_callable=AsyncMock
+        ) as mock_http:
             mock_http.return_value = "<html><body>Success</body></html>"
 
             html = await handler._hybrid_fetch_async(request, spider)
@@ -322,7 +350,7 @@ class TestErrorHandling:
         request.url = "https://example.com"
 
         # Mock browser fetch to return None (failure)
-        with patch.object(CloudflareDownloadHandler, '_run_async', return_value=None):
+        with patch.object(CloudflareDownloadHandler, "_run_async", return_value=None):
             with pytest.raises(Exception, match="Failed to fetch"):
                 handler._browser_only_fetch_sync(request, spider)
 
@@ -337,8 +365,13 @@ class TestErrorHandling:
         request.url = "https://example.com"
 
         # Mock: cookies needed, refresh succeeds, but cache still empty
-        with patch.object(handler, '_should_refresh_cookies', new_callable=AsyncMock, return_value=True):
-            with patch.object(handler, '_refresh_cookies', new_callable=AsyncMock):
+        with patch.object(
+            handler,
+            "_should_refresh_cookies",
+            new_callable=AsyncMock,
+            return_value=True,
+        ):
+            with patch.object(handler, "_refresh_cookies", new_callable=AsyncMock):
                 # Cache is empty after refresh (shouldn't happen, but test error handling)
                 CloudflareDownloadHandler._cookie_cache = {}
 

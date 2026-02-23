@@ -8,12 +8,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
     name = "database_spider"
 
     def __init__(self, spider_name=None, *args, **kwargs):
         if not spider_name:
-            spider_name = getattr(self.__class__, '_spider_name', None)
+            spider_name = getattr(self.__class__, "_spider_name", None)
         if not spider_name:
             raise ValueError("spider_name argument is required")
 
@@ -44,20 +45,22 @@ class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
         for r in db_rules:
             le_kwargs = {}
             if r.allow_patterns:
-                le_kwargs['allow'] = r.allow_patterns
+                le_kwargs["allow"] = r.allow_patterns
             if r.deny_patterns:
-                le_kwargs['deny'] = r.deny_patterns
+                le_kwargs["deny"] = r.deny_patterns
             if r.restrict_xpaths:
-                le_kwargs['restrict_xpaths'] = r.restrict_xpaths
+                le_kwargs["restrict_xpaths"] = r.restrict_xpaths
             if r.restrict_css:
-                le_kwargs['restrict_css'] = r.restrict_css
+                le_kwargs["restrict_css"] = r.restrict_css
 
             callback = None
             if r.callback:
                 if hasattr(self, r.callback):
                     callback = r.callback
                 else:
-                    self.logger.warning(f"Callback '{r.callback}' not found on spider, ignoring rule")
+                    self.logger.warning(
+                        f"Callback '{r.callback}' not found on spider, ignoring rule"
+                    )
                     continue
 
             self.rules.append(
@@ -80,5 +83,7 @@ class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
         return spider
 
     async def parse_article(self, response):
-        async for item in self._extract_article(response, source_label='database_spider'):
+        async for item in self._extract_article(
+            response, source_label="database_spider"
+        ):
             yield item

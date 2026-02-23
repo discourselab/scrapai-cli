@@ -90,7 +90,7 @@ def sample_spider_config(sample_project_name: str) -> dict:
         "name": "test_spider",
         "project": sample_project_name,
         "allowed_domains": ["example.com"],
-        "start_urls": ["https://example.com/"]
+        "start_urls": ["https://example.com/"],
     }
 
 
@@ -196,6 +196,7 @@ def mock_scrapy_response(mocker):
             spider = DatabaseSpider()
             results = list(spider.parse(response))
     """
+
     def _make_response(url: str, html: str):
         response = mocker.Mock()
         response.url = url
@@ -255,6 +256,7 @@ def reset_config(monkeypatch):
     """
     # Store original env vars
     import core.config as config_module
+
     original_data_dir = config_module.DATA_DIR
     original_log_level = config_module.LOG_LEVEL
 

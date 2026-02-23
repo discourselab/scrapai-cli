@@ -11,7 +11,7 @@ from core.extractors import (
     SmartExtractor,
     NewspaperExtractor,
     TrafilaturaExtractor,
-    CustomExtractor
+    CustomExtractor,
 )
 from core.schemas import ScrapedArticle
 
@@ -24,8 +24,7 @@ class TestNewspaperExtractor:
         """Test that Newspaper can process well-formed HTML without crashing."""
         extractor = NewspaperExtractor()
         result = extractor.extract(
-            url="https://example.com/article",
-            html=sample_html_simple
+            url="https://example.com/article", html=sample_html_simple
         )
 
         # Should return a result or None, not crash
@@ -38,10 +37,7 @@ class TestNewspaperExtractor:
     def test_handles_empty_html(self):
         """Test that extractor handles empty HTML gracefully."""
         extractor = NewspaperExtractor()
-        result = extractor.extract(
-            url="https://example.com/article",
-            html=""
-        )
+        result = extractor.extract(url="https://example.com/article", html="")
 
         # Should return None or raise, not crash unexpectedly
         assert result is None or isinstance(result, ScrapedArticle)
@@ -54,8 +50,7 @@ class TestNewspaperExtractor:
         # Should not raise unexpected exception
         try:
             result = extractor.extract(
-                url="https://example.com/article",
-                html=sample_html_malformed
+                url="https://example.com/article", html=sample_html_malformed
             )
             assert result is None or isinstance(result, ScrapedArticle)
         except ValueError:
@@ -71,8 +66,7 @@ class TestTrafilaturaExtractor:
         """Test Trafilatura extraction on clean HTML."""
         extractor = TrafilaturaExtractor()
         result = extractor.extract(
-            url="https://example.com/article",
-            html=sample_html_simple
+            url="https://example.com/article", html=sample_html_simple
         )
 
         assert result is None or isinstance(result, ScrapedArticle)
@@ -86,16 +80,17 @@ class TestCustomExtractor:
     @pytest.mark.unit
     def test_extracts_with_custom_selectors(self, sample_html_complex):
         """Test extraction using custom CSS selectors."""
-        extractor = CustomExtractor(selectors={
-            "title": "h1.article-title-custom",
-            "content": "div.article-text",
-            "author": "span.author-name",
-            "date": "span.publish-date"
-        })
+        extractor = CustomExtractor(
+            selectors={
+                "title": "h1.article-title-custom",
+                "content": "div.article-text",
+                "author": "span.author-name",
+                "date": "span.publish-date",
+            }
+        )
 
         result = extractor.extract(
-            url="https://example.com/article",
-            html=sample_html_complex
+            url="https://example.com/article", html=sample_html_complex
         )
 
         # May return None if content too short for validation
@@ -104,14 +99,15 @@ class TestCustomExtractor:
     @pytest.mark.unit
     def test_returns_none_when_selectors_dont_match(self, sample_html_simple):
         """Test behavior when CSS selectors don't match."""
-        extractor = CustomExtractor(selectors={
-            "title": "h1.nonexistent-class",
-            "content": "div.nonexistent-content"
-        })
+        extractor = CustomExtractor(
+            selectors={
+                "title": "h1.nonexistent-class",
+                "content": "div.nonexistent-content",
+            }
+        )
 
         result = extractor.extract(
-            url="https://example.com/article",
-            html=sample_html_simple
+            url="https://example.com/article", html=sample_html_simple
         )
 
         # Should handle gracefully - return None
@@ -124,13 +120,10 @@ class TestSmartExtractor:
     @pytest.mark.unit
     async def test_tries_strategies_in_order(self, sample_html_simple):
         """Test that SmartExtractor tries each strategy in sequence."""
-        extractor = SmartExtractor(
-            strategies=["newspaper", "trafilatura"]
-        )
+        extractor = SmartExtractor(strategies=["newspaper", "trafilatura"])
 
         result = await extractor.extract(
-            url="https://example.com/article",
-            html=sample_html_simple
+            url="https://example.com/article", html=sample_html_simple
         )
 
         # Should get a result from one of the strategies
@@ -149,10 +142,7 @@ class TestExtractorRobustness:
 
         # Should never raise an unexpected exception
         try:
-            result = extractor.extract(
-                url="https://example.com/test",
-                html=html
-            )
+            result = extractor.extract(url="https://example.com/test", html=html)
             # Result can be None or valid ScrapedArticle
             assert result is None or isinstance(result, ScrapedArticle)
         except (ValueError, Exception) as e:
@@ -169,10 +159,7 @@ class TestExtractorRobustness:
         extractor = TrafilaturaExtractor()
 
         try:
-            result = extractor.extract(
-                url="https://example.com/test",
-                html=html
-            )
+            result = extractor.extract(url="https://example.com/test", html=html)
             assert result is None or isinstance(result, ScrapedArticle)
         except (ValueError, Exception) as e:
             if "Content too short" not in str(e) and "Title too short" not in str(e):
