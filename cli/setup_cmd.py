@@ -6,22 +6,24 @@ from pathlib import Path
 
 
 @click.command(context_settings=dict(ignore_unknown_options=True))
-@click.argument('args', nargs=-1, type=click.UNPROCESSED)
+@click.argument("args", nargs=-1, type=click.UNPROCESSED)
 def setup(args):
     """Setup virtual environment and database"""
-    skip_deps = '--skip-deps' in args
+    skip_deps = "--skip-deps" in args
 
     click.echo("🚀 Setting up ScrapAI environment...")
 
     script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    venv_path = Path('.venv')
-    venv_python = venv_path / 'bin' / 'python'
+    venv_path = Path(".venv")
+    venv_python = venv_path / "bin" / "python"
 
     if not skip_deps:
         if not venv_path.exists():
             click.echo("📦 Creating virtual environment...")
             try:
-                subprocess.run([sys.executable, '-m', 'venv', '.venv'], check=True, cwd=script_dir)
+                subprocess.run(
+                    [sys.executable, "-m", "venv", ".venv"], check=True, cwd=script_dir
+                )
                 click.echo("✅ Virtual environment created")
             except subprocess.CalledProcessError as e:
                 click.echo(f"❌ Failed to create virtual environment: {e}")
@@ -29,19 +31,38 @@ def setup(args):
         else:
             click.echo("✅ Virtual environment already exists")
 
-        requirements_path = Path('requirements.txt')
+        requirements_path = Path("requirements.txt")
         if requirements_path.exists():
             click.echo("📋 Installing requirements...")
             try:
-                subprocess.run([str(venv_python), '-m', 'pip', 'install', '--upgrade', 'pip'],
-                             check=True, cwd=script_dir, capture_output=True)
-                subprocess.run([str(venv_python), '-m', 'pip', 'install', '-r', 'requirements.txt'],
-                             check=True, cwd=script_dir, capture_output=True)
+                subprocess.run(
+                    [str(venv_python), "-m", "pip", "install", "--upgrade", "pip"],
+                    check=True,
+                    cwd=script_dir,
+                    capture_output=True,
+                )
+                subprocess.run(
+                    [
+                        str(venv_python),
+                        "-m",
+                        "pip",
+                        "install",
+                        "-r",
+                        "requirements.txt",
+                    ],
+                    check=True,
+                    cwd=script_dir,
+                    capture_output=True,
+                )
                 click.echo("✅ Requirements installed")
 
                 click.echo("🌐 Installing Playwright browsers...")
-                subprocess.run([str(venv_python), '-m', 'playwright', 'install'],
-                             check=True, cwd=script_dir, capture_output=True)
+                subprocess.run(
+                    [str(venv_python), "-m", "playwright", "install"],
+                    check=True,
+                    cwd=script_dir,
+                    capture_output=True,
+                )
                 click.echo("✅ Playwright browsers installed")
             except subprocess.CalledProcessError as e:
                 click.echo(f"❌ Failed to install requirements: {e}")
@@ -49,12 +70,13 @@ def setup(args):
         else:
             click.echo("⚠️  requirements.txt not found")
 
-    env_file = Path('.env')
-    env_example = Path('.env.example')
+    env_file = Path(".env")
+    env_example = Path(".env.example")
     if not env_file.exists() and env_example.exists():
         click.echo("📝 Creating .env from .env.example...")
         try:
             import shutil
+
             shutil.copy(env_example, env_file)
             click.echo("✅ .env file created (using SQLite by default)")
         except Exception as e:
@@ -64,12 +86,15 @@ def setup(args):
     click.echo("📁 Checking data directory permissions...")
     try:
         from dotenv import load_dotenv
+
         load_dotenv()
-        data_dir = Path(os.getenv('DATA_DIR', './data'))
+        data_dir = Path(os.getenv("DATA_DIR", "./data"))
         data_dir.mkdir(parents=True, exist_ok=True)
 
-        test_file = data_dir / 'welcome.md'
-        test_file.write_text('# Welcome to ScrapAI\n\nThis directory stores your crawl data.')
+        test_file = data_dir / "welcome.md"
+        test_file.write_text(
+            "# Welcome to ScrapAI\n\nThis directory stores your crawl data."
+        )
         click.echo(f"✅ Have permission to write to data directory: {data_dir}")
     except Exception as e:
         click.echo(f"❌ Don't have permission to write to data directory: {data_dir}")
@@ -80,42 +105,67 @@ def setup(args):
     click.echo("🗄️  Initializing database...")
     try:
         result = subprocess.run(
-            [str(venv_python), '-m', 'alembic', 'upgrade', 'head'],
-            capture_output=True, text=True, cwd=script_dir
+            [str(venv_python), "-m", "alembic", "upgrade", "head"],
+            capture_output=True,
+            text=True,
+            cwd=script_dir,
         )
         if result.returncode == 0:
             click.echo("✅ Database initialized with migrations")
         else:
             click.echo(f"❌ Database migrations failed")
             click.echo(f"   Error: {result.stderr}")
-            click.echo(f"   Please check your DATABASE_URL in .env and database permissions")
+            click.echo(
+                f"   Please check your DATABASE_URL in .env and database permissions"
+            )
             sys.exit(1)
     except Exception as e:
         click.echo(f"❌ Database setup failed: {e}")
         sys.exit(1)
 
-    claude_home = Path.home() / '.claude'
+    claude_home = Path.home() / ".claude"
     if claude_home.exists():
         click.echo("🔧 Configuring Claude Code permissions...")
         try:
             import json
-            settings_dir = Path('.claude')
+
+            settings_dir = Path(".claude")
             settings_dir.mkdir(exist_ok=True)
-            settings_file = settings_dir / 'settings.local.json'
+            settings_file = settings_dir / "settings.local.json"
 
             new_allow = [
-                "Read", "Write", "Edit", "Update", "Glob", "Grep",
-                "Bash(./scrapai:*)", "Bash(source:*)", "Bash(sqlite3:*)", "Bash(psql:*)"
+                "Read",
+                "Write",
+                "Edit",
+                "Update",
+                "Glob",
+                "Grep",
+                "Bash(./scrapai:*)",
+                "Bash(source:*)",
+                "Bash(sqlite3:*)",
+                "Bash(psql:*)",
             ]
             new_deny = [
-                "Edit(scrapai)", "Update(scrapai)", "Edit(.claude/*)", "Update(.claude/*)",
-                "Write(**/*.py)", "Edit(**/*.py)", "Update(**/*.py)", "MultiEdit(**/*.py)",
-                "Write(.env)", "Write(secrets/**)", "Write(config/**/*.key)",
-                "Write(**/*password*)", "Write(**/*secret*)", "WebFetch", "WebSearch", "Bash(rm:*)"
+                "Edit(scrapai)",
+                "Update(scrapai)",
+                "Edit(.claude/*)",
+                "Update(.claude/*)",
+                "Write(**/*.py)",
+                "Edit(**/*.py)",
+                "Update(**/*.py)",
+                "MultiEdit(**/*.py)",
+                "Write(.env)",
+                "Write(secrets/**)",
+                "Write(config/**/*.key)",
+                "Write(**/*password*)",
+                "Write(**/*secret*)",
+                "WebFetch",
+                "WebSearch",
+                "Bash(rm:*)",
             ]
 
             if settings_file.exists():
-                with open(settings_file, 'r') as f:
+                with open(settings_file, "r") as f:
                     settings = json.load(f)
             else:
                 settings = {"permissions": {}}
@@ -135,7 +185,7 @@ def setup(args):
                     existing_deny.append(item)
             settings["permissions"]["deny"] = existing_deny
 
-            with open(settings_file, 'w') as f:
+            with open(settings_file, "w") as f:
                 json.dump(settings, f, indent=2)
 
             click.echo("✅ Claude Code permissions configured")
@@ -156,8 +206,8 @@ def verify():
 
     all_good = True
     script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    venv_path = Path('.venv')
-    venv_python = venv_path / 'bin' / 'python'
+    venv_path = Path(".venv")
+    venv_python = venv_path / "bin" / "python"
 
     if not venv_path.exists():
         click.echo("❌ Virtual environment not found")
@@ -168,10 +218,16 @@ def verify():
 
         try:
             result = subprocess.run(
-                [str(venv_python), '-c', 'import scrapy, sqlalchemy, alembic; print("ok")'],
-                capture_output=True, text=True, cwd=script_dir
+                [
+                    str(venv_python),
+                    "-c",
+                    'import scrapy, sqlalchemy, alembic; print("ok")',
+                ],
+                capture_output=True,
+                text=True,
+                cwd=script_dir,
             )
-            if result.returncode == 0 and 'ok' in result.stdout:
+            if result.returncode == 0 and "ok" in result.stdout:
                 click.echo("✅ Core dependencies installed")
             else:
                 click.echo("❌ Missing dependencies")
@@ -185,11 +241,13 @@ def verify():
     if all_good:
         try:
             result = subprocess.run(
-                [str(venv_python), '-m', 'alembic', 'current'],
-                capture_output=True, text=True, cwd=script_dir
+                [str(venv_python), "-m", "alembic", "current"],
+                capture_output=True,
+                text=True,
+                cwd=script_dir,
             )
             if result.returncode == 0:
-                if 'head' in result.stdout or result.stdout.strip():
+                if "head" in result.stdout or result.stdout.strip():
                     click.echo("✅ Database initialized")
                 else:
                     click.echo("❌ Database not initialized")
@@ -209,7 +267,9 @@ def verify():
         click.echo("🎉 Environment is ready!")
         click.echo("📝 You can now:")
         click.echo("   • List spiders: ./scrapai spiders list --project <name>")
-        click.echo("   • Import spiders: ./scrapai spiders import <file> --project <name>")
+        click.echo(
+            "   • Import spiders: ./scrapai spiders import <file> --project <name>"
+        )
         click.echo("   • Run crawls: ./scrapai crawl <spider_name> --project <name>")
     else:
         click.echo("⚠️  Environment setup incomplete")

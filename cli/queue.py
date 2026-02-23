@@ -13,11 +13,19 @@ def queue():
     pass
 
 
-@queue.command('add')
-@click.argument('url')
-@click.option('-m', '--message', 'custom_instruction', default=None, help='Custom instruction for processing')
-@click.option('--priority', type=int, default=5, help='Priority (higher = sooner, default: 5)')
-@click.option('--project', default='default', help='Project name (default: default)')
+@queue.command("add")
+@click.argument("url")
+@click.option(
+    "-m",
+    "--message",
+    "custom_instruction",
+    default=None,
+    help="Custom instruction for processing",
+)
+@click.option(
+    "--priority", type=int, default=5, help="Priority (higher = sooner, default: 5)"
+)
+@click.option("--project", default="default", help="Project name (default: default)")
 def add(url, custom_instruction, priority, project):
     """Add website to queue"""
     from core.db import get_db
@@ -25,13 +33,19 @@ def add(url, custom_instruction, priority, project):
 
     db = next(get_db())
 
-    existing = db.query(CrawlQueue).filter(
-        CrawlQueue.project_name == project,
-        CrawlQueue.website_url == url
-    ).first()
+    existing = (
+        db.query(CrawlQueue)
+        .filter(CrawlQueue.project_name == project, CrawlQueue.website_url == url)
+        .first()
+    )
 
     if existing:
-        status_emoji = {'pending': '⏳', 'processing': '🔄', 'completed': '✅', 'failed': '❌'}.get(existing.status, '❓')
+        status_emoji = {
+            "pending": "⏳",
+            "processing": "🔄",
+            "completed": "✅",
+            "failed": "❌",
+        }.get(existing.status, "❓")
         click.echo(f"⚠️  URL already exists in queue")
         click.echo(f"   {status_emoji} ID: {existing.id}")
         click.echo(f"   Status: {existing.status}")
@@ -43,7 +57,7 @@ def add(url, custom_instruction, priority, project):
         project_name=project,
         website_url=url,
         custom_instruction=custom_instruction,
-        priority=priority
+        priority=priority,
     )
     db.add(queue_item)
     db.commit()
@@ -56,12 +70,14 @@ def add(url, custom_instruction, priority, project):
         click.echo(f"   Instructions: {custom_instruction}")
 
 
-@queue.command('list')
-@click.option('--project', default='default', help='Project name (default: default)')
-@click.option('--status', default=None, help='Filter by status')
-@click.option('--limit', type=int, default=5, help='Limit items shown (default: 5)')
-@click.option('--all', 'show_all', is_flag=True, help='Show all items including failed/completed')
-@click.option('--count', is_flag=True, help='Show only the count')
+@queue.command("list")
+@click.option("--project", default="default", help="Project name (default: default)")
+@click.option("--status", default=None, help="Filter by status")
+@click.option("--limit", type=int, default=5, help="Limit items shown (default: 5)")
+@click.option(
+    "--all", "show_all", is_flag=True, help="Show all items including failed/completed"
+)
+@click.option("--count", is_flag=True, help="Show only the count")
 def list_queue(project, status, limit, show_all, count):
     """List queue items"""
     from core.db import get_db
@@ -73,7 +89,7 @@ def list_queue(project, status, limit, show_all, count):
     if status:
         query = query.filter(CrawlQueue.status == status)
     elif not show_all:
-        query = query.filter(CrawlQueue.status.in_(['pending', 'processing']))
+        query = query.filter(CrawlQueue.status.in_(["pending", "processing"]))
 
     if count:
         click.echo(f"{query.count()}")
@@ -94,13 +110,22 @@ def list_queue(project, status, limit, show_all, count):
     click.echo()
 
     for item in items:
-        status_emoji = {'pending': '⏳', 'processing': '🔄', 'completed': '✅', 'failed': '❌'}.get(item.status, '❓')
+        status_emoji = {
+            "pending": "⏳",
+            "processing": "🔄",
+            "completed": "✅",
+            "failed": "❌",
+        }.get(item.status, "❓")
         click.echo(f"{status_emoji} [{item.id}] {item.website_url}")
         click.echo(f"   Status: {item.status} | Priority: {item.priority}")
         if item.custom_instruction:
             click.echo(f"   Instructions: {item.custom_instruction}")
         if item.processing_by:
-            locked_time = item.locked_at.strftime('%Y-%m-%d %H:%M') if item.locked_at else 'Unknown'
+            locked_time = (
+                item.locked_at.strftime("%Y-%m-%d %H:%M")
+                if item.locked_at
+                else "Unknown"
+            )
             click.echo(f"   Processing by: {item.processing_by} (since {locked_time})")
         if item.error_message:
             click.echo(f"   Error: {item.error_message}")
@@ -109,8 +134,8 @@ def list_queue(project, status, limit, show_all, count):
         click.echo()
 
 
-@queue.command('next')
-@click.option('--project', default='default', help='Project name (default: default)')
+@queue.command("next")
+@click.option("--project", default="default", help="Project name (default: default)")
 def next_item(project):
     """Get next item from queue (atomic claim)"""
     from core.db import get_db, is_postgres
@@ -120,7 +145,8 @@ def next_item(project):
     processing_by = f"{getpass.getuser()}@{socket.gethostname()}"
 
     if is_postgres():
-        result = db.execute(text("""
+        result = db.execute(
+            text("""
             UPDATE crawl_queue
             SET status = 'processing', processing_by = :processing_by,
                 locked_at = NOW(), updated_at = NOW()
@@ -131,9 +157,12 @@ def next_item(project):
                 FOR UPDATE SKIP LOCKED
             )
             RETURNING id, website_url, custom_instruction, priority
-        """), {'processing_by': processing_by, 'project_name': project})
+        """),
+            {"processing_by": processing_by, "project_name": project},
+        )
     else:
-        result = db.execute(text("""
+        result = db.execute(
+            text("""
             UPDATE crawl_queue
             SET status = 'processing', processing_by = :processing_by,
                 locked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
@@ -143,7 +172,9 @@ def next_item(project):
                 ORDER BY priority DESC, created_at ASC LIMIT 1
             ) AND status = 'pending'
             RETURNING id, website_url, custom_instruction, priority
-        """), {'processing_by': processing_by, 'project_name': project})
+        """),
+            {"processing_by": processing_by, "project_name": project},
+        )
 
     row = result.fetchone()
     db.commit()
@@ -160,8 +191,8 @@ def next_item(project):
         click.echo(f"📭 No pending items in queue for project '{project}'")
 
 
-@queue.command('complete')
-@click.argument('id', type=int)
+@queue.command("complete")
+@click.argument("id", type=int)
 def complete(id):
     """Mark item as completed"""
     from core.db import get_db
@@ -175,7 +206,7 @@ def complete(id):
         return
 
     now = datetime.now(timezone.utc)
-    item.status = 'completed'
+    item.status = "completed"
     item.completed_at = now
     item.updated_at = now
     db.commit()
@@ -184,9 +215,9 @@ def complete(id):
     click.echo(f"   URL: {item.website_url}")
 
 
-@queue.command('fail')
-@click.argument('id', type=int)
-@click.option('-m', '--message', 'error_message', default=None, help='Error message')
+@queue.command("fail")
+@click.argument("id", type=int)
+@click.option("-m", "--message", "error_message", default=None, help="Error message")
 def fail(id, error_message):
     """Mark item as failed"""
     from core.db import get_db
@@ -199,7 +230,7 @@ def fail(id, error_message):
         click.echo(f"❌ Queue item {id} not found")
         return
 
-    item.status = 'failed'
+    item.status = "failed"
     item.error_message = error_message
     item.updated_at = datetime.now(timezone.utc)
     db.commit()
@@ -210,8 +241,8 @@ def fail(id, error_message):
         click.echo(f"   Error: {error_message}")
 
 
-@queue.command('retry')
-@click.argument('id', type=int)
+@queue.command("retry")
+@click.argument("id", type=int)
 def retry(id):
     """Retry a failed item"""
     from core.db import get_db
@@ -224,7 +255,7 @@ def retry(id):
         click.echo(f"❌ Queue item {id} not found")
         return
 
-    item.status = 'pending'
+    item.status = "pending"
     item.retry_count += 1
     item.error_message = None
     item.processing_by = None
@@ -236,8 +267,8 @@ def retry(id):
     click.echo(f"   URL: {item.website_url}")
 
 
-@queue.command('remove')
-@click.argument('id', type=int)
+@queue.command("remove")
+@click.argument("id", type=int)
 def remove(id):
     """Remove item from queue"""
     from core.db import get_db
@@ -258,12 +289,14 @@ def remove(id):
     click.echo(f"   URL: {url}")
 
 
-@queue.command('cleanup')
-@click.option('--completed', is_flag=True, help='Remove all completed items')
-@click.option('--failed', is_flag=True, help='Remove all failed items')
-@click.option('--all', 'clean_all', is_flag=True, help='Remove all completed and failed items')
-@click.option('--project', default='default', help='Project name (default: default)')
-@click.option('--force', '-f', is_flag=True, help='Skip confirmation prompt')
+@queue.command("cleanup")
+@click.option("--completed", is_flag=True, help="Remove all completed items")
+@click.option("--failed", is_flag=True, help="Remove all failed items")
+@click.option(
+    "--all", "clean_all", is_flag=True, help="Remove all completed and failed items"
+)
+@click.option("--project", default="default", help="Project name (default: default)")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation prompt")
 def cleanup(completed, failed, clean_all, project, force):
     """Bulk cleanup queue items"""
     from core.db import get_db
@@ -273,11 +306,11 @@ def cleanup(completed, failed, clean_all, project, force):
     query = db.query(CrawlQueue).filter(CrawlQueue.project_name == project)
 
     if clean_all:
-        query = query.filter(CrawlQueue.status.in_(['completed', 'failed']))
+        query = query.filter(CrawlQueue.status.in_(["completed", "failed"]))
     elif completed:
-        query = query.filter(CrawlQueue.status == 'completed')
+        query = query.filter(CrawlQueue.status == "completed")
     elif failed:
-        query = query.filter(CrawlQueue.status == 'failed')
+        query = query.filter(CrawlQueue.status == "failed")
     else:
         click.echo("❌ Please specify --completed, --failed, or --all")
         return
@@ -285,20 +318,24 @@ def cleanup(completed, failed, clean_all, project, force):
     items = query.all()
 
     if not items:
-        status_filter = "all completed and failed" if clean_all else ("completed" if completed else "failed")
+        status_filter = (
+            "all completed and failed"
+            if clean_all
+            else ("completed" if completed else "failed")
+        )
         click.echo(f"📋 No {status_filter} items to cleanup in project '{project}'")
         return
 
     click.echo(f"🗑️  Found {len(items)} items to remove:")
     for item in items[:5]:
-        status_emoji = '✅' if item.status == 'completed' else '❌'
+        status_emoji = "✅" if item.status == "completed" else "❌"
         click.echo(f"   {status_emoji} [{item.id}] {item.website_url}")
     if len(items) > 5:
         click.echo(f"   ... and {len(items) - 5} more")
 
     if not force:
         confirm = input(f"\nRemove {len(items)} items? (y/N): ")
-        if confirm.lower() != 'y':
+        if confirm.lower() != "y":
             click.echo("❌ Cleanup cancelled")
             return
 
@@ -309,10 +346,10 @@ def cleanup(completed, failed, clean_all, project, force):
     click.echo(f"✅ Removed {len(items)} items from queue")
 
 
-@queue.command('bulk')
-@click.argument('file')
-@click.option('--project', default='default', help='Project name (default: default)')
-@click.option('--priority', type=int, default=5, help='Default priority (default: 5)')
+@queue.command("bulk")
+@click.argument("file")
+@click.option("--project", default="default", help="Project name (default: default)")
+@click.option("--priority", type=int, default=5, help="Default priority (default: 5)")
 def bulk(file, project, priority):
     """Bulk add URLs from JSON or CSV file"""
     from core.db import get_db
@@ -322,19 +359,19 @@ def bulk(file, project, priority):
     file_path = Path(file)
 
     try:
-        if file_path.suffix.lower() == '.csv':
-            with open(file, 'r', encoding='utf-8') as f:
+        if file_path.suffix.lower() == ".csv":
+            with open(file, "r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
                 data = list(reader)
                 if not data:
                     click.echo("❌ CSV file is empty")
                     return
-                if 'url' not in data[0]:
+                if "url" not in data[0]:
                     click.echo("❌ CSV file must have a 'url' column")
                     click.echo("   See templates/queue-template.csv for example format")
                     return
-        elif file_path.suffix.lower() == '.json':
-            with open(file, 'r', encoding='utf-8') as f:
+        elif file_path.suffix.lower() == ".json":
+            with open(file, "r", encoding="utf-8") as f:
                 data = json.load(f)
             if not isinstance(data, list):
                 click.echo("❌ JSON file must contain an array of objects")
@@ -360,23 +397,24 @@ def bulk(file, project, priority):
     skipped = 0
 
     for item in data:
-        url = item.get('url')
+        url = item.get("url")
         if not url:
             click.echo(f"⚠️  Skipping item without URL: {item}")
             skipped += 1
             continue
 
-        existing = db.query(CrawlQueue).filter(
-            CrawlQueue.project_name == project,
-            CrawlQueue.website_url == url
-        ).first()
+        existing = (
+            db.query(CrawlQueue)
+            .filter(CrawlQueue.project_name == project, CrawlQueue.website_url == url)
+            .first()
+        )
 
         if existing:
             skipped += 1
             continue
 
-        custom_instruction = item.get('custom_instruction')
-        item_priority = item.get('priority')
+        custom_instruction = item.get("custom_instruction")
+        item_priority = item.get("priority")
         if item_priority is not None:
             try:
                 item_priority = int(item_priority)
@@ -389,7 +427,7 @@ def bulk(file, project, priority):
             project_name=project,
             website_url=url,
             custom_instruction=custom_instruction,
-            priority=item_priority
+            priority=item_priority,
         )
         db.add(queue_item)
         added += 1

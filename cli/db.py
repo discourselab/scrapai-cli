@@ -7,13 +7,15 @@ import os
 def is_postgresql():
     """Check if database is PostgreSQL"""
     from core.db import engine
-    return 'postgresql' in str(engine.url)
+
+    return "postgresql" in str(engine.url)
 
 
 def is_sqlite():
     """Check if database is SQLite"""
     from core.db import engine
-    return 'sqlite' in str(engine.url)
+
+    return "sqlite" in str(engine.url)
 
 
 @click.group()
@@ -22,14 +24,15 @@ def db():
     pass
 
 
-@db.command('migrate')
+@db.command("migrate")
 def migrate():
     """Run database migrations"""
     click.echo("🔄 Running database migrations...")
     try:
-        result = subprocess.run([
-            sys.executable, '-m', 'alembic', 'upgrade', 'head'
-        ], cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", "head"],
+            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        )
         if result.returncode == 0:
             click.echo("✅ Migrations completed successfully!")
         else:
@@ -38,18 +41,19 @@ def migrate():
         click.echo(f"❌ Error running migrations: {e}")
 
 
-@db.command('current')
+@db.command("current")
 def current():
     """Show current migration revision"""
     try:
-        subprocess.run([
-            sys.executable, '-m', 'alembic', 'current'
-        ], cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        subprocess.run(
+            [sys.executable, "-m", "alembic", "current"],
+            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        )
     except Exception as e:
         click.echo(f"❌ Error checking current revision: {e}")
 
 
-@db.command('stats')
+@db.command("stats")
 def stats():
     """Show database statistics (counts of spiders, items, queue)"""
     from core.db import get_db
@@ -60,14 +64,24 @@ def stats():
         # Get counts
         spider_count = db.execute("SELECT COUNT(*) FROM spiders").scalar()
         item_count = db.execute("SELECT COUNT(*) FROM scraped_items").scalar()
-        project_count = db.execute("SELECT COUNT(DISTINCT project) FROM spiders WHERE project IS NOT NULL").scalar()
+        project_count = db.execute(
+            "SELECT COUNT(DISTINCT project) FROM spiders WHERE project IS NOT NULL"
+        ).scalar()
 
         # Queue breakdown
         queue_total = db.execute("SELECT COUNT(*) FROM crawl_queue").scalar()
-        queue_pending = db.execute("SELECT COUNT(*) FROM crawl_queue WHERE status = 'pending'").scalar()
-        queue_processing = db.execute("SELECT COUNT(*) FROM crawl_queue WHERE status = 'processing'").scalar()
-        queue_completed = db.execute("SELECT COUNT(*) FROM crawl_queue WHERE status = 'completed'").scalar()
-        queue_failed = db.execute("SELECT COUNT(*) FROM crawl_queue WHERE status = 'failed'").scalar()
+        queue_pending = db.execute(
+            "SELECT COUNT(*) FROM crawl_queue WHERE status = 'pending'"
+        ).scalar()
+        queue_processing = db.execute(
+            "SELECT COUNT(*) FROM crawl_queue WHERE status = 'processing'"
+        ).scalar()
+        queue_completed = db.execute(
+            "SELECT COUNT(*) FROM crawl_queue WHERE status = 'completed'"
+        ).scalar()
+        queue_failed = db.execute(
+            "SELECT COUNT(*) FROM crawl_queue WHERE status = 'failed'"
+        ).scalar()
 
         click.echo("📊 Database Statistics\n")
         click.echo(f"   Spiders: {spider_count:,}")
@@ -84,7 +98,7 @@ def stats():
         click.echo(f"❌ Failed to get statistics: {e}")
 
 
-@db.command('tables')
+@db.command("tables")
 def tables():
     """List all tables with row counts"""
     from core.db import get_db
@@ -130,8 +144,8 @@ def tables():
         click.echo(f"❌ Failed to list tables: {e}")
 
 
-@db.command('inspect')
-@click.argument('table')
+@db.command("inspect")
+@click.argument("table")
 def inspect(table):
     """Show schema for a specific table
 
@@ -193,7 +207,9 @@ def inspect(table):
                 null_str = "NO" if not_null else "YES"
                 default_str = str(default) if default else ""
 
-                click.echo(f"{col_name:20}  {data_type:18}  {null_str:8}  {default_str}")
+                click.echo(
+                    f"{col_name:20}  {data_type:18}  {null_str:8}  {default_str}"
+                )
 
         # Show row count
         count = db.execute(f"SELECT COUNT(*) FROM {table}").scalar()
@@ -203,9 +219,14 @@ def inspect(table):
         click.echo(f"❌ Failed to inspect table '{table}': {e}")
 
 
-@db.command('query')
-@click.argument('sql')
-@click.option('--format', type=click.Choice(['table', 'json', 'csv']), default='table', help='Output format')
+@db.command("query")
+@click.argument("sql")
+@click.option(
+    "--format",
+    type=click.Choice(["table", "json", "csv"]),
+    default="table",
+    help="Output format",
+)
 def query(sql, format):
     """Execute a read-only SQL query against the database.
 
@@ -220,7 +241,7 @@ def query(sql, format):
 
     # Safety check - only allow SELECT queries
     sql_upper = sql.strip().upper()
-    if not sql_upper.startswith('SELECT'):
+    if not sql_upper.startswith("SELECT"):
         click.echo("❌ Only SELECT queries are allowed")
         click.echo("   This is a read-only query command for safety")
         return
@@ -234,18 +255,18 @@ def query(sql, format):
             click.echo("(no results)")
             return
 
-        if format == 'json':
+        if format == "json":
             # Convert to list of dicts
             columns = result.keys()
             output = [dict(zip(columns, row)) for row in rows]
             click.echo(json_lib.dumps(output, indent=2, default=str))
 
-        elif format == 'csv':
+        elif format == "csv":
             # CSV output
             columns = result.keys()
-            click.echo(','.join(columns))
+            click.echo(",".join(columns))
             for row in rows:
-                click.echo(','.join(str(v) for v in row))
+                click.echo(",".join(str(v) for v in row))
 
         else:  # table format (default)
             # Simple table output
@@ -258,13 +279,19 @@ def query(sql, format):
                     col_widths[i] = max(col_widths[i], len(str(val)))
 
             # Print header
-            header = ' | '.join(str(col).ljust(width) for col, width in zip(columns, col_widths))
+            header = " | ".join(
+                str(col).ljust(width) for col, width in zip(columns, col_widths)
+            )
             click.echo(header)
-            click.echo('-' * len(header))
+            click.echo("-" * len(header))
 
             # Print rows
             for row in rows:
-                click.echo(' | '.join(str(val).ljust(width) for val, width in zip(row, col_widths)))
+                click.echo(
+                    " | ".join(
+                        str(val).ljust(width) for val, width in zip(row, col_widths)
+                    )
+                )
 
             click.echo(f"\n({len(rows)} rows)")
 
@@ -272,9 +299,13 @@ def query(sql, format):
         click.echo(f"❌ Query failed: {e}")
 
 
-@db.command('transfer')
-@click.argument('source_url')
-@click.option('--skip-items', is_flag=True, help='Skip scraped_items (transfer only spiders and queue)')
+@db.command("transfer")
+@click.argument("source_url")
+@click.option(
+    "--skip-items",
+    is_flag=True,
+    help="Skip scraped_items (transfer only spiders and queue)",
+)
 def transfer(source_url, skip_items):
     """Transfer data from another database into the current one.
 
@@ -318,28 +349,42 @@ def transfer(source_url, skip_items):
         spider_id_map = {}
         for s in spiders:
             new_spider = Spider(
-                name=s.name, allowed_domains=s.allowed_domains,
-                start_urls=s.start_urls, source_url=s.source_url,
-                active=s.active, project=s.project,
-                created_at=s.created_at, updated_at=s.updated_at,
+                name=s.name,
+                allowed_domains=s.allowed_domains,
+                start_urls=s.start_urls,
+                source_url=s.source_url,
+                active=s.active,
+                project=s.project,
+                created_at=s.created_at,
+                updated_at=s.updated_at,
             )
             target.add(new_spider)
             target.flush()
             spider_id_map[s.id] = new_spider.id
 
             for r in s.rules:
-                target.add(SpiderRule(
-                    spider_id=new_spider.id,
-                    allow_patterns=r.allow_patterns, deny_patterns=r.deny_patterns,
-                    restrict_xpaths=r.restrict_xpaths, restrict_css=r.restrict_css,
-                    callback=r.callback, follow=r.follow, priority=r.priority,
-                ))
+                target.add(
+                    SpiderRule(
+                        spider_id=new_spider.id,
+                        allow_patterns=r.allow_patterns,
+                        deny_patterns=r.deny_patterns,
+                        restrict_xpaths=r.restrict_xpaths,
+                        restrict_css=r.restrict_css,
+                        callback=r.callback,
+                        follow=r.follow,
+                        priority=r.priority,
+                    )
+                )
 
             for st in s.settings:
-                target.add(SpiderSetting(
-                    spider_id=new_spider.id,
-                    key=st.key, value=st.value, type=st.type,
-                ))
+                target.add(
+                    SpiderSetting(
+                        spider_id=new_spider.id,
+                        key=st.key,
+                        value=st.value,
+                        type=st.type,
+                    )
+                )
 
         click.echo(f"   ✅ {len(spiders)} spiders (with rules and settings)")
 
@@ -351,16 +396,24 @@ def transfer(source_url, skip_items):
             batch_size = 1000
             transferred = 0
             for spider_id_old, spider_id_new in spider_id_map.items():
-                items = source.query(ScrapedItem).filter(
-                    ScrapedItem.spider_id == spider_id_old
-                ).all()
+                items = (
+                    source.query(ScrapedItem)
+                    .filter(ScrapedItem.spider_id == spider_id_old)
+                    .all()
+                )
                 for item in items:
-                    target.add(ScrapedItem(
-                        spider_id=spider_id_new, url=item.url,
-                        title=item.title, content=item.content,
-                        published_date=item.published_date, author=item.author,
-                        scraped_at=item.scraped_at, metadata_json=item.metadata_json,
-                    ))
+                    target.add(
+                        ScrapedItem(
+                            spider_id=spider_id_new,
+                            url=item.url,
+                            title=item.title,
+                            content=item.content,
+                            published_date=item.published_date,
+                            author=item.author,
+                            scraped_at=item.scraped_at,
+                            metadata_json=item.metadata_json,
+                        )
+                    )
                     transferred += 1
                     if transferred % batch_size == 0:
                         target.flush()
@@ -375,13 +428,20 @@ def transfer(source_url, skip_items):
         click.echo(f"\n📋 Transferring {len(queue_items)} queue items...")
 
         for q in queue_items:
-            target.add(CrawlQueue(
-                project_name=q.project_name, website_url=q.website_url,
-                custom_instruction=q.custom_instruction, status=q.status,
-                priority=q.priority, error_message=q.error_message,
-                retry_count=q.retry_count, created_at=q.created_at,
-                updated_at=q.updated_at, completed_at=q.completed_at,
-            ))
+            target.add(
+                CrawlQueue(
+                    project_name=q.project_name,
+                    website_url=q.website_url,
+                    custom_instruction=q.custom_instruction,
+                    status=q.status,
+                    priority=q.priority,
+                    error_message=q.error_message,
+                    retry_count=q.retry_count,
+                    created_at=q.created_at,
+                    updated_at=q.updated_at,
+                    completed_at=q.completed_at,
+                )
+            )
 
         click.echo(f"   ✅ {len(queue_items)} queue items")
 
