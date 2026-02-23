@@ -84,11 +84,13 @@ These are non-negotiable. Violating these will cause failures:
 - Data directory structure (configurable via DATA_DIR in `.env`, defaults to `./data`):
   ```
   DATA_DIR/<project>/<spider>/
-  ├── analysis/   # Phase 1-3 files (sections.md, spider configs)
-  ├── crawls/     # Production crawl outputs (crawl_TIMESTAMP.jsonl)
-  └── exports/    # Database exports (export_TIMESTAMP.format)
+  ├── analysis/    # Phase 1-3 files (sections.md, spider configs)
+  ├── crawls/      # Production crawl outputs (crawl_TIMESTAMP.jsonl)
+  ├── exports/     # Database exports (export_TIMESTAMP.format)
+  └── checkpoint/  # Pause/resume state (auto-cleaned on success)
   ```
 - `./scrapai db migrate` / `./scrapai db current`
+- **Checkpoint pause/resume:** See [docs/checkpoint.md](docs/checkpoint.md) - Production crawls automatically support Ctrl+C pause and resume (test crawls with `--limit` do not use checkpoints)
 - **Proxy support:** See [docs/proxies.md](docs/proxies.md) - SmartProxyMiddleware automatically handles blocking (403/429) by learning which domains need proxies
 - **S3 uploads:** See [docs/s3.md](docs/s3.md) - Automatic upload to object storage (Airflow workflows only, configure in `.env`)
 
@@ -225,6 +227,7 @@ Production crawls can take hours or days depending on site size. You MUST NOT ru
 
 **Production (USER runs this):**
 - `./scrapai crawl <name> --project <name>` — full crawl (exports to `DATA_DIR/<project>/<spider>/crawls/crawl_TIMESTAMP.jsonl`)
+- **Checkpoint auto-enabled:** Ctrl+C to pause, run same command to resume (see [docs/checkpoint.md](docs/checkpoint.md))
 
 **If user asks to run a full/production crawl:**
 1. Explain: "Full crawls can take hours/days. I can't run this for you as it would block our session."
@@ -232,7 +235,9 @@ Production crawls can take hours or days depending on site size. You MUST NOT ru
    ```bash
    ./scrapai crawl <spider_name> --project <project_name>
    ```
-3. Tell them crawl output will be exported to `DATA_DIR/<project>/<spider>/crawls/crawl_TIMESTAMP.jsonl`
+3. Tell them:
+   - Crawl output will be exported to `DATA_DIR/<project>/<spider>/crawls/crawl_TIMESTAMP.jsonl`
+   - Checkpoint is enabled - they can press Ctrl+C to pause and run the same command to resume
 
 **Always use --limit flag when YOU run crawls** (testing, verification). Typical limits: 5-10 for testing, 50-100 for quality checks.
 
