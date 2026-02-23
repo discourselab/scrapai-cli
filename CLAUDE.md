@@ -72,7 +72,7 @@ These are non-negotiable. Violating these will cause failures:
 - Any external tools not listed in "Allowed" section above
 
 **HTML processing commands:**
-- `./scrapai inspect <url>` — fetch and save HTML
+- `./scrapai inspect <url>` — fetch and save HTML (default: lightweight HTTP, use `--browser` for JS sites, `--cloudflare` for protected sites)
 - `./scrapai extract-urls --file <html>` — extract URLs from saved HTML
 - `./scrapai analyze <html>` — analyze HTML structure, test selectors, find fields
 
@@ -137,7 +137,15 @@ See [docs/analysis-workflow.md](docs/analysis-workflow.md) for detailed Phase 1-
 1. Use `sections.md` to create rules for each section.
 2. **Test generic extractors first:** Inspect an article page and analyze its structure:
    ```bash
+   # Default: lightweight HTTP (works for most sites)
    ./scrapai inspect https://website.com/article-url --project proj
+
+   # Use --browser if site needs JavaScript
+   ./scrapai inspect https://website.com/article-url --project proj --browser
+
+   # Use --cloudflare if site is protected
+   ./scrapai inspect https://website.com/article-url --project proj --cloudflare
+
    ./scrapai analyze data/proj/spider/analysis/page.html
    ```
    If it has clean `<article>` tags / semantic HTML → generic extractors work.

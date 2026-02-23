@@ -46,6 +46,30 @@ Here's what an AI-generated spider config looks like:
 
 That's not a Python file. It's data. It lives in a SQLite/PostgreSQL database. Adding a new website means adding a new row, not writing new code.
 
+## Why ScrapAI?
+
+**The problem with traditional scraping:**
+- 100 websites = 100 custom Python scripts to write and maintain
+- Websites change layouts → developers manually fix each broken script
+- Human inconsistency grows with volume (different field names, conventions, quality)
+- Per-page AI services ($$$) or rebuild scrapers repeatedly
+
+**ScrapAI's approach:**
+- **AI once, code forever** — AI analyzes site and writes JSON config (stored in database), then deterministic Scrapy executes (no AI cost per page)
+- **Database-first** — Spiders are data rows, not code files. 100 websites = 100 rows. Query, update, audit your entire operation.
+- **Self-hosted** — Own your infrastructure. No per-page API costs. Works with SQLite (local) or PostgreSQL (production).
+- **Production-ready** — Checkpoint pause/resume, smart proxy management, Cloudflare bypass, queue system for batch processing
+
+**Economics:**
+- Traditional: Developer time per site + ongoing maintenance
+- AI APIs: Low setup cost + expensive per-page scaling
+- ScrapAI: One-time AI setup + cheap deterministic execution at any scale
+
+**Built for scale:**
+- 10 websites: convenience
+- 100 websites: competitive advantage
+- 1000 websites: different category of capability
+
 ## Key Features
 
 ### 🚀 Production-Ready Infrastructure
@@ -283,8 +307,10 @@ You can also create spider configs by hand and use the CLI directly:
 ./scrapai queue list --project <name>                     # View queue
 ./scrapai queue next --project <name>                     # Claim next item
 
-# Inspection
-./scrapai inspect <url> --project <name>                  # Fetch and save page HTML
+# Inspection (smart resource usage)
+./scrapai inspect <url> --project <name>                  # Lightweight HTTP (default, fast)
+./scrapai inspect <url> --project <name> --browser        # Browser for JS sites
+./scrapai inspect <url> --project <name> --cloudflare     # Cloudflare bypass
 
 # Database
 ./scrapai db migrate                                      # Run migrations
