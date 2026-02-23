@@ -18,6 +18,7 @@ import os
 import argparse
 import asyncio
 import aiohttp
+from pathlib import Path
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 
@@ -73,13 +74,22 @@ async def inspect_page_async(
             if match:
                 timestamp = match.group(1)  # 8-digit date (YYYYMMDD)
                 original_domain = match.group(2).replace(".", "_").replace(":", "_")
-                output_dir = f"{DATA_DIR}/{project}/web_archive_org/{original_domain}/{timestamp}/analysis"
+                output_dir = str(
+                    Path(DATA_DIR)
+                    / project
+                    / "web_archive_org"
+                    / original_domain
+                    / timestamp
+                    / "analysis"
+                )
             else:
                 # Fallback if pattern doesn't match
-                output_dir = f"{DATA_DIR}/{project}/web_archive_org/analysis"
+                output_dir = str(
+                    Path(DATA_DIR) / project / "web_archive_org" / "analysis"
+                )
         else:
             source_id = domain.replace(".", "_")
-            output_dir = f"{DATA_DIR}/{project}/{source_id}/analysis"
+            output_dir = str(Path(DATA_DIR) / project / source_id / "analysis")
 
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)

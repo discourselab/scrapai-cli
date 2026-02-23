@@ -6,9 +6,11 @@ import sys
 
 
 def needs_xvfb() -> bool:
-    """Check if xvfb is needed (non-macOS without DISPLAY)."""
-    if sys.platform == "darwin":
+    """Check if xvfb is needed (Linux servers without DISPLAY)."""
+    # macOS and Windows have native GUI support
+    if sys.platform in ("darwin", "win32"):
         return False
+    # Linux without DISPLAY needs Xvfb
     return not os.environ.get("DISPLAY")
 
 

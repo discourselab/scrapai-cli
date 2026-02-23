@@ -15,7 +15,11 @@ def setup(args):
 
     script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     venv_path = Path(".venv")
-    venv_python = venv_path / "bin" / "python"
+    # Windows uses Scripts/python.exe, Unix uses bin/python
+    if sys.platform == "win32":
+        venv_python = venv_path / "Scripts" / "python.exe"
+    else:
+        venv_python = venv_path / "bin" / "python"
 
     if not skip_deps:
         if not venv_path.exists():
@@ -99,7 +103,7 @@ def setup(args):
     except Exception as e:
         click.echo(f"❌ Don't have permission to write to data directory: {data_dir}")
         click.echo(f"   Error: {e}")
-        click.echo(f"   Please check file permissions or change DATA_DIR in .env")
+        click.echo("   Please check file permissions or change DATA_DIR in .env")
         sys.exit(1)
 
     click.echo("🗄️  Initializing database...")
@@ -113,10 +117,10 @@ def setup(args):
         if result.returncode == 0:
             click.echo("✅ Database initialized with migrations")
         else:
-            click.echo(f"❌ Database migrations failed")
+            click.echo("❌ Database migrations failed")
             click.echo(f"   Error: {result.stderr}")
             click.echo(
-                f"   Please check your DATABASE_URL in .env and database permissions"
+                "   Please check your DATABASE_URL in .env and database permissions"
             )
             sys.exit(1)
     except Exception as e:
@@ -194,9 +198,12 @@ def setup(args):
 
     click.echo("🎉 ScrapAI setup complete!")
     click.echo("📝 You can now:")
-    click.echo("   • List spiders: ./scrapai spiders list --project <name>")
-    click.echo("   • Import spiders: ./scrapai spiders import <file> --project <name>")
-    click.echo("   • Run crawls: ./scrapai crawl <spider_name> --project <name>")
+    cmd_prefix = "scrapai" if sys.platform == "win32" else "./scrapai"
+    click.echo(f"   • List spiders: {cmd_prefix} spiders list --project <name>")
+    click.echo(
+        f"   • Import spiders: {cmd_prefix} spiders import <file> --project <name>"
+    )
+    click.echo(f"   • Run crawls: {cmd_prefix} crawl <spider_name> --project <name>")
 
 
 @click.command()
@@ -207,11 +214,16 @@ def verify():
     all_good = True
     script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     venv_path = Path(".venv")
-    venv_python = venv_path / "bin" / "python"
+    # Windows uses Scripts/python.exe, Unix uses bin/python
+    if sys.platform == "win32":
+        venv_python = venv_path / "Scripts" / "python.exe"
+    else:
+        venv_python = venv_path / "bin" / "python"
 
     if not venv_path.exists():
         click.echo("❌ Virtual environment not found")
-        click.echo("   Run: ./scrapai setup")
+        cmd_prefix = "scrapai" if sys.platform == "win32" else "./scrapai"
+        click.echo(f"   Run: {cmd_prefix} setup")
         all_good = False
     else:
         click.echo("✅ Virtual environment exists")
@@ -231,7 +243,8 @@ def verify():
                 click.echo("✅ Core dependencies installed")
             else:
                 click.echo("❌ Missing dependencies")
-                click.echo("   Run: ./scrapai setup")
+                cmd_prefix = "scrapai" if sys.platform == "win32" else "./scrapai"
+                click.echo(f"   Run: {cmd_prefix} setup")
                 all_good = False
         except Exception as e:
             click.echo(f"❌ Error checking dependencies: {e}")
@@ -251,26 +264,33 @@ def verify():
                     click.echo("✅ Database initialized")
                 else:
                     click.echo("❌ Database not initialized")
-                    click.echo("   Run: ./scrapai setup")
+                    cmd_prefix = "scrapai" if sys.platform == "win32" else "./scrapai"
+                    click.echo(f"   Run: {cmd_prefix} setup")
                     all_good = False
             else:
                 click.echo("❌ Unable to check database status")
-                click.echo("   Run: ./scrapai setup")
+                cmd_prefix = "scrapai" if sys.platform == "win32" else "./scrapai"
+                click.echo(f"   Run: {cmd_prefix} setup")
                 all_good = False
         except Exception as e:
             click.echo(f"❌ Error checking database: {e}")
-            click.echo("   Run: ./scrapai setup")
+            cmd_prefix = "scrapai" if sys.platform == "win32" else "./scrapai"
+            click.echo(f"   Run: {cmd_prefix} setup")
             all_good = False
 
     click.echo()
     if all_good:
         click.echo("🎉 Environment is ready!")
         click.echo("📝 You can now:")
-        click.echo("   • List spiders: ./scrapai spiders list --project <name>")
+        cmd_prefix = "scrapai" if sys.platform == "win32" else "./scrapai"
+        click.echo(f"   • List spiders: {cmd_prefix} spiders list --project <name>")
         click.echo(
-            "   • Import spiders: ./scrapai spiders import <file> --project <name>"
+            f"   • Import spiders: {cmd_prefix} spiders import <file> --project <name>"
         )
-        click.echo("   • Run crawls: ./scrapai crawl <spider_name> --project <name>")
+        click.echo(
+            f"   • Run crawls: {cmd_prefix} crawl <spider_name> --project <name>"
+        )
     else:
         click.echo("⚠️  Environment setup incomplete")
-        click.echo("   Run: ./scrapai setup")
+        cmd_prefix = "scrapai" if sys.platform == "win32" else "./scrapai"
+        click.echo(f"   Run: {cmd_prefix} setup")

@@ -36,7 +36,9 @@ def crawl_all(project, limit):
 
     db = next(get_db())
     spiders = (
-        db.query(Spider).filter(Spider.project == project, Spider.active == True).all()
+        db.query(Spider)
+        .filter(Spider.project == project, Spider.active.is_(True))
+        .all()
     )
 
     if not spiders:
@@ -75,11 +77,11 @@ def _run_spider(
     click.echo(f"🚀 Running DB spider: {spider_name}")
 
     if proxy_type == "auto":
-        click.echo(f"🔄 Proxy mode: auto (smart escalation with expert-in-the-loop)")
+        click.echo("🔄 Proxy mode: auto (smart escalation with expert-in-the-loop)")
     elif proxy_type == "residential":
-        click.echo(f"🏠 Proxy mode: residential (explicit, used when blocked)")
+        click.echo("🏠 Proxy mode: residential (explicit, used when blocked)")
     elif proxy_type == "datacenter":
-        click.echo(f"🏢 Proxy mode: datacenter (explicit, used when blocked)")
+        click.echo("🏢 Proxy mode: datacenter (explicit, used when blocked)")
 
     cf_enabled = False
     use_sitemap = False
@@ -98,7 +100,7 @@ def _run_spider(
 
     if use_sitemap:
         spider_class = "sitemap_database_spider"
-        click.echo(f"🗺️  Using sitemap spider")
+        click.echo("🗺️  Using sitemap spider")
     else:
         spider_class = "database_spider"
 
@@ -123,15 +125,17 @@ def _run_spider(
         cmd.extend(["-s", f"CLOSESPIDER_ITEMCOUNT={limit}"])
         cmd.extend(["-s", "INCLUDE_HTML_IN_OUTPUT=False"])
     else:
-        click.echo(f"📁 Production mode: Exporting to files (database disabled)")
+        click.echo("📁 Production mode: Exporting to files (database disabled)")
         cmd.extend(["-s", 'ITEM_PIPELINES={"pipelines.ScrapaiPipeline": 300}'])
         cmd.extend(["-s", "INCLUDE_HTML_IN_OUTPUT=True"])
 
         # Enable checkpoint for production crawls
         if project_name:
-            checkpoint_dir = f"{DATA_DIR}/{project_name}/{spider_name}/checkpoint"
+            checkpoint_dir = str(
+                Path(DATA_DIR) / project_name / spider_name / "checkpoint"
+            )
         else:
-            checkpoint_dir = f"{DATA_DIR}/{spider_name}/checkpoint"
+            checkpoint_dir = str(Path(DATA_DIR) / spider_name / "checkpoint")
 
         # Check if proxy type changed and clear checkpoint if needed
         state_file = Path(checkpoint_dir) / "spider.state"
@@ -149,27 +153,27 @@ def _run_spider(
                             f"🗑️  Clearing checkpoint to ensure all URLs retried with {proxy_type} proxy"
                         )
                         shutil.rmtree(checkpoint_dir)
-                        click.echo(f"♻️  Starting fresh crawl")
+                        click.echo("♻️  Starting fresh crawl")
             except Exception as e:
                 # If we can't read state file, just continue (checkpoint might be corrupted)
                 click.echo(f"⚠️  Could not read checkpoint state: {e}")
-                click.echo(f"   Continuing with existing checkpoint")
+                click.echo("   Continuing with existing checkpoint")
 
         cmd.extend(["-s", f"JOBDIR={checkpoint_dir}"])
         click.echo(f"💾 Checkpoint enabled: {checkpoint_dir}")
-        click.echo(f"   Press Ctrl+C to pause, run same command to resume")
+        click.echo("   Press Ctrl+C to pause, run same command to resume")
 
         if not output_file:
             now = datetime.now()
             timestamp = now.strftime("%d%m%Y_%H%M%S")
 
             if project_name:
-                output_dir = f"{DATA_DIR}/{project_name}/{spider_name}/crawls"
+                output_dir = str(Path(DATA_DIR) / project_name / spider_name / "crawls")
             else:
-                output_dir = f"{DATA_DIR}/{spider_name}/crawls"
+                output_dir = str(Path(DATA_DIR) / spider_name / "crawls")
 
             os.makedirs(output_dir, exist_ok=True)
-            output_file = f"{output_dir}/crawl_{timestamp}.jsonl"
+            output_file = str(Path(output_dir) / f"crawl_{timestamp}.jsonl")
 
         cmd.extend(["-o", output_file])
         click.echo(f"   Output: {output_file} (includes HTML)")
@@ -210,4 +214,4 @@ def _run_spider(
         checkpoint_path = Path(checkpoint_dir)
         if checkpoint_path.exists():
             shutil.rmtree(checkpoint_path)
-            click.echo(f"✓ Checkpoint cleaned up (successful completion)")
+            click.echo("✓ Checkpoint cleaned up (successful completion)")
