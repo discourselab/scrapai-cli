@@ -27,9 +27,12 @@ def test_data_dir() -> Path:
 
 
 @pytest.fixture(scope="function")
-def temp_db() -> Generator[Session, None, None]:
+def temp_db(monkeypatch) -> Generator[Session, None, None]:
     """
     Create a temporary SQLite database for testing.
+
+    Also patches get_db() to return this temporary session,
+    so spiders can access test data.
 
     Yields:
         SQLAlchemy Session connected to temporary database
@@ -51,6 +54,12 @@ def temp_db() -> Generator[Session, None, None]:
     # Create session
     SessionLocal = sessionmaker(bind=engine)
     session = SessionLocal()
+
+    # Patch get_db() where it's used (in spiders.database_spider module)
+    def mock_get_db():
+        yield session
+
+    monkeypatch.setattr("spiders.database_spider.get_db", mock_get_db)
 
     try:
         yield session
