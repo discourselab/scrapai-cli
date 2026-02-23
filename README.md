@@ -185,11 +185,19 @@ This separation means:
 
 **Requirements:** Python 3.9+, Git. No database installation needed.
 
+**Supported platforms:** Linux, macOS, Windows
+
 ```bash
 git clone https://github.com/discourselab/scrapai-cli.git
 cd scrapai-cli
+
+# Linux/macOS
 ./scrapai setup
 ./scrapai verify
+
+# Windows (CMD/PowerShell)
+scrapai setup
+scrapai verify
 ```
 
 `./scrapai setup` creates the virtual environment, installs dependencies (including Playwright browser drivers), initializes SQLite, and configures permissions. One command.

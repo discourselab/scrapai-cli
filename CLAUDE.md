@@ -81,6 +81,9 @@ These are non-negotiable. Violating these will cause failures:
 - Setup help: direct user to [docs/onboarding.md](docs/onboarding.md)
 - Virtual environment activation is automatic
 - SQLite is default (no PostgreSQL needed)
+- **Cross-platform:** Works on Linux, macOS, and Windows
+  - Linux/macOS: `./scrapai <command>`
+  - Windows: `scrapai <command>` (uses scrapai.bat wrapper)
 - Data directory structure (configurable via DATA_DIR in `.env`, defaults to `./data`):
   ```
   DATA_DIR/<project>/<spider>/

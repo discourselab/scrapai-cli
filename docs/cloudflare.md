@@ -12,9 +12,10 @@ Only enable when the site requires it. Test WITHOUT `--cloudflare` first.
 
 **Cloudflare bypass requires a visible browser** (not headless) - Cloudflare detects headless browsers and blocks them.
 
-- **macOS/Windows:** Uses native display automatically
-- **Linux desktop:** Uses native display automatically
-- **Linux servers (VPS without GUI):** Auto-detects missing display and uses **Xvfb** (virtual display)
+- **Windows:** Uses native display automatically ✓
+- **macOS:** Uses native display automatically ✓
+- **Linux desktop:** Uses native display automatically ✓
+- **Linux servers (VPS without GUI):** Auto-detects missing display and uses **Xvfb** (virtual display) ✓
 
 **Installing Xvfb on Linux servers:**
 ```bash
