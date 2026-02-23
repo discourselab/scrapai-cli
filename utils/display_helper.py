@@ -7,14 +7,14 @@ import sys
 
 def needs_xvfb() -> bool:
     """Check if xvfb is needed (non-macOS without DISPLAY)."""
-    if sys.platform == 'darwin':
+    if sys.platform == "darwin":
         return False
-    return not os.environ.get('DISPLAY')
+    return not os.environ.get("DISPLAY")
 
 
 def has_xvfb() -> bool:
     """Check if xvfb-run is available on the system."""
-    return shutil.which('xvfb-run') is not None
+    return shutil.which("xvfb-run") is not None
 
 
 def ensure_display_for_cf():

@@ -7,13 +7,15 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
     """Spider for crawling sites via sitemap.xml files."""
+
     name = "sitemap_database_spider"
 
     def __init__(self, spider_name=None, *args, **kwargs):
         if not spider_name:
-            spider_name = getattr(self.__class__, '_spider_name', None)
+            spider_name = getattr(self.__class__, "_spider_name", None)
         if not spider_name:
             raise ValueError("spider_name argument is required")
 
@@ -40,7 +42,7 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
         logger.info(f"Sitemap spider configured with sitemap URLs: {self.sitemap_urls}")
 
         self.sitemap_rules = [
-            ('/', 'parse_article'),
+            ("/", "parse_article"),
         ]
 
         # Load settings and CF handlers via mixin
@@ -49,12 +51,16 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
 
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):
-        spider = super(SitemapDatabaseSpider, cls).from_crawler(crawler, *args, **kwargs)
+        spider = super(SitemapDatabaseSpider, cls).from_crawler(
+            crawler, *args, **kwargs
+        )
         cls._apply_cf_to_crawler(spider, crawler)
         return spider
 
     async def parse_article(self, response):
-        async for item in self._extract_article(response, source_label='sitemap_spider'):
+        async for item in self._extract_article(
+            response, source_label="sitemap_spider"
+        ):
             yield item
 
     def sitemap_filter(self, entries):

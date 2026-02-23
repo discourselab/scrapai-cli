@@ -9,8 +9,10 @@ def spiders():
     pass
 
 
-@spiders.command('list')
-@click.option('--project', default=None, help='Filter by project name (default: show all)')
+@spiders.command("list")
+@click.option(
+    "--project", default=None, help="Filter by project name (default: show all)"
+)
 def list_spiders(project):
     """List all spiders in DB"""
     from core.db import get_db
@@ -28,11 +30,17 @@ def list_spiders(project):
     spiders = query.all()
     if spiders:
         for s in spiders:
-            created = s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else 'Unknown'
-            updated = s.updated_at.strftime('%Y-%m-%d %H:%M') if s.updated_at else created
+            created = (
+                s.created_at.strftime("%Y-%m-%d %H:%M") if s.created_at else "Unknown"
+            )
+            updated = (
+                s.updated_at.strftime("%Y-%m-%d %H:%M") if s.updated_at else created
+            )
             project_tag = f"[{s.project}]" if s.project else "[default]"
 
-            click.echo(f"  • {s.name} {project_tag} (Active: {s.active}) - Created: {created}, Updated: {updated}")
+            click.echo(
+                f"  • {s.name} {project_tag} (Active: {s.active}) - Created: {created}, Updated: {updated}"
+            )
             if s.source_url:
                 click.echo(f"    Source: {s.source_url}")
     else:
@@ -42,10 +50,14 @@ def list_spiders(project):
             click.echo("No spiders found in database.")
 
 
-@spiders.command('import')
-@click.argument('file')
-@click.option('--project', default='default', help='Project name (default: default)')
-@click.option('--skip-validation', is_flag=True, help='Skip Pydantic validation (backward compatibility)')
+@spiders.command("import")
+@click.argument("file")
+@click.option("--project", default="default", help="Project name (default: default)")
+@click.option(
+    "--skip-validation",
+    is_flag=True,
+    help="Skip Pydantic validation (backward compatibility)",
+)
 def import_spider(file, project, skip_validation):
     """Import spider from JSON file (use "-" for stdin)"""
     from core.db import get_db
@@ -57,10 +69,10 @@ def import_spider(file, project, skip_validation):
 
     try:
         # Load JSON
-        if file == '-':
+        if file == "-":
             data = json.load(sys.stdin)
         else:
-            with open(file, 'r') as f:
+            with open(file, "r") as f:
                 data = json.load(f)
 
         # Validate with Pydantic schema (unless --skip-validation)
@@ -68,12 +80,12 @@ def import_spider(file, project, skip_validation):
             click.echo("⚠️  Skipping validation (--skip-validation flag)")
             validated = None
             # Use raw data
-            spider_name = data['name']
-            allowed_domains = data['allowed_domains']
-            start_urls = data['start_urls']
-            source_url = data.get('source_url')
-            rules = data.get('rules', [])
-            settings_dict = data.get('settings', {})
+            spider_name = data["name"]
+            allowed_domains = data["allowed_domains"]
+            start_urls = data["start_urls"]
+            source_url = data.get("source_url")
+            rules = data.get("rules", [])
+            settings_dict = data.get("settings", {})
         else:
             try:
                 validated = SpiderConfigSchema(**data)
@@ -82,14 +94,18 @@ def import_spider(file, project, skip_validation):
                 start_urls = validated.start_urls
                 source_url = validated.source_url
                 rules = [r.model_dump() for r in validated.rules]
-                settings_dict = validated.settings.model_dump(exclude_none=True, exclude_unset=True)
+                settings_dict = validated.settings.model_dump(
+                    exclude_none=True, exclude_unset=True
+                )
             except ValidationError as e:
                 click.echo("❌ Spider configuration validation failed:")
                 for error in e.errors():
-                    field = ' -> '.join(str(x) for x in error['loc'])
-                    message = error['msg']
+                    field = " -> ".join(str(x) for x in error["loc"])
+                    message = error["msg"]
                     click.echo(f"   • {field}: {message}")
-                click.echo("\n💡 Use --skip-validation to bypass validation (not recommended)")
+                click.echo(
+                    "\n💡 Use --skip-validation to bypass validation (not recommended)"
+                )
                 return
 
         # Check for existing spider
@@ -103,7 +119,9 @@ def import_spider(file, project, skip_validation):
 
             # Delete old rules and settings
             db.query(SpiderRule).filter(SpiderRule.spider_id == existing.id).delete()
-            db.query(SpiderSetting).filter(SpiderSetting.spider_id == existing.id).delete()
+            db.query(SpiderSetting).filter(
+                SpiderSetting.spider_id == existing.id
+            ).delete()
             spider = existing
         else:
             # Create new spider
@@ -112,7 +130,7 @@ def import_spider(file, project, skip_validation):
                 allowed_domains=allowed_domains,
                 start_urls=start_urls,
                 source_url=source_url,
-                project=project
+                project=project,
             )
             db.add(spider)
             db.flush()
@@ -123,25 +141,25 @@ def import_spider(file, project, skip_validation):
             if isinstance(rule_data, dict):
                 rule = SpiderRule(
                     spider_id=spider.id,
-                    allow_patterns=rule_data.get('allow'),
-                    deny_patterns=rule_data.get('deny'),
-                    restrict_xpaths=rule_data.get('restrict_xpaths'),
-                    restrict_css=rule_data.get('restrict_css'),
-                    callback=rule_data.get('callback'),
-                    follow=rule_data.get('follow', True),
-                    priority=rule_data.get('priority', 0)
+                    allow_patterns=rule_data.get("allow"),
+                    deny_patterns=rule_data.get("deny"),
+                    restrict_xpaths=rule_data.get("restrict_xpaths"),
+                    restrict_css=rule_data.get("restrict_css"),
+                    callback=rule_data.get("callback"),
+                    follow=rule_data.get("follow", True),
+                    priority=rule_data.get("priority", 0),
                 )
             else:
                 # Already a validated Pydantic object
                 rule = SpiderRule(
                     spider_id=spider.id,
-                    allow_patterns=rule_data.get('allow'),
-                    deny_patterns=rule_data.get('deny'),
-                    restrict_xpaths=rule_data.get('restrict_xpaths'),
-                    restrict_css=rule_data.get('restrict_css'),
-                    callback=rule_data.get('callback'),
-                    follow=rule_data.get('follow', True),
-                    priority=rule_data.get('priority', 0)
+                    allow_patterns=rule_data.get("allow"),
+                    deny_patterns=rule_data.get("deny"),
+                    restrict_xpaths=rule_data.get("restrict_xpaths"),
+                    restrict_css=rule_data.get("restrict_css"),
+                    callback=rule_data.get("callback"),
+                    follow=rule_data.get("follow", True),
+                    priority=rule_data.get("priority", 0),
                 )
             db.add(rule)
 
@@ -150,16 +168,13 @@ def import_spider(file, project, skip_validation):
             # Convert value to JSON string if it's a list/dict
             if isinstance(v, (list, dict)):
                 value_str = json.dumps(v)
-                type_name = 'json'
+                type_name = "json"
             else:
                 value_str = str(v)
                 type_name = type(v).__name__
 
             setting = SpiderSetting(
-                spider_id=spider.id,
-                key=k,
-                value=value_str,
-                type=type_name
+                spider_id=spider.id, key=k, value=value_str, type=type_name
             )
             db.add(setting)
 
@@ -179,10 +194,10 @@ def import_spider(file, project, skip_validation):
         click.echo(f"❌ Error importing spider: {e}")
 
 
-@spiders.command('delete')
-@click.argument('name')
-@click.option('--project', default=None, help='Project name')
-@click.option('--force', '-f', is_flag=True, help='Skip confirmation prompt')
+@spiders.command("delete")
+@click.argument("name")
+@click.option("--project", default=None, help="Project name")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation prompt")
 def delete_spider(name, project, force):
     """Delete a spider"""
     from core.db import get_db
@@ -201,8 +216,10 @@ def delete_spider(name, project, force):
 
     if spider:
         if not force:
-            confirm = input(f"Are you sure you want to delete spider '{name}'{project_msg}? (y/N): ")
-            if confirm.lower() != 'y':
+            confirm = input(
+                f"Are you sure you want to delete spider '{name}'{project_msg}? (y/N): "
+            )
+            if confirm.lower() != "y":
                 click.echo("❌ Delete cancelled")
                 return
 
