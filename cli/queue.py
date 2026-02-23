@@ -326,8 +326,12 @@ def bulk(file, project, priority):
             with open(file, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
                 data = list(reader)
-                if not data or 'url' not in data[0]:
+                if not data:
+                    click.echo("❌ CSV file is empty")
+                    return
+                if 'url' not in data[0]:
                     click.echo("❌ CSV file must have a 'url' column")
+                    click.echo("   See templates/queue-template.csv for example format")
                     return
         elif file_path.suffix.lower() == '.json':
             with open(file, 'r', encoding='utf-8') as f:
@@ -371,7 +375,7 @@ def bulk(file, project, priority):
             skipped += 1
             continue
 
-        custom_instruction = item.get('custom_instruction') or item.get('name')
+        custom_instruction = item.get('custom_instruction')
         item_priority = item.get('priority')
         if item_priority is not None:
             try:

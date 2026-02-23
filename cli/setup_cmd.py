@@ -60,6 +60,23 @@ def setup(args):
         except Exception as e:
             click.echo(f"⚠️  Warning: Could not create .env: {e}")
 
+    # Test write permission to DATA_DIR
+    click.echo("📁 Checking data directory permissions...")
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+        data_dir = Path(os.getenv('DATA_DIR', './data'))
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+        test_file = data_dir / 'welcome.md'
+        test_file.write_text('# Welcome to ScrapAI\n\nThis directory stores your crawl data.')
+        click.echo(f"✅ Have permission to write to data directory: {data_dir}")
+    except Exception as e:
+        click.echo(f"❌ Don't have permission to write to data directory: {data_dir}")
+        click.echo(f"   Error: {e}")
+        click.echo(f"   Please check file permissions or change DATA_DIR in .env")
+        sys.exit(1)
+
     click.echo("🗄️  Initializing database...")
     try:
         result = subprocess.run(
@@ -69,17 +86,10 @@ def setup(args):
         if result.returncode == 0:
             click.echo("✅ Database initialized with migrations")
         else:
-            click.echo("⚠️  Migrations failed, creating tables directly...")
-            subprocess.run(
-                [str(venv_python), '-c',
-                 'from core.db import Base, engine; from core import models; Base.metadata.create_all(bind=engine)'],
-                check=True, cwd=script_dir
-            )
-            click.echo("✅ Database tables created")
-            subprocess.run(
-                [str(venv_python), '-m', 'alembic', 'stamp', 'head'],
-                capture_output=True, text=True, cwd=script_dir
-            )
+            click.echo(f"❌ Database migrations failed")
+            click.echo(f"   Error: {result.stderr}")
+            click.echo(f"   Please check your DATABASE_URL in .env and database permissions")
+            sys.exit(1)
     except Exception as e:
         click.echo(f"❌ Database setup failed: {e}")
         sys.exit(1)

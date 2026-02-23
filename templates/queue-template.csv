@@ -1,0 +1,4 @@
+url,custom_instruction,priority
+https://example.com,Focus on research articles,5
+https://another-site.org,,10
+https://news-site.com,Include all news sections,1

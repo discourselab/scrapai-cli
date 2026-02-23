@@ -1,0 +1,17 @@
+[
+  {
+    "url": "https://example.com",
+    "custom_instruction": "Focus on research articles",
+    "priority": 5
+  },
+  {
+    "url": "https://another-site.org",
+    "custom_instruction": null,
+    "priority": 10
+  },
+  {
+    "url": "https://news-site.com",
+    "custom_instruction": "Include all news sections",
+    "priority": 1
+  }
+]

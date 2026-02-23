@@ -46,22 +46,27 @@ Optional. Use when the user explicitly requests it. Always specify `--project`.
 
 ## Bulk File Formats
 
-**JSON:**
+**JSON format** (see `templates/queue-template.json`):
 ```json
 [
-  {"url": "https://site1.com", "name": "Focus on research articles"},
+  {"url": "https://site1.com", "custom_instruction": "Focus on research articles", "priority": 5},
   {"url": "https://site2.com", "priority": 10},
-  {"url": "https://site3.com"}
+  {"url": "https://site3.com", "custom_instruction": "Include all news sections", "priority": 1}
 ]
 ```
 
-**CSV:**
+**CSV format** (see `templates/queue-template.csv`):
 ```csv
-url,name,priority
+url,custom_instruction,priority
 https://site1.com,Focus on research articles,5
 https://site2.com,,10
-https://site3.com,Include all news sections,
+https://site3.com,Include all news sections,1
 ```
+
+**Required columns:**
+- `url` - Website URL (required)
+- `custom_instruction` - Special instructions for this site (optional)
+- `priority` - Higher number = higher priority (optional, default: 0)
 
 ## Queue Processing Workflow
 
