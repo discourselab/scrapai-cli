@@ -49,7 +49,7 @@ class BaseDBSpiderMixin:
             cf_enabled = spider.custom_settings.get("CLOUDFLARE_ENABLED", False)
             if cf_enabled:
                 logger.info(
-                    f"[from_crawler] Applying Cloudflare handlers to crawler settings"
+                    "[from_crawler] Applying Cloudflare handlers to crawler settings"
                 )
                 crawler.settings.set(
                     "DOWNLOAD_HANDLERS",

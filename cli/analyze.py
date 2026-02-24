@@ -7,8 +7,6 @@ import click
 @click.option("--find", default=None, help="Find elements by keyword")
 def analyze(html_file, test, find):
     """Analyze HTML for CSS selector discovery"""
-    from bs4 import BeautifulSoup
-
     if test:
         _test_selector(html_file, test)
     elif find:

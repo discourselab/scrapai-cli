@@ -12,7 +12,10 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from .db import Base
 
-_utcnow = lambda: datetime.now(timezone.utc)
+
+def _utcnow():
+    """Return current UTC time."""
+    return datetime.now(timezone.utc)
 
 
 class Spider(Base):

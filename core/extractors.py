@@ -1,8 +1,7 @@
 import logging
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Optional, List, Dict, Any
-from datetime import datetime
+from typing import Optional, List, Dict
 
 import newspaper
 import trafilatura
@@ -53,8 +52,9 @@ class NewspaperExtractor(BaseExtractor):
 
             # Basic validation before creating model
             if not title or not article.text:
+                text_len = len(article.text) if article.text else 0
                 logger.warning(
-                    f"NewspaperExtractor validation failed: title='{title}', text_len={len(article.text) if article.text else 0}"
+                    f"NewspaperExtractor validation failed: title='{title}', text_len={text_len}"
                 )
                 return None
 
@@ -325,7 +325,7 @@ class SmartExtractor:
                         logger.debug(f"Custom extractor failed for {url}: {e}")
                 else:
                     logger.debug(
-                        f"Skipping 'custom' strategy - no custom selectors provided"
+                        "Skipping 'custom' strategy - no custom selectors provided"
                     )
 
             elif strategy == "newspaper":

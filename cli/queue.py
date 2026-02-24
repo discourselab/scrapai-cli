@@ -46,11 +46,11 @@ def add(url, custom_instruction, priority, project):
             "completed": "✅",
             "failed": "❌",
         }.get(existing.status, "❓")
-        click.echo(f"⚠️  URL already exists in queue")
+        click.echo("⚠️  URL already exists in queue")
         click.echo(f"   {status_emoji} ID: {existing.id}")
         click.echo(f"   Status: {existing.status}")
         click.echo(f"   URL: {existing.website_url}")
-        click.echo(f"   Skipping duplicate...")
+        click.echo("   Skipping duplicate...")
         return
 
     queue_item = CrawlQueue(
@@ -180,7 +180,7 @@ def next_item(project):
     db.commit()
 
     if row:
-        click.echo(f"🔄 Claimed item from queue:")
+        click.echo("🔄 Claimed item from queue:")
         click.echo(f"   ID: {row[0]}")
         click.echo(f"   URL: {row[1]}")
         if row[2]:
@@ -434,7 +434,7 @@ def bulk(file, project, priority):
 
     db.commit()
 
-    click.echo(f"✅ Bulk add complete:")
+    click.echo("✅ Bulk add complete:")
     click.echo(f"   Added: {added}")
     click.echo(f"   Skipped (duplicates/invalid): {skipped}")
     click.echo(f"   Project: {project}")

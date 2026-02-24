@@ -9,7 +9,7 @@ Tests the complete spider workflow:
 """
 
 import pytest
-from scrapy.http import HtmlResponse, Request
+from scrapy.http import HtmlResponse
 from sqlalchemy.orm import Session
 
 from spiders.database_spider import DatabaseSpider
@@ -266,7 +266,10 @@ class TestSpiderWithCustomSelectors:
             SpiderSetting(
                 spider_id=spider_config.id,
                 key="CUSTOM_SELECTORS",
-                value='{"title": "h1.article-title-custom", "content": "div.article-text", "author": "span.author-name", "date": "span.publish-date"}',
+                value=(
+                    '{"title": "h1.article-title-custom", "content": "div.article-text", '
+                    '"author": "span.author-name", "date": "span.publish-date"}'
+                ),
                 type="json",
             ),
         ]
@@ -347,6 +350,6 @@ class TestSpiderErrorHandling:
         """Test error handling when spider config doesn't exist."""
         with pytest.raises(ValueError, match="not found in database"):
             # Should raise error for non-existent spider
-            spider = DatabaseSpider(
+            DatabaseSpider(
                 spider_name="nonexistent_spider", project_name="nonexistent_project"
             )

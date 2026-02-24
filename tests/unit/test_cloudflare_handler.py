@@ -7,7 +7,7 @@ Mocks browser automation to keep tests fast.
 
 import time
 import pytest
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import Mock, AsyncMock, patch
 
 from handlers.cloudflare_handler import CloudflareDownloadHandler
 from scrapy.http import Request
