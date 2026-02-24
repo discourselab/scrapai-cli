@@ -50,7 +50,7 @@ class CloudflareBrowserClient:
         self.cf_max_retries = cf_max_retries
         self.cf_retry_interval = cf_retry_interval
         self.post_cf_delay = post_cf_delay
-        self.fetch_lock = asyncio.Lock()  # Ensure only one fetch at a time
+        self.fetch_lock = None  # Created lazily on first fetch to bind to correct event loop
 
     async def start(self):
         """Start the browser instance."""
@@ -181,6 +181,10 @@ class CloudflareBrowserClient:
         Returns:
             HTML content as string, or None if fetch failed
         """
+        # Lazy lock creation - ensures lock is bound to correct event loop
+        if self.fetch_lock is None:
+            self.fetch_lock = asyncio.Lock()
+
         # Use lock to ensure only one fetch at a time (sequential, using same tab)
         async with self.fetch_lock:
             # First request - verify CF
