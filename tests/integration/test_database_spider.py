@@ -353,3 +353,268 @@ class TestSpiderErrorHandling:
             DatabaseSpider(
                 spider_name="nonexistent_spider", project_name="nonexistent_project"
             )
+
+
+class TestSpiderWithCallbacks:
+    """Test spider behavior with named callbacks."""
+
+    @pytest.mark.integration
+    def test_spider_loads_callbacks_from_db(
+        self, temp_db: Session, sample_project_name: str
+    ):
+        """Test that spider loads callbacks_config from database."""
+        # Create spider with callbacks
+        callbacks_config = {
+            "parse_product": {
+                "extract": {
+                    "name": {"css": "h1.product-title::text"},
+                    "price": {"css": "span.price::text"},
+                }
+            }
+        }
+
+        spider_config = Spider(
+            name="test_spider",
+            project=sample_project_name,
+            allowed_domains=["example.com"],
+            start_urls=["https://example.com/"],
+            callbacks_config=callbacks_config,
+        )
+        temp_db.add(spider_config)
+        temp_db.commit()
+
+        # Instantiate spider
+        spider = DatabaseSpider(
+            spider_name="test_spider", project_name=sample_project_name
+        )
+
+        # Verify callbacks loaded
+        assert hasattr(spider, "parse_product")
+        assert callable(spider.parse_product)
+
+    @pytest.mark.integration
+    def test_dynamic_callback_registered(
+        self, temp_db: Session, sample_project_name: str
+    ):
+        """Test that dynamic callback methods are registered correctly."""
+        callbacks_config = {
+            "parse_product": {
+                "extract": {
+                    "name": {"css": "h1::text"},
+                    "price": {"css": "span.price::text"},
+                }
+            },
+            "parse_review": {
+                "extract": {
+                    "rating": {"css": "span.rating::text"},
+                    "comment": {"css": "p.review-text::text"},
+                }
+            },
+        }
+
+        spider_config = Spider(
+            name="test_spider",
+            project=sample_project_name,
+            allowed_domains=["example.com"],
+            start_urls=["https://example.com/"],
+            callbacks_config=callbacks_config,
+        )
+        temp_db.add(spider_config)
+        temp_db.commit()
+
+        spider = DatabaseSpider(
+            spider_name="test_spider", project_name=sample_project_name
+        )
+
+        # Both callbacks should be registered
+        assert hasattr(spider, "parse_product")
+        assert hasattr(spider, "parse_review")
+        assert spider.parse_product.__name__ == "parse_product"
+        assert spider.parse_review.__name__ == "parse_review"
+
+    @pytest.mark.integration
+    async def test_callback_extracts_custom_fields(
+        self, temp_db: Session, sample_project_name: str, mocker
+    ):
+        """Test that callbacks extract custom fields correctly."""
+        callbacks_config = {
+            "parse_product": {
+                "extract": {
+                    "name": {"css": "h1.title::text"},
+                    "price": {"css": "span.price::text"},
+                    "availability": {"css": "span.stock::text"},
+                }
+            }
+        }
+
+        spider_config = Spider(
+            name="test_spider",
+            project=sample_project_name,
+            allowed_domains=["example.com"],
+            start_urls=["https://example.com/"],
+            callbacks_config=callbacks_config,
+        )
+        temp_db.add(spider_config)
+        temp_db.commit()
+
+        spider = DatabaseSpider(
+            spider_name="test_spider", project_name=sample_project_name
+        )
+
+        # Mock Scrapy settings
+        spider.settings = mocker.Mock()
+        spider.settings.getbool = mocker.Mock(return_value=False)
+
+        # Create mock response
+        html = """
+        <html>
+            <body>
+                <h1 class="title">Test Product</h1>
+                <span class="price">$99.99</span>
+                <span class="stock">In Stock</span>
+            </body>
+        </html>
+        """
+        response = HtmlResponse(
+            url="https://example.com/product/123",
+            body=html.encode("utf-8"),
+            encoding="utf-8",
+        )
+
+        # Call the dynamic callback
+        results = []
+        async for item in spider.parse_product(response):
+            results.append(item)
+
+        # Verify extraction
+        assert len(results) == 1
+        item = results[0]
+
+        assert item["name"] == "Test Product"
+        assert item["price"] == "$99.99"
+        assert item["availability"] == "In Stock"
+        assert item["_callback"] == "parse_product"
+        assert item["url"] == "https://example.com/product/123"
+        assert item["spider_name"] == "test_spider"
+
+    @pytest.mark.integration
+    def test_legacy_spider_without_callbacks(
+        self, temp_db: Session, sample_project_name: str
+    ):
+        """Test that legacy spiders without callbacks still work."""
+        # Create spider without callbacks_config
+        spider_config = Spider(
+            name="legacy_spider",
+            project=sample_project_name,
+            allowed_domains=["example.com"],
+            start_urls=["https://example.com/"],
+            # callbacks_config is None (legacy spider)
+        )
+        temp_db.add(spider_config)
+        temp_db.commit()
+
+        # Should work normally with parse_article
+        spider = DatabaseSpider(
+            spider_name="legacy_spider", project_name=sample_project_name
+        )
+
+        # Verify parse_article still works
+        assert hasattr(spider, "parse_article")
+        assert callable(spider.parse_article)
+
+    @pytest.mark.integration
+    async def test_callback_with_processors(
+        self, temp_db: Session, sample_project_name: str, mocker
+    ):
+        """Test callbacks with field processors."""
+        callbacks_config = {
+            "parse_product": {
+                "extract": {
+                    "price": {
+                        "css": "span.price::text",
+                        "processors": [
+                            {"type": "strip"},
+                            {"type": "regex", "pattern": r"\$(\d+\.\d+)"},
+                            {"type": "cast", "to": "float"},
+                        ],
+                    }
+                }
+            }
+        }
+
+        spider_config = Spider(
+            name="test_spider",
+            project=sample_project_name,
+            allowed_domains=["example.com"],
+            start_urls=["https://example.com/"],
+            callbacks_config=callbacks_config,
+        )
+        temp_db.add(spider_config)
+        temp_db.commit()
+
+        spider = DatabaseSpider(
+            spider_name="test_spider", project_name=sample_project_name
+        )
+
+        spider.settings = mocker.Mock()
+        spider.settings.getbool = mocker.Mock(return_value=False)
+
+        html = """
+        <html>
+            <body>
+                <span class="price">  $129.99  </span>
+            </body>
+        </html>
+        """
+        response = HtmlResponse(
+            url="https://example.com/product/456",
+            body=html.encode("utf-8"),
+            encoding="utf-8",
+        )
+
+        results = []
+        async for item in spider.parse_product(response):
+            results.append(item)
+
+        assert len(results) == 1
+        item = results[0]
+
+        # Processor chain should have extracted and cast the price
+        assert item["price"] == 129.99
+        assert isinstance(item["price"], float)
+
+    @pytest.mark.integration
+    def test_datetime_serialization_in_pipeline(
+        self, temp_db: Session, sample_project_name: str
+    ):
+        """Test that datetime objects from processors are serialized correctly."""
+        from pipelines import DatabasePipeline, _serialize_datetime_recursive
+        from datetime import datetime, timezone
+
+        # Test the helper function
+        test_data = {
+            "simple_date": datetime(2024, 2, 24, 10, 30, 0, tzinfo=timezone.utc),
+            "nested": {
+                "date": datetime(2024, 1, 1, tzinfo=timezone.utc),
+                "text": "hello"
+            },
+            "list_dates": [
+                datetime(2024, 2, 1, tzinfo=timezone.utc),
+                "text",
+                123
+            ],
+            "text": "plain string"
+        }
+
+        result = _serialize_datetime_recursive(test_data)
+
+        # Verify datetime objects converted to ISO strings
+        assert isinstance(result["simple_date"], str)
+        assert result["simple_date"] == "2024-02-24T10:30:00+00:00"
+        assert isinstance(result["nested"]["date"], str)
+        assert result["nested"]["date"] == "2024-01-01T00:00:00+00:00"
+        assert result["nested"]["text"] == "hello"
+        assert isinstance(result["list_dates"][0], str)
+        assert result["list_dates"][1] == "text"
+        assert result["list_dates"][2] == 123
+        assert result["text"] == "plain string"

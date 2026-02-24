@@ -133,9 +133,16 @@ See [docs/analysis-workflow.md](docs/analysis-workflow.md) for detailed Phase 1-
 
 ### Phase 2: Rule Generation & Extraction Testing
 
-**Goal:** Create URL matching rules, test if generic extractors work, discover custom selectors if needed.
+**Goal:** Create URL matching rules, choose extraction strategy (generic extractors, custom selectors, or callbacks).
 
 **Read [docs/analysis-workflow.md](docs/analysis-workflow.md) for Phase 2 details.**
+
+**DECISION POINT: What type of content are you scraping?**
+
+- **Articles/blog posts?** → Use `parse_article` with generic extractors (newspaper, trafilatura)
+- **Products, jobs, listings, forums?** → Use **named callbacks** with custom fields
+
+**For article content (title/content/author/date):**
 
 1. Use `sections.md` to create rules for each section.
 2. **Test generic extractors first:** Inspect an article page and analyze its structure:
@@ -161,10 +168,27 @@ See [docs/analysis-workflow.md](docs/analysis-workflow.md) for detailed Phase 1-
    See [docs/extractors.md](docs/extractors.md) for selector discovery and extractor config.
 4. Consolidate into `final_spider.json`.
 
+**For non-article content (products, jobs, etc.):**
+
+1. Analyze a sample page: `./scrapai analyze data/proj/spider/analysis/page.html`
+2. Identify all fields to extract (name, price, rating, etc.)
+3. For each field, discover the CSS selector:
+   ```bash
+   ./scrapai analyze data/proj/spider/analysis/page.html --test "h1.product-name::text"
+   ./scrapai analyze data/proj/spider/analysis/page.html --find "price"
+   ```
+4. Create callback config with all fields + processors
+5. Test on 2-3 example pages to verify selectors work across different items
+6. Consolidate into `final_spider.json` with `callbacks` section
+
+See "Named Callbacks & Custom Fields" section below for syntax and examples.
+
 **✓ Phase 2 DONE when:**
 - `final_spider.json` created with all URL matching rules
-- Extractor strategy chosen (generic or custom selectors)
-- If custom: `CUSTOM_SELECTORS` config has selectors for title, content, author, date
+- Extractor strategy chosen:
+  - **Generic extractors:** `EXTRACTOR_ORDER` configured
+  - **Custom selectors:** `CUSTOM_SELECTORS` for title, content, author, date
+  - **Named callbacks:** `callbacks` dict with custom field extraction
 - All settings documented (Cloudflare, Playwright, etc. if needed)
 
 ### Phase 3: Prepare Spider Configuration
@@ -374,6 +398,59 @@ Browser-only mode (legacy, slow — only if hybrid fails):
 ```json
 { "INFINITE_SCROLL": true, "MAX_SCROLLS": 5, "SCROLL_DELAY": 1.0 }
 ```
+
+---
+
+## Named Callbacks & Custom Fields
+
+For non-article content (products, jobs, listings, forums), use **named callbacks** with custom field extraction.
+
+**Templates:** `templates/spider-ecommerce.json`, `spider-jobs.json`, `spider-realestate.json`
+**Full guide:** [docs/callbacks.md](docs/callbacks.md)
+
+**When to use:**
+- E-commerce (products, prices, ratings)
+- Job boards (title, company, salary, location)
+- Real estate (properties, prices, features)
+- Forums (posts, authors, replies, likes)
+- Any structured data beyond title/content/author/date
+
+**Basic structure:**
+```json
+{
+  "rules": [{"allow": ["/product/.*"], "callback": "parse_product"}],
+  "callbacks": {
+    "parse_product": {
+      "extract": {
+        "name": {"css": "h1.title::text"},
+        "price": {
+          "css": "span.price::text",
+          "processors": [
+            {"type": "strip"},
+            {"type": "regex", "pattern": "\\$([\\d.]+)"},
+            {"type": "cast", "to": "float"}
+          ]
+        },
+        "features": {"css": "li.feature::text", "get_all": true}
+      }
+    }
+  }
+}
+```
+
+**Field extraction:**
+- CSS: `{"css": "h1::text"}` or `{"css": "img::attr(src)"}`
+- XPath: `{"xpath": "//h1/text()"}`
+- Lists: `{"css": "li::text", "get_all": true}`
+- Nested: `{"type": "nested_list", "selector": "div.item", "extract": {...}}`
+
+**Processors (8 available):** See [docs/processors.md](docs/processors.md)
+- `strip`, `replace`, `regex`, `cast`, `join`, `default`, `lowercase`, `parse_datetime`
+- Chain: `[{"type": "strip"}, {"type": "regex", ...}, {"type": "cast", "to": "float"}]`
+
+**Reserved names (NEVER use):** `parse_article`, `parse_start_url`, `start_requests`, `from_crawler`, `closed`, `parse`
+
+**Storage:** Custom fields → `metadata_json` column, displayed in `show` command, flattened in exports
 
 ---
 

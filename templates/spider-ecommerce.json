@@ -1,0 +1,82 @@
+{
+  "name": "example_shop",
+  "source_url": "https://shop.example.com",
+  "allowed_domains": ["shop.example.com"],
+  "start_urls": ["https://shop.example.com/products"],
+  "rules": [
+    {
+      "allow": ["/product/[^/]+$"],
+      "callback": "parse_product",
+      "follow": false
+    },
+    {
+      "allow": ["/products", "/category/"],
+      "callback": null,
+      "follow": true
+    }
+  ],
+  "callbacks": {
+    "parse_product": {
+      "extract": {
+        "name": {
+          "css": "h1.product-name::text",
+          "processors": [{"type": "strip"}]
+        },
+        "price": {
+          "css": "span.price::text",
+          "processors": [
+            {"type": "strip"},
+            {"type": "regex", "pattern": "\\$([\\d,.]+)"},
+            {"type": "replace", "old": ",", "new": ""},
+            {"type": "cast", "to": "float"}
+          ]
+        },
+        "original_price": {
+          "css": "span.original-price::text",
+          "processors": [
+            {"type": "strip"},
+            {"type": "regex", "pattern": "\\$([\\d,.]+)"},
+            {"type": "replace", "old": ",", "new": ""},
+            {"type": "cast", "to": "float"},
+            {"type": "default", "default": null}
+          ]
+        },
+        "rating": {
+          "css": "span.rating::attr(data-rating)",
+          "processors": [{"type": "cast", "to": "float"}]
+        },
+        "review_count": {
+          "css": "span.reviews::text",
+          "processors": [
+            {"type": "regex", "pattern": "(\\d+)"},
+            {"type": "cast", "to": "int"},
+            {"type": "default", "default": 0}
+          ]
+        },
+        "availability": {
+          "css": "span.stock::text",
+          "processors": [
+            {"type": "strip"},
+            {"type": "lowercase"}
+          ]
+        },
+        "brand": {
+          "css": "span.brand::text",
+          "processors": [{"type": "strip"}]
+        },
+        "categories": {
+          "css": "a.category::text",
+          "get_all": true
+        },
+        "features": {
+          "css": "li.feature::text",
+          "get_all": true
+        },
+        "images": {
+          "css": "img.product-image::attr(src)",
+          "get_all": true
+        }
+      }
+    }
+  }
+}

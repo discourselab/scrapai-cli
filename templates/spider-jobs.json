@@ -1,0 +1,77 @@
+{
+  "name": "example_jobs",
+  "source_url": "https://jobs.example.com",
+  "allowed_domains": ["jobs.example.com"],
+  "start_urls": ["https://jobs.example.com/listings"],
+  "rules": [
+    {
+      "allow": ["/job/\\d+"],
+      "callback": "parse_job",
+      "follow": false
+    }
+  ],
+  "callbacks": {
+    "parse_job": {
+      "extract": {
+        "title": {
+          "css": "h1.job-title::text",
+          "processors": [{"type": "strip"}]
+        },
+        "company": {
+          "css": "span.company-name::text",
+          "processors": [{"type": "strip"}]
+        },
+        "location": {
+          "css": "span.location::text",
+          "processors": [{"type": "strip"}]
+        },
+        "salary_min": {
+          "css": "span.salary-min::text",
+          "processors": [
+            {"type": "regex", "pattern": "\\$([\\d,]+)"},
+            {"type": "replace", "old": ",", "new": ""},
+            {"type": "cast", "to": "int"}
+          ]
+        },
+        "salary_max": {
+          "css": "span.salary-max::text",
+          "processors": [
+            {"type": "regex", "pattern": "\\$([\\d,]+)"},
+            {"type": "replace", "old": ",", "new": ""},
+            {"type": "cast", "to": "int"}
+          ]
+        },
+        "job_type": {
+          "css": "span.job-type::text",
+          "processors": [
+            {"type": "strip"},
+            {"type": "lowercase"}
+          ]
+        },
+        "remote": {
+          "css": "span.remote::text",
+          "processors": [
+            {"type": "lowercase"},
+            {"type": "regex", "pattern": "(remote|work from home)"},
+            {"type": "cast", "to": "bool"}
+          ]
+        },
+        "posted_date": {
+          "css": "time::attr(datetime)",
+          "processors": [{"type": "parse_datetime"}]
+        },
+        "description": {
+          "css": "div.job-description"
+        },
+        "requirements": {
+          "css": "li.requirement::text",
+          "get_all": true
+        },
+        "benefits": {
+          "css": "li.benefit::text",
+          "get_all": true
+        }
+      }
+    }
+  }
+}

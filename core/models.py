@@ -28,6 +28,7 @@ class Spider(Base):
     source_url = Column(String, nullable=True)
     active = Column(Boolean, default=True)
     project = Column(String(255), default="default")
+    callbacks_config = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 

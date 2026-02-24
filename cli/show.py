@@ -64,20 +64,63 @@ def show(spider_name, project, limit, url, text, title):
         scraped_date = (
             item.scraped_at.strftime("%Y-%m-%d %H:%M") if item.scraped_at else "Unknown"
         )
-        pub_date = (
-            item.published_date.strftime("%Y-%m-%d")
-            if item.published_date
-            else "Unknown"
+
+        # Check if this is a callback item
+        is_callback_item = (
+            item.metadata_json
+            and isinstance(item.metadata_json, dict)
+            and "_callback" in item.metadata_json
         )
 
-        click.echo(f"🔸 [{i}] {item.title or 'No Title'}")
-        click.echo(f"   📅 Published: {pub_date} | Scraped: {scraped_date}")
-        click.echo(f"   🔗 {item.url}")
-        if item.author:
-            click.echo(f"   ✍️  {item.author}")
-        if item.content:
-            content_preview = item.content[:150].replace("\n", " ").strip()
-            if len(item.content) > 150:
-                content_preview += "..."
-            click.echo(f"   📝 {content_preview}")
+        if is_callback_item:
+            # Callback item: show custom fields only
+            click.echo(f"🔸 [{i}] {item.metadata_json['_callback']} item")
+            click.echo(f"   📅 Scraped: {scraped_date}")
+            click.echo(f"   🔗 {item.url}")
+
+            # Filter out internal/noise fields
+            noise_keys = {
+                "_callback", "top_image", "keywords", "movies",
+                "summary", "tags", "meta_lang", "meta_favicon",
+                "meta_description", "meta_keywords", "canonical_link"
+            }
+            custom_fields = {
+                k: v for k, v in item.metadata_json.items()
+                if k not in noise_keys and not k.startswith("_")
+            }
+
+            if custom_fields:
+                for field_name, field_value in custom_fields.items():
+                    # Truncate long values for display
+                    if isinstance(field_value, str) and len(field_value) > 100:
+                        display_value = field_value[:100] + "..."
+                    elif isinstance(field_value, list):
+                        if len(field_value) > 3:
+                            display_value = f"[{len(field_value)} items]"
+                        elif len(str(field_value)) > 100:
+                            display_value = str(field_value)[:100] + "...]"
+                        else:
+                            display_value = field_value
+                    else:
+                        display_value = field_value
+                    click.echo(f"   • {field_name}: {display_value}")
+        else:
+            # Article item: show standard article fields
+            pub_date = (
+                item.published_date.strftime("%Y-%m-%d")
+                if item.published_date
+                else "Unknown"
+            )
+
+            click.echo(f"🔸 [{i}] {item.title or 'No Title'}")
+            click.echo(f"   📅 Published: {pub_date} | Scraped: {scraped_date}")
+            click.echo(f"   🔗 {item.url}")
+            if item.author:
+                click.echo(f"   ✍️  {item.author}")
+            if item.content:
+                content_preview = item.content[:150].replace("\n", " ").strip()
+                if len(item.content) > 150:
+                    content_preview += "..."
+                click.echo(f"   📝 {content_preview}")
+
         click.echo()

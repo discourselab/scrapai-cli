@@ -89,8 +89,28 @@ def export(spider_name, project, fmt, output, limit, url, text, title):
 
     items_data = []
     for item in items:
-        items_data.append(
-            {
+        # Check if this is a callback-extracted item
+        is_callback_item = (
+            item.metadata_json
+            and isinstance(item.metadata_json, dict)
+            and "_callback" in item.metadata_json
+        )
+
+        if is_callback_item:
+            # Callback item: only export custom fields + basic metadata
+            row = {
+                "id": item.id,
+                "url": item.url,
+                "scraped_at": item.scraped_at.isoformat() if item.scraped_at else None,
+                "callback": item.metadata_json["_callback"],
+            }
+            # Add custom fields
+            for field_name, field_value in item.metadata_json.items():
+                if not field_name.startswith("_"):  # Skip internal markers
+                    row[field_name] = field_value
+        else:
+            # Article item: use standard article schema
+            row = {
                 "id": item.id,
                 "url": item.url,
                 "title": item.title,
@@ -100,15 +120,32 @@ def export(spider_name, project, fmt, output, limit, url, text, title):
                     item.published_date.isoformat() if item.published_date else None
                 ),
                 "scraped_at": item.scraped_at.isoformat() if item.scraped_at else None,
-                "metadata": item.metadata_json,
             }
-        )
+            # Add metadata if present
+            if item.metadata_json:
+                row["metadata"] = item.metadata_json
+
+        items_data.append(row)
 
     try:
         if fmt == "csv":
             with open(output_path, "w", newline="", encoding="utf-8") as f:
                 if items_data:
-                    writer = csv.DictWriter(f, fieldnames=items_data[0].keys())
+                    # Collect all unique field names (items may have different custom fields)
+                    all_fields = set()
+                    for row in items_data:
+                        all_fields.update(row.keys())
+
+                    # Define standard field order (custom fields come after)
+                    standard_fields = [
+                        "id", "url", "title", "content", "author",
+                        "published_date", "scraped_at", "callback", "metadata"
+                    ]
+                    ordered_fields = [f for f in standard_fields if f in all_fields]
+                    custom_fields = sorted(all_fields - set(standard_fields))
+                    fieldnames = ordered_fields + custom_fields
+
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
                     writer.writeheader()
                     writer.writerows(items_data)
             click.echo(f"✅ Exported {len(items_data)} articles to CSV: {output_path}")
