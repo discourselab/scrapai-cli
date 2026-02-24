@@ -17,7 +17,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
-from core.models import Base, Spider, ScrapedItem, SpiderRule, SpiderSetting
+from core.models import Base, Spider  # noqa: F401 - used in fixtures
 
 
 @pytest.fixture(scope="session")

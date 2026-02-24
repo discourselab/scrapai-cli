@@ -303,7 +303,7 @@ class TestSettingsValidation:
     def test_valid_cloudflare_strategy(self):
         """Test that valid Cloudflare strategies are accepted."""
         for strategy in ["hybrid", "browser_only", "HYBRID", "BROWSER_ONLY"]:
-            settings = SpiderSettingsSchema(CLOUDFLARE_STRATEGY=strategy)
+            SpiderSettingsSchema(CLOUDFLARE_STRATEGY=strategy)
             # Should not raise
 
     @pytest.mark.unit

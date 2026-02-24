@@ -1,4 +1,3 @@
-import scrapy
 from scrapy.spiders import SitemapSpider
 from core.db import get_db
 from core.models import Spider

@@ -104,7 +104,7 @@ class CloudflareBrowserClient:
                 browser_args=browser_args,
                 sandbox=False,  # Disable sandbox
             )
-            logger.info(f"Started nodriver browser for Cloudflare bypass")
+            logger.info("Started nodriver browser for Cloudflare bypass")
 
             # Wait for browser to fully initialize before attempting navigation
             logger.debug("Waiting for browser to fully initialize...")

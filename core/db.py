@@ -49,6 +49,6 @@ def get_db():
 
 
 def init_db():
-    import core.models
+    import core.models  # noqa: F401 - needed to register models with SQLAlchemy
 
     Base.metadata.create_all(bind=engine)

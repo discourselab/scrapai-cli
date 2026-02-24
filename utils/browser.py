@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import logging
 import asyncio
-from typing import Dict, Optional
+from typing import Dict
 from playwright.async_api import async_playwright
 from settings import USER_AGENT
 
@@ -46,7 +46,10 @@ class BrowserClient:
                 "viewport": {"width": 1366, "height": 768},
                 "user_agent": USER_AGENT,
                 "extra_http_headers": {
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                    "Accept": (
+                        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+                        "image/avif,image/webp,image/apng,*/*;q=0.8"
+                    ),
                     "Accept-Language": "en-US,en;q=0.9",
                     "Accept-Encoding": "gzip, deflate, br",
                     "Cache-Control": "no-cache",
@@ -157,7 +160,7 @@ class BrowserClient:
                     except Exception as e:
                         logger.warning(f"Error during scroll {i+1}: {e}")
                         break
-                logger.info(f"Infinite scroll completed")
+                logger.info("Infinite scroll completed")
 
             return True
         except Exception as e:

@@ -1,8 +1,7 @@
-import scrapy
 from scrapy.linkextractors import LinkExtractor
 from scrapy.spiders import CrawlSpider, Rule
 from core.db import get_db
-from core.models import Spider, SpiderRule
+from core.models import Spider
 from .base import BaseDBSpiderMixin
 import logging
 
