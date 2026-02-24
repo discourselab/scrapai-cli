@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
 import re
@@ -125,6 +125,87 @@ class SpiderSettingsSchema(BaseModel):
         return v
 
 
+class ProcessorSchema(BaseModel):
+    """Schema for field processors."""
+
+    model_config = ConfigDict(extra="allow")  # Allow processor-specific params
+
+    type: str = Field(..., description="Processor type")
+
+    @field_validator("type")
+    @classmethod
+    def validate_processor_type(cls, v):
+        """Validate processor type is one of the allowed processors."""
+        allowed = {
+            "strip",
+            "replace",
+            "regex",
+            "cast",
+            "join",
+            "default",
+            "lowercase",
+            "parse_datetime",
+        }
+        if v not in allowed:
+            raise ValueError(
+                f"Unknown processor type: {v}. Allowed: {', '.join(sorted(allowed))}"
+            )
+        return v
+
+
+class FieldExtractSchema(BaseModel):
+    """Schema for field extraction configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    css: Optional[str] = Field(default=None, description="CSS selector")
+    xpath: Optional[str] = Field(default=None, description="XPath selector")
+    get_all: Optional[bool] = Field(
+        default=False, description="Extract all matches (returns list)"
+    )
+    processors: Optional[List[ProcessorSchema]] = Field(
+        default=None, description="Processors to apply to extracted value"
+    )
+
+    # For nested list extraction
+    type: Optional[str] = Field(default=None, description="Field type (e.g., 'nested_list')")
+    selector: Optional[str] = Field(
+        default=None, description="CSS selector for nested list items"
+    )
+    extract: Optional[Dict[str, Any]] = Field(
+        default=None, description="Nested extraction config"
+    )
+
+    @model_validator(mode="after")
+    def validate_selector_or_nested(self):
+        """Validate that either a selector (css/xpath) or nested config is provided."""
+        has_selector = self.css or self.xpath
+        is_nested = self.type == "nested_list"
+
+        if not has_selector and not is_nested:
+            raise ValueError(
+                "Field must have either 'css' or 'xpath' selector, "
+                "or be a nested_list with 'selector' and 'extract' fields"
+            )
+
+        if is_nested and (not self.selector or not self.extract):
+            raise ValueError(
+                "nested_list fields must have both 'selector' and 'extract' fields"
+            )
+
+        return self
+
+
+class CallbackSchema(BaseModel):
+    """Schema for callback extraction configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    extract: Dict[str, FieldExtractSchema] = Field(
+        ..., min_length=1, description="Field extraction rules"
+    )
+
+
 class SpiderConfigSchema(BaseModel):
     """Schema for complete spider configuration (JSON import)."""
 
@@ -139,6 +220,9 @@ class SpiderConfigSchema(BaseModel):
     )
     settings: SpiderSettingsSchema = Field(
         default_factory=SpiderSettingsSchema, description="Spider settings"
+    )
+    callbacks: Optional[Dict[str, CallbackSchema]] = Field(
+        default=None, description="Named callback extraction configurations"
     )
 
     @field_validator("name")
@@ -204,6 +288,58 @@ class SpiderConfigSchema(BaseModel):
                 raise ValueError(f"URL too long (max 2048 chars): {url[:50]}...")
 
         return v
+
+    @field_validator("callbacks")
+    @classmethod
+    def validate_callbacks(cls, v):
+        """Validate callback names are valid identifiers and not reserved."""
+        if v is None:
+            return v
+
+        reserved_names = {
+            "parse_article",
+            "parse_start_url",
+            "start_requests",
+            "from_crawler",
+            "closed",
+            "parse",
+        }
+
+        for callback_name in v.keys():
+            # Must be valid Python identifier
+            if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", callback_name):
+                raise ValueError(
+                    f"Invalid callback name: '{callback_name}'. "
+                    "Must be a valid Python identifier."
+                )
+
+            # Must not be reserved
+            if callback_name in reserved_names:
+                raise ValueError(
+                    f"Callback name '{callback_name}' is reserved and cannot be used. "
+                    f"Reserved names: {', '.join(sorted(reserved_names))}"
+                )
+
+        return v
+
+    @model_validator(mode="after")
+    def validate_rule_callbacks(self):
+        """Cross-validate that rules reference defined callbacks."""
+        if not self.callbacks or not self.rules:
+            return self
+
+        defined_callbacks = set(self.callbacks.keys())
+        # Add built-in callbacks that are always available
+        defined_callbacks.update({"parse_article", None})
+
+        for idx, rule in enumerate(self.rules):
+            if rule.callback and rule.callback not in defined_callbacks:
+                raise ValueError(
+                    f"Rule {idx} references undefined callback: '{rule.callback}'. "
+                    f"Defined callbacks: {', '.join(sorted(c for c in defined_callbacks if c))}"
+                )
+
+        return self
 
     @field_validator("allowed_domains")
     @classmethod

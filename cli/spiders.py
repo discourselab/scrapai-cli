@@ -86,6 +86,7 @@ def import_spider(file, project, skip_validation):
             source_url = data.get("source_url")
             rules = data.get("rules", [])
             settings_dict = data.get("settings", {})
+            callbacks_dict = data.get("callbacks")
         else:
             try:
                 validated = SpiderConfigSchema(**data)
@@ -97,6 +98,12 @@ def import_spider(file, project, skip_validation):
                 settings_dict = validated.settings.model_dump(
                     exclude_none=True, exclude_unset=True
                 )
+                # Extract callbacks (convert to dict)
+                callbacks_dict = None
+                if validated.callbacks:
+                    callbacks_dict = {
+                        name: cb.model_dump() for name, cb in validated.callbacks.items()
+                    }
             except ValidationError as e:
                 click.echo("❌ Spider configuration validation failed:")
                 for error in e.errors():
@@ -116,6 +123,7 @@ def import_spider(file, project, skip_validation):
             existing.start_urls = start_urls
             existing.source_url = source_url
             existing.project = project
+            existing.callbacks_config = callbacks_dict
 
             # Delete old rules and settings
             db.query(SpiderRule).filter(SpiderRule.spider_id == existing.id).delete()
@@ -131,6 +139,7 @@ def import_spider(file, project, skip_validation):
                 start_urls=start_urls,
                 source_url=source_url,
                 project=project,
+                callbacks_config=callbacks_dict,
             )
             db.add(spider)
             db.flush()
@@ -184,6 +193,8 @@ def import_spider(file, project, skip_validation):
         click.echo(f"   Domains: {', '.join(allowed_domains)}")
         click.echo(f"   Start URLs: {len(start_urls)}")
         click.echo(f"   Rules: {len(rules)}")
+        if callbacks_dict:
+            click.echo(f"   Callbacks: {len(callbacks_dict)} ({', '.join(callbacks_dict.keys())})")
 
     except json.JSONDecodeError as e:
         click.echo(f"❌ Invalid JSON file: {e}")

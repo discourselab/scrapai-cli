@@ -1,16 +1,32 @@
 from datetime import datetime
 from itemadapter import ItemAdapter
 
+
+def _serialize_datetime_recursive(obj):
+    """Recursively convert datetime objects to ISO strings for JSON serialization.
+
+    Handles nested dicts and lists from nested_list extraction.
+    """
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {k: _serialize_datetime_recursive(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_serialize_datetime_recursive(item) for item in obj]
+    else:
+        return obj
+
+
 class ScrapaiPipeline:
     def process_item(self, item, spider):
         adapter = ItemAdapter(item)
-        
+
         # Add scraped timestamp
         adapter['scraped_at'] = datetime.now().isoformat()
-        
+
         # Add source
         adapter['source'] = spider.name
-        
+
         return item
 
 class DatabasePipeline:
@@ -34,7 +50,7 @@ class DatabasePipeline:
     def _flush(self, spider):
         from core.models import ScrapedItem
         from sqlalchemy.exc import IntegrityError
-        
+
         if not self.buffer:
             return
 
@@ -46,14 +62,46 @@ class DatabasePipeline:
         except Exception as e:
             spider.logger.error(f"Error checking duplicates: {e}")
             existing_urls = set()
-        
+
+        # Standard fields that map to ScrapedItem columns
+        STANDARD_FIELDS = {
+            "url", "title", "content", "author", "published_date",
+            "spider_id", "spider_name", "source", "metadata",
+            "html", "extracted_at", "_callback", "scraped_at"
+        }
+
         # 2. Filter and Create Objects
         new_objects = []
         for item in self.buffer:
             if item['url'] in existing_urls:
                 spider.logger.debug(f"Item already exists: {item['url']}")
                 continue
-                
+
+            # Check if this is a callback-extracted item
+            if "_callback" in item:
+                # Separate custom fields from standard fields
+                custom_fields = {k: v for k, v in item.items() if k not in STANDARD_FIELDS}
+
+                # Convert datetime objects to ISO strings for JSON serialization
+                for key, value in list(custom_fields.items()):
+                    if isinstance(value, datetime):
+                        custom_fields[key] = value.isoformat()
+                    elif isinstance(value, list):
+                        # Handle lists that might contain datetime objects
+                        custom_fields[key] = [
+                            v.isoformat() if isinstance(v, datetime) else v
+                            for v in value
+                        ]
+                    elif isinstance(value, dict):
+                        # Handle nested dicts (from nested_list extraction)
+                        custom_fields[key] = _serialize_datetime_recursive(value)
+
+                custom_fields["_callback"] = item["_callback"]
+                metadata = custom_fields
+            else:
+                # Legacy article extraction - use existing metadata
+                metadata = item.get('metadata')
+
             db_item = ScrapedItem(
                 spider_id=item['spider_id'],
                 url=item['url'],
@@ -61,7 +109,7 @@ class DatabasePipeline:
                 content=item.get('content'),
                 published_date=item.get('published_date'),
                 author=item.get('author'),
-                metadata_json=item.get('metadata')
+                metadata_json=metadata
             )
             new_objects.append(db_item)
             

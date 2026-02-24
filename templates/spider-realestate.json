@@ -1,0 +1,84 @@
+{
+  "name": "example_realestate",
+  "source_url": "https://realestate.example.com",
+  "allowed_domains": ["realestate.example.com"],
+  "start_urls": ["https://realestate.example.com/listings"],
+  "rules": [
+    {
+      "allow": ["/property/\\d+"],
+      "callback": "parse_property",
+      "follow": false
+    }
+  ],
+  "callbacks": {
+    "parse_property": {
+      "extract": {
+        "address": {
+          "css": "h1.address::text",
+          "processors": [{"type": "strip"}]
+        },
+        "price": {
+          "css": "span.price::text",
+          "processors": [
+            {"type": "strip"},
+            {"type": "regex", "pattern": "\\$([\\d,]+)"},
+            {"type": "replace", "old": ",", "new": ""},
+            {"type": "cast", "to": "int"}
+          ]
+        },
+        "property_type": {
+          "css": "span.type::text",
+          "processors": [
+            {"type": "strip"},
+            {"type": "lowercase"}
+          ]
+        },
+        "bedrooms": {
+          "css": "span.beds::text",
+          "processors": [
+            {"type": "regex", "pattern": "(\\d+)"},
+            {"type": "cast", "to": "int"}
+          ]
+        },
+        "bathrooms": {
+          "css": "span.baths::text",
+          "processors": [
+            {"type": "regex", "pattern": "([\\d.]+)"},
+            {"type": "cast", "to": "float"}
+          ]
+        },
+        "sqft": {
+          "css": "span.sqft::text",
+          "processors": [
+            {"type": "regex", "pattern": "([\\d,]+)"},
+            {"type": "replace", "old": ",", "new": ""},
+            {"type": "cast", "to": "int"}
+          ]
+        },
+        "year_built": {
+          "css": "span.year::text",
+          "processors": [{"type": "cast", "to": "int"}]
+        },
+        "description": {
+          "css": "div.description"
+        },
+        "features": {
+          "css": "li.feature::text",
+          "get_all": true
+        },
+        "images": {
+          "css": "img.property-image::attr(src)",
+          "get_all": true
+        },
+        "agent_name": {
+          "css": "span.agent-name::text",
+          "processors": [{"type": "strip"}]
+        },
+        "agent_phone": {
+          "css": "a.agent-phone::text",
+          "processors": [{"type": "strip"}]
+        }
+      }
+    }
+  }
+}

@@ -37,7 +37,19 @@ class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
         self.allowed_domains = spider.allowed_domains
         self.start_urls = spider.start_urls
 
-        # Compile rules
+        # Load and register callbacks FIRST (before compiling rules)
+        callbacks_config = getattr(spider, "callbacks_config", None) or {}
+        if callbacks_config:
+            logger.info(f"Loading {len(callbacks_config)} callbacks: {list(callbacks_config.keys())}")
+            for callback_name, callback_config in callbacks_config.items():
+                # Create dynamic method and register it on the spider instance
+                callback_method = self._make_callback(callback_name, callback_config)
+                setattr(self, callback_name, callback_method)
+                logger.info(f"Registered callback: {callback_name}")
+        else:
+            logger.info("No callbacks defined for this spider")
+
+        # Compile rules AFTER callbacks are registered
         self.rules = []
         db_rules = sorted(spider.rules, key=lambda r: r.priority, reverse=True)
 
@@ -70,10 +82,23 @@ class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
         self._load_settings_from_db(spider)
         self._setup_cloudflare_handlers()
 
-    def parse_start_url(self, response):
-        """Process start URLs with parse_article."""
+    async def parse_start_url(self, response):
+        """Process start URLs - use first available callback, otherwise parse_article."""
         logger.info(f"Processing start URL: {response.url}")
-        return self.parse_article(response)
+
+        # If there are any callbacks defined, use the first one for start URLs
+        for rule in self.rules:
+            if rule.callback:
+                logger.info(f"Start URL using callback: {rule.callback}")
+                callback_method = getattr(self, rule.callback)
+                async for item in callback_method(response):
+                    yield item
+                return
+
+        # No callbacks defined, use default article extraction
+        logger.info("Start URL using default article extraction")
+        async for item in self.parse_article(response):
+            yield item
 
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):

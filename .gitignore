@@ -16,6 +16,7 @@ projects/*/outputs/
 projects/*/logs/
 
 AUDIT.md
+docs/scrapy-native-features-implementation.md
 
 
 .DS_Store

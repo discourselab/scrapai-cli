@@ -48,6 +48,18 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
         self._load_settings_from_db(spider)
         self._setup_cloudflare_handlers()
 
+        # Load and register callbacks
+        callbacks_config = getattr(spider, "callbacks_config", None) or {}
+        if callbacks_config:
+            logger.info(f"Loading {len(callbacks_config)} callbacks: {list(callbacks_config.keys())}")
+            for callback_name, callback_config in callbacks_config.items():
+                # Create dynamic method and register it on the spider instance
+                callback_method = self._make_callback(callback_name, callback_config)
+                setattr(self, callback_name, callback_method)
+                logger.info(f"Registered callback: {callback_name}")
+        else:
+            logger.info("No callbacks defined for this spider")
+
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):
         spider = super(SitemapDatabaseSpider, cls).from_crawler(

@@ -135,14 +135,134 @@ class BaseDBSpiderMixin:
             item["spider_id"] = self.spider_config.id
             item["source"] = source_label
 
-            self._items_scraped += 1
-            if self._item_limit and self._items_scraped >= self._item_limit:
-                logger.info(
-                    f"Reached item limit ({self._item_limit}), stopping spider immediately"
-                )
-                yield item
-                raise CloseSpider(f"Item limit reached: {self._item_limit}")
-
+            # Yield item first, let Scrapy's CLOSESPIDER_ITEMCOUNT handle the limit
             yield item
+
+            # Increment counter after yielding (so item can be processed)
+            self._items_scraped += 1
         else:
             logger.warning(f"Failed to extract article from {response.url}")
+
+    def _extract_field(self, selector, config):
+        """Extract a single field using CSS or XPath selector.
+
+        Args:
+            selector: Scrapy Selector object
+            config: Dict with 'css' or 'xpath' key, optional 'get_all' flag
+
+        Returns:
+            Extracted value (string, list, or None)
+        """
+        css = config.get("css")
+        xpath = config.get("xpath")
+        get_all = config.get("get_all", False)
+
+        if css:
+            result = selector.css(css)
+        elif xpath:
+            result = selector.xpath(xpath)
+        else:
+            return None
+
+        if get_all:
+            return result.getall()
+        else:
+            return result.get()
+
+    def _extract_nested_list(self, selector, config, depth=0, max_depth=3):
+        """Extract a list of items with nested field extraction.
+
+        Args:
+            selector: Scrapy Selector object
+            config: Dict with 'selector' and 'extract' keys
+            depth: Current nesting depth
+            max_depth: Maximum nesting depth to prevent infinite loops
+
+        Returns:
+            List of dicts with extracted fields
+        """
+        if depth >= max_depth:
+            logger.warning(f"Max nesting depth {max_depth} reached, stopping")
+            return []
+
+        item_selector = config.get("selector")
+        extract_config = config.get("extract", {})
+
+        if not item_selector or not extract_config:
+            logger.warning("nested_list requires 'selector' and 'extract' keys")
+            return []
+
+        items = []
+        for item_node in selector.css(item_selector):
+            item = {}
+            for field_name, field_config in extract_config.items():
+                # Handle nested_list recursively
+                if field_config.get("type") == "nested_list":
+                    item[field_name] = self._extract_nested_list(
+                        item_node, field_config, depth=depth + 1, max_depth=max_depth
+                    )
+                else:
+                    item[field_name] = self._extract_field(item_node, field_config)
+            items.append(item)
+
+        return items
+
+    def _make_callback(self, callback_name, callback_config):
+        """Generate a dynamic callback method for custom field extraction.
+
+        Args:
+            callback_name: Name of the callback (e.g., 'parse_product')
+            callback_config: Dict with 'extract' key containing field definitions
+
+        Returns:
+            Async generator function for Scrapy callback
+        """
+
+        async def dynamic_callback(response):
+            """Generated callback that extracts custom fields and applies processors."""
+            from core.processors import apply_processors
+
+            extract_config = callback_config.get("extract", {})
+            if not extract_config:
+                logger.warning(
+                    f"Callback {callback_name} has no extraction config, skipping"
+                )
+                return
+
+            # Build the item with custom fields
+            item = {
+                "url": response.url,
+                "spider_name": self.spider_name,
+                "spider_id": self.spider_config.id,
+                "source": "custom_callback",
+            }
+
+            metadata = {}
+            for field_name, field_config in extract_config.items():
+                # Handle nested_list type
+                if field_config.get("type") == "nested_list":
+                    value = self._extract_nested_list(response, field_config)
+                else:
+                    value = self._extract_field(response, field_config)
+
+                # Apply processors if defined
+                processors = field_config.get("processors", [])
+                if processors:
+                    value = apply_processors(value, processors)
+
+                # Store in metadata (not top-level, to avoid conflicts with reserved fields)
+                metadata[field_name] = value
+
+            # Add metadata_json to item
+            item["metadata_json"] = metadata
+
+            logger.info(
+                f"Extracted {len(metadata)} fields from {response.url} using {callback_name}"
+            )
+
+            yield item
+
+            # Increment counter
+            self._items_scraped += 1
+
+        return dynamic_callback
