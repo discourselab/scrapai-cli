@@ -60,50 +60,47 @@ def show(spider_name, project, limit, url, text, title):
         click.echo(f"   (filtered by: {', '.join(filters_applied)})")
     click.echo()
 
+    # Load spider callbacks config (source of truth for field definitions)
+    callbacks_config = spider.callbacks_config or {}
+
     for i, item in enumerate(items, 1):
         scraped_date = (
             item.scraped_at.strftime("%Y-%m-%d %H:%M") if item.scraped_at else "Unknown"
         )
 
-        # Check if this is a callback item
-        is_callback_item = (
-            item.metadata_json
-            and isinstance(item.metadata_json, dict)
-            and "_callback" in item.metadata_json
+        # Check if this item was extracted using a callback
+        callback_name = (
+            item.metadata_json.get("_callback")
+            if item.metadata_json and isinstance(item.metadata_json, dict)
+            else None
         )
 
-        if is_callback_item:
-            # Callback item: show custom fields only
-            click.echo(f"🔸 [{i}] {item.metadata_json['_callback']} item")
+        if callback_name and callback_name in callbacks_config:
+            # Callback item: show fields defined in spider config
+            click.echo(f"🔸 [{i}] {callback_name} item")
             click.echo(f"   📅 Scraped: {scraped_date}")
             click.echo(f"   🔗 {item.url}")
 
-            # Filter out internal/noise fields
-            noise_keys = {
-                "_callback", "top_image", "keywords", "movies",
-                "summary", "tags", "meta_lang", "meta_favicon",
-                "meta_description", "meta_keywords", "canonical_link"
-            }
-            custom_fields = {
-                k: v for k, v in item.metadata_json.items()
-                if k not in noise_keys and not k.startswith("_")
-            }
+            # Get field definitions from spider config
+            extract_config = callbacks_config[callback_name].get("extract", {})
 
-            if custom_fields:
-                for field_name, field_value in custom_fields.items():
-                    # Truncate long values for display
-                    if isinstance(field_value, str) and len(field_value) > 100:
-                        display_value = field_value[:100] + "..."
-                    elif isinstance(field_value, list):
-                        if len(field_value) > 3:
-                            display_value = f"[{len(field_value)} items]"
-                        elif len(str(field_value)) > 100:
-                            display_value = str(field_value)[:100] + "...]"
-                        else:
-                            display_value = field_value
+            # Show only fields defined in spider config (in definition order)
+            for field_name in extract_config.keys():
+                field_value = item.metadata_json.get(field_name)
+
+                # Truncate long values for display
+                if isinstance(field_value, str) and len(field_value) > 100:
+                    display_value = field_value[:100] + "..."
+                elif isinstance(field_value, list):
+                    if len(field_value) > 3:
+                        display_value = f"[{len(field_value)} items]"
+                    elif len(str(field_value)) > 100:
+                        display_value = str(field_value)[:100] + "...]"
                     else:
                         display_value = field_value
-                    click.echo(f"   • {field_name}: {display_value}")
+                else:
+                    display_value = field_value
+                click.echo(f"   • {field_name}: {display_value}")
         else:
             # Article item: show standard article fields
             pub_date = (
