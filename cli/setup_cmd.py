@@ -60,14 +60,19 @@ def setup(args):
                 )
                 click.echo("✅ Requirements installed")
 
-                click.echo("🌐 Installing Playwright browsers...")
+                click.echo("🌐 Installing Playwright Chromium browser...")
                 subprocess.run(
-                    [str(venv_python), "-m", "playwright", "install"],
+                    [str(venv_python), "-m", "playwright", "install", "chromium"],
                     check=True,
                     cwd=script_dir,
-                    capture_output=True,
                 )
-                click.echo("✅ Playwright browsers installed")
+                click.echo("✅ Playwright Chromium installed")
+
+                # On Linux, remind about system dependencies
+                if sys.platform.startswith("linux"):
+                    click.echo("\n⚠️  Linux users: If Chromium fails to launch, install system dependencies:")
+                    click.echo("   sudo .venv/bin/python -m playwright install-deps chromium")
+                    click.echo("   (requires sudo for system package installation)\n")
             except subprocess.CalledProcessError as e:
                 click.echo(f"❌ Failed to install requirements: {e}")
                 sys.exit(1)

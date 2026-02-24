@@ -82,14 +82,17 @@ class CloudflareBrowserClient:
                     browser_path = matches[0]
                     logger.info(f"Found Playwright Chromium: {browser_path}")
             else:
-                # Linux
-                playwright_chrome = os.path.expanduser(
-                    "~/.cache/ms-playwright/chromium-*/chrome-linux64/chrome"
-                )
-                matches = glob.glob(playwright_chrome)
-                if matches:
-                    browser_path = matches[0]
-                    logger.info(f"Found Playwright Chromium: {browser_path}")
+                # Linux - try both chrome-linux64 (newer) and chrome-linux (older)
+                for pattern in [
+                    "~/.cache/ms-playwright/chromium-*/chrome-linux64/chrome",
+                    "~/.cache/ms-playwright/chromium-*/chrome-linux/chrome",
+                ]:
+                    playwright_chrome = os.path.expanduser(pattern)
+                    matches = glob.glob(playwright_chrome)
+                    if matches:
+                        browser_path = matches[0]
+                        logger.info(f"Found Playwright Chromium: {browser_path}")
+                        break
 
         browser_args = [
             "--disable-dev-shm-usage",
