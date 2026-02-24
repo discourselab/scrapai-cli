@@ -112,8 +112,22 @@ def export(spider_name, project, fmt, output, limit, url, text, title):
             row["callback"] = callback_name
 
             # Export exactly the fields defined in spider config
+            # Check both database columns (for standard fields) and metadata_json (for custom fields)
             for field_name in extract_config.keys():
-                row[field_name] = item.metadata_json.get(field_name)
+                # Standard fields are stored in database columns
+                if field_name == "title":
+                    row[field_name] = item.title
+                elif field_name == "content":
+                    row[field_name] = item.content
+                elif field_name == "author":
+                    row[field_name] = item.author
+                elif field_name == "published_date":
+                    row[field_name] = (
+                        item.published_date.isoformat() if item.published_date else None
+                    )
+                else:
+                    # Custom fields are stored in metadata_json
+                    row[field_name] = item.metadata_json.get(field_name)
         else:
             # Default to standard article fields (for generic extractors)
             row["title"] = item.title
