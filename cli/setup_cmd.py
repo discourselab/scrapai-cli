@@ -148,6 +148,7 @@ def setup(args):
                 "Bash(source:*)",
                 "Bash(sqlite3:*)",
                 "Bash(psql:*)",
+                "Bash(xvfb-run:*)",
             ]
             new_deny = [
                 "Edit(scrapai)",

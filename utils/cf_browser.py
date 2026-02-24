@@ -8,6 +8,7 @@ challenges once and reuse the verified session for subsequent requests.
 import os
 import asyncio
 import logging
+import threading
 from typing import Optional
 
 import nodriver as uc
@@ -51,6 +52,7 @@ class CloudflareBrowserClient:
         self.cf_retry_interval = cf_retry_interval
         self.post_cf_delay = post_cf_delay
         self.fetch_lock = None  # Created lazily on first fetch to bind to correct event loop
+        self._lock_init_lock = threading.Lock()  # Thread-safe lock initialization
 
     async def start(self):
         """Start the browser instance."""
@@ -182,8 +184,11 @@ class CloudflareBrowserClient:
             HTML content as string, or None if fetch failed
         """
         # Lazy lock creation - ensures lock is bound to correct event loop
+        # Use double-checked locking to prevent race condition
         if self.fetch_lock is None:
-            self.fetch_lock = asyncio.Lock()
+            with self._lock_init_lock:
+                if self.fetch_lock is None:  # Double-check after acquiring thread lock
+                    self.fetch_lock = asyncio.Lock()
 
         # Use lock to ensure only one fetch at a time (sequential, using same tab)
         async with self.fetch_lock:
