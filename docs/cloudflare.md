@@ -85,6 +85,63 @@ Only if hybrid fails. Browser for every request. **Requires `CONCURRENT_REQUESTS
 | `CF_PAGE_TIMEOUT` | 120000 | Page navigation timeout (ms) |
 | `CONCURRENT_REQUESTS` | — | Must be 1 for browser-only mode |
 
+## Timeouts & Hang Prevention
+
+**Browser operation timeout:** 300 seconds (5 minutes) per operation to prevent infinite hangs.
+
+If a browser operation (CF verification, page load, etc.) exceeds 300 seconds, the crawl will fail with a `TimeoutError` instead of hanging forever. This protects against:
+- Browser subprocess hangs
+- Network stalls
+- Infinite CF challenge loops
+- Cross-thread asyncio deadlocks
+
+**Typical operation times:**
+- CF verification: 10-60 seconds
+- Page load: 5-30 seconds
+- Cookie refresh: 10-30 seconds
+
+If you consistently hit the 300s timeout, investigate:
+- Network connectivity issues
+- Site blocking your IP/region
+- Browser/Chrome subprocess problems
+- System resource constraints (CPU/memory)
+
+## Troubleshooting
+
+### Crawl Hangs at "Getting/refreshing CF cookies"
+
+**Symptoms:** Browser opens but never navigates to URL. Logs show "Getting/refreshing CF cookies" but no progress.
+
+**Possible causes:**
+1. **Asyncio event loop mismatch** (fixed in latest version)
+2. **Browser subprocess issues** - Chrome/nodriver not compatible with thread-based event loop
+3. **Display/X11 issues** on Linux servers
+4. **Network/firewall blocking browser traffic**
+
+**Solutions:**
+- Ensure you're on latest version with timeout fix
+- Check browser actually opens (not headless failing)
+- On Linux servers, verify Xvfb is installed
+- Test with `--cloudflare` flag on inspector first
+- Check system resources (CPU, memory, disk)
+
+### Works on One Machine But Not Another
+
+**Environmental factors affecting browser subprocesses:**
+- Python/asyncio version differences
+- Display environment (X11 vs Wayland vs headless)
+- Chrome/Chromium version and availability
+- System resources and timing (race conditions)
+- Network conditions (DNS, latency, firewalls)
+- Security software interfering with browser
+
+**Debugging steps:**
+1. Test inspector with `--cloudflare` on both machines
+2. Check Chrome is installed and accessible: `google-chrome --version`
+3. On Linux servers, verify display: `echo $DISPLAY` (should show `:99` with Xvfb)
+4. Check logs for specific error messages
+5. Try with different `CLOUDFLARE_STRATEGY` (hybrid vs browser_only)
+
 ## Full Spider Example (Hybrid)
 
 ```json
