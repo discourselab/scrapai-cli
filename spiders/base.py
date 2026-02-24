@@ -235,9 +235,10 @@ class BaseDBSpiderMixin:
                 "spider_name": self.spider_name,
                 "spider_id": self.spider_config.id,
                 "source": "custom_callback",
+                "_callback": callback_name,  # Mark as callback item for pipeline
             }
 
-            metadata = {}
+            # Extract all custom fields
             for field_name, field_config in extract_config.items():
                 # Handle nested_list type
                 if field_config.get("type") == "nested_list":
@@ -250,14 +251,11 @@ class BaseDBSpiderMixin:
                 if processors:
                     value = apply_processors(value, processors)
 
-                # Store in metadata (not top-level, to avoid conflicts with reserved fields)
-                metadata[field_name] = value
-
-            # Add metadata_json to item
-            item["metadata_json"] = metadata
+                # Store custom fields directly on item (pipeline will move to metadata_json)
+                item[field_name] = value
 
             logger.info(
-                f"Extracted {len(metadata)} fields from {response.url} using {callback_name}"
+                f"Extracted {len(extract_config)} fields from {response.url} using {callback_name}"
             )
 
             yield item
