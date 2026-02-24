@@ -142,9 +142,9 @@ class CloudflareBrowserClient:
             )
 
             success = await cf_verify.verify(
-                _max_retries=self.cf_max_retries,
-                _interval_between_retries=self.cf_retry_interval,
-                _reload_page_after_n_retries=0,
+                _max_retries=10,  # More attempts
+                _interval_between_retries=2,  # More time between attempts
+                _reload_page_after_n_retries=3,  # Reload after 3 failed attempts
             )
 
             if not success:
