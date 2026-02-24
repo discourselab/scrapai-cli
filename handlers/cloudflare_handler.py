@@ -70,6 +70,7 @@ class CloudflareDownloadHandler:
     # Cookie cache: {spider_name: {'cookies': {}, 'user_agent': str, 'timestamp': float}}
     _cookie_cache: Dict[str, Dict] = {}
     _cookie_cache_lock = threading.Lock()
+    _refresh_lock = None  # Async lock for cookie refresh (created on event loop)
 
     # Default: refresh cookies after 10 minutes
     DEFAULT_COOKIE_REFRESH_THRESHOLD = 600  # seconds (10 minutes)
@@ -144,13 +145,16 @@ class CloudflareDownloadHandler:
             try:
                 logger.info("CloudflareDownloadHandler: Closing shared browser...")
 
-                # Close browser synchronously (wait for completion)
-                # driver.stop() is synchronous, so call it directly
+                # Close browser on the correct event loop
                 if CloudflareDownloadHandler._shared_browser.driver:
-                    CloudflareDownloadHandler._shared_browser.driver.stop()
-                    logger.info(
-                        "CloudflareDownloadHandler: Browser stopped successfully"
-                    )
+                    try:
+                        # Run browser stop on persistent event loop to avoid "different loop" errors
+                        self._run_async(self._stop_browser_async())
+                        logger.info(
+                            "CloudflareDownloadHandler: Browser stopped successfully"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Error during browser cleanup: {e}")
 
                 # Clean up state
                 CloudflareDownloadHandler._shared_browser = None
@@ -173,6 +177,11 @@ class CloudflareDownloadHandler:
             CloudflareDownloadHandler._event_loop = None
             CloudflareDownloadHandler._event_loop_thread = None
             logger.info("CloudflareDownloadHandler: Stopped persistent event loop")
+
+    async def _stop_browser_async(self):
+        """Stop browser on the correct event loop to avoid 'different loop' errors."""
+        if CloudflareDownloadHandler._shared_browser:
+            await CloudflareDownloadHandler._shared_browser.close()
 
     def download_request(self, request: Request, spider):
         """Handle request using hybrid or browser-only strategy.
@@ -302,30 +311,51 @@ class CloudflareDownloadHandler:
             return False
 
     async def _refresh_cookies(self, spider_name: str, url: str, spider):
-        """Get fresh cookies via browser."""
-        await self._ensure_browser_started(spider)
+        """Get fresh cookies via browser (thread-safe, only one refresh at a time)."""
+        # Lazy lock creation on correct event loop
+        if CloudflareDownloadHandler._refresh_lock is None:
+            CloudflareDownloadHandler._refresh_lock = asyncio.Lock()
 
-        # Fetch page with browser to get cookies
-        html = await self._fetch_with_browser(url, spider)
+        # Use lock to prevent concurrent refresh operations
+        async with CloudflareDownloadHandler._refresh_lock:
+            # Double-check if another request already refreshed while we waited
+            with CloudflareDownloadHandler._cookie_cache_lock:
+                cached = CloudflareDownloadHandler._cookie_cache.get(spider_name)
+                if cached:
+                    age = time.time() - cached["timestamp"]
+                    spider_settings = getattr(spider, "custom_settings", {})
+                    threshold = spider_settings.get(
+                        "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD",
+                        self.DEFAULT_COOKIE_REFRESH_THRESHOLD
+                    )
+                    if age < threshold:
+                        # Another request already refreshed, use those cookies
+                        logger.info(f"[{spider_name}] Cookies already refreshed by another request")
+                        return
 
-        if not html:
-            raise Exception(f"Failed to verify CF for {url}")
+            await self._ensure_browser_started(spider)
 
-        # Extract cookies from browser
-        cookies, user_agent = await self._extract_cookies_from_browser()
+            # Fetch page with browser to get cookies
+            html = await self._fetch_with_browser(url, spider)
 
-        # Cache cookies
-        with CloudflareDownloadHandler._cookie_cache_lock:
-            CloudflareDownloadHandler._cookie_cache[spider_name] = {
-                "cookies": cookies,
-                "user_agent": user_agent,
-                "timestamp": time.time(),
-            }
+            if not html:
+                raise Exception(f"Failed to verify CF for {url}")
 
-        cf_value = cookies.get("cf_clearance", "N/A")[:20]
-        logger.info(
-            f"[{spider_name}] Cached {len(cookies)} cookies (cf_clearance: {cf_value}...)"
-        )
+            # Extract cookies from browser
+            cookies, user_agent = await self._extract_cookies_from_browser()
+
+            # Cache cookies
+            with CloudflareDownloadHandler._cookie_cache_lock:
+                CloudflareDownloadHandler._cookie_cache[spider_name] = {
+                    "cookies": cookies,
+                    "user_agent": user_agent,
+                    "timestamp": time.time(),
+                }
+
+            cf_value = cookies.get("cf_clearance", "N/A")[:20]
+            logger.info(
+                f"[{spider_name}] Cached {len(cookies)} cookies (cf_clearance: {cf_value}...)"
+            )
 
     async def _invalidate_cookies(self, spider_name: str):
         """Invalidate cached cookies."""

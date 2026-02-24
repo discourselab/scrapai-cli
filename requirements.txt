@@ -3,7 +3,7 @@ scrapy-deltafetch>=2.0.0
 beautifulsoup4>=4.11.0
 lxml>=4.9.0
 python-dotenv>=1.0.0
-playwright>=1.40.0
+playwright==1.56.0
 python-dateutil>=2.8.2
 newspaper4k
 sqlalchemy
@@ -13,6 +13,6 @@ pydantic
 alembic
 pandas>=2.0.0
 pyarrow>=14.0.0
-nodriver>=0.45.0
+nodriver==0.48.1
 aiohttp
 click>=8.0.0
