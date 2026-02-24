@@ -87,41 +87,42 @@ def export(spider_name, project, fmt, output, limit, url, text, title):
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Load spider callbacks config (source of truth for field definitions)
+    callbacks_config = spider.callbacks_config or {}
+
     items_data = []
     for item in items:
-        # Check if this is a callback-extracted item
-        is_callback_item = (
-            item.metadata_json
-            and isinstance(item.metadata_json, dict)
-            and "_callback" in item.metadata_json
+        # Base fields always included
+        row = {
+            "id": item.id,
+            "url": item.url,
+            "scraped_at": item.scraped_at.isoformat() if item.scraped_at else None,
+        }
+
+        # Check if this item was extracted using a callback
+        callback_name = (
+            item.metadata_json.get("_callback")
+            if item.metadata_json and isinstance(item.metadata_json, dict)
+            else None
         )
 
-        if is_callback_item:
-            # Callback item: only export custom fields + basic metadata
-            row = {
-                "id": item.id,
-                "url": item.url,
-                "scraped_at": item.scraped_at.isoformat() if item.scraped_at else None,
-                "callback": item.metadata_json["_callback"],
-            }
-            # Add custom fields
-            for field_name, field_value in item.metadata_json.items():
-                if not field_name.startswith("_"):  # Skip internal markers
-                    row[field_name] = field_value
+        if callback_name and callback_name in callbacks_config:
+            # Dynamic export: use spider config to determine which fields to export
+            extract_config = callbacks_config[callback_name].get("extract", {})
+            row["callback"] = callback_name
+
+            # Export exactly the fields defined in spider config
+            for field_name in extract_config.keys():
+                row[field_name] = item.metadata_json.get(field_name)
         else:
-            # Article item: use standard article schema
-            row = {
-                "id": item.id,
-                "url": item.url,
-                "title": item.title,
-                "content": item.content,
-                "author": item.author,
-                "published_date": (
-                    item.published_date.isoformat() if item.published_date else None
-                ),
-                "scraped_at": item.scraped_at.isoformat() if item.scraped_at else None,
-            }
-            # Add metadata if present
+            # Default to standard article fields (for generic extractors)
+            row["title"] = item.title
+            row["content"] = item.content
+            row["author"] = item.author
+            row["published_date"] = (
+                item.published_date.isoformat() if item.published_date else None
+            )
+            # Include metadata if present
             if item.metadata_json:
                 row["metadata"] = item.metadata_json
 
