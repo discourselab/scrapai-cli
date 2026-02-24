@@ -109,10 +109,24 @@ class CloudflareDownloadHandler:
 
     @classmethod
     def _run_async(cls, coro):
-        """Run a coroutine on the persistent event loop from any thread."""
+        """Run a coroutine on the persistent event loop from any thread.
+
+        Raises:
+            TimeoutError: If browser operation takes longer than 300 seconds
+        """
         loop = cls._get_event_loop()
         future = asyncio.run_coroutine_threadsafe(coro, loop)
-        return future.result()  # Block until complete
+        try:
+            return future.result(timeout=300)  # 5 minute timeout
+        except TimeoutError:
+            logger.error(
+                "Browser operation timed out after 300 seconds. "
+                "This may indicate browser subprocess hung or network issues."
+            )
+            raise
+        except Exception as e:
+            logger.error(f"Browser operation failed: {e}")
+            raise
 
     def open(self):
         """Called when spider opens - prepare handler."""
