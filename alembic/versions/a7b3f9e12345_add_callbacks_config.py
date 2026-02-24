@@ -20,9 +20,21 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Add callbacks_config column to spiders table."""
-    op.add_column('spiders', sa.Column('callbacks_config', sa.JSON(), nullable=True))
+    # Check if column already exists (idempotent migration)
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    columns = [col['name'] for col in inspector.get_columns('spiders')]
+
+    if 'callbacks_config' not in columns:
+        op.add_column('spiders', sa.Column('callbacks_config', sa.JSON(), nullable=True))
 
 
 def downgrade() -> None:
     """Remove callbacks_config column from spiders table."""
-    op.drop_column('spiders', 'callbacks_config')
+    # Check if column exists before dropping (idempotent migration)
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    columns = [col['name'] for col in inspector.get_columns('spiders')]
+
+    if 'callbacks_config' in columns:
+        op.drop_column('spiders', 'callbacks_config')
