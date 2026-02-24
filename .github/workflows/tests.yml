@@ -105,7 +105,7 @@ jobs:
 
     - name: Lint with flake8
       run: |
-        flake8 core spiders cli handlers utils tests --count --statistics
+        flake8 core spiders cli handlers utils tests --count --statistics --max-line-length=120
 
     - name: Type check with mypy
       run: |
