@@ -263,6 +263,83 @@ def inspect(table):
         click.echo(f"❌ Failed to inspect table '{table}': {e}")
 
 
+def _build_count_query(sql):
+    """Build a SELECT COUNT(*) query from an UPDATE or DELETE statement.
+
+    Extracts the table and WHERE clause to preview affected rows.
+    Returns the count SQL string, or None if parsing fails.
+    """
+    sql_stripped = sql.strip().rstrip(";")
+
+    # UPDATE <table> SET ... [WHERE ...]
+    update_match = re.match(
+        r"UPDATE\s+(\w+)\s+SET\s+.+?(WHERE\s+.+)?$",
+        sql_stripped,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if update_match:
+        table = update_match.group(1)
+        where = update_match.group(2) or ""
+        return f"SELECT COUNT(*) FROM {table} {where}".strip()
+
+    # DELETE FROM <table> [WHERE ...]
+    delete_match = re.match(
+        r"DELETE\s+FROM\s+(\w+)(\s+WHERE\s+.+)?$",
+        sql_stripped,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if delete_match:
+        table = delete_match.group(1)
+        where = delete_match.group(2) or ""
+        return f"SELECT COUNT(*) FROM {table} {where}".strip()
+
+    return None
+
+
+def _format_results(rows, result, format, json_lib):
+    """Format and display query results."""
+    if not rows:
+        click.echo("(no results)")
+        return
+
+    if format == "json":
+        columns = result.keys()
+        output = [dict(zip(columns, row)) for row in rows]
+        click.echo(json_lib.dumps(output, indent=2, default=str))
+
+    elif format == "csv":
+        columns = result.keys()
+        click.echo(",".join(columns))
+        for row in rows:
+            click.echo(",".join(str(v) for v in row))
+
+    else:  # table format (default)
+        columns = result.keys()
+
+        # Calculate column widths
+        col_widths = [len(str(col)) for col in columns]
+        for row in rows:
+            for i, val in enumerate(row):
+                col_widths[i] = max(col_widths[i], len(str(val)))
+
+        # Print header
+        header = " | ".join(
+            str(col).ljust(width) for col, width in zip(columns, col_widths)
+        )
+        click.echo(header)
+        click.echo("-" * len(header))
+
+        # Print rows
+        for row in rows:
+            click.echo(
+                " | ".join(
+                    str(val).ljust(width) for val, width in zip(row, col_widths)
+                )
+            )
+
+        click.echo(f"\n({len(rows)} rows)")
+
+
 @db.command("query")
 @click.argument("sql")
 @click.option(
@@ -271,75 +348,69 @@ def inspect(table):
     default="table",
     help="Output format",
 )
-def query(sql, format):
-    """Execute a read-only SQL query against the database.
+@click.option(
+    "--yes", "-y",
+    is_flag=True,
+    help="Skip confirmation prompt for UPDATE/DELETE",
+)
+def query(sql, format, yes):
+    """Execute a SQL query against the database.
 
-    Only SELECT queries are allowed for safety.
+    SELECT, UPDATE, and DELETE queries are allowed.
+    UPDATE and DELETE show affected row count and require confirmation.
 
     Examples:
       ./scrapai db query "SELECT * FROM spiders LIMIT 5"
+      ./scrapai db query "UPDATE spider_settings SET value='3' WHERE key='DOWNLOAD_DELAY'"
+      ./scrapai db query "DELETE FROM scraped_items WHERE spider_id = 5"
       ./scrapai db query "SELECT COUNT(*) FROM scraped_items" --format json
     """
     from core.db import get_db
     import json as json_lib
 
-    # Safety check - only allow SELECT queries
+    # Safety check - only allow SELECT, UPDATE, DELETE
     sql_upper = sql.strip().upper()
-    if not sql_upper.startswith("SELECT"):
-        click.echo("❌ Only SELECT queries are allowed")
-        click.echo("   This is a read-only query command for safety")
+    allowed_prefixes = ("SELECT", "UPDATE", "DELETE")
+    if not any(sql_upper.startswith(prefix) for prefix in allowed_prefixes):
+        click.echo("❌ Only SELECT, UPDATE, and DELETE queries are allowed")
+        click.echo("   INSERT, DROP, ALTER, and TRUNCATE are blocked for safety")
         return
+
+    is_write = not sql_upper.startswith("SELECT")
 
     try:
         db = next(get_db())
         from sqlalchemy import text
 
-        result = db.execute(text(sql))
-        rows = result.fetchall()
+        if is_write:
+            # Preview affected rows before executing
+            count_sql = _build_count_query(sql)
+            if count_sql:
+                try:
+                    affected = db.execute(text(count_sql)).scalar()
+                except Exception:
+                    affected = "unknown"
+            else:
+                affected = "unknown"
 
-        if not rows:
-            click.echo("(no results)")
-            return
+            op = "UPDATE" if sql_upper.startswith("UPDATE") else "DELETE"
 
-        if format == "json":
-            # Convert to list of dicts
-            columns = result.keys()
-            output = [dict(zip(columns, row)) for row in rows]
-            click.echo(json_lib.dumps(output, indent=2, default=str))
+            if not yes:
+                click.echo(f"⚠️  This will {op} {affected} row(s). Continue? [y/N] ", nl=False)
+                confirm = click.getchar()
+                click.echo()  # newline after input
+                if confirm.lower() != "y":
+                    click.echo("Cancelled.")
+                    return
 
-        elif format == "csv":
-            # CSV output
-            columns = result.keys()
-            click.echo(",".join(columns))
-            for row in rows:
-                click.echo(",".join(str(v) for v in row))
+            result = db.execute(text(sql))
+            db.commit()
+            click.echo(f"✅ {op} complete — {result.rowcount} row(s) affected")
 
-        else:  # table format (default)
-            # Simple table output
-            columns = result.keys()
-
-            # Calculate column widths
-            col_widths = [len(str(col)) for col in columns]
-            for row in rows:
-                for i, val in enumerate(row):
-                    col_widths[i] = max(col_widths[i], len(str(val)))
-
-            # Print header
-            header = " | ".join(
-                str(col).ljust(width) for col, width in zip(columns, col_widths)
-            )
-            click.echo(header)
-            click.echo("-" * len(header))
-
-            # Print rows
-            for row in rows:
-                click.echo(
-                    " | ".join(
-                        str(val).ljust(width) for val, width in zip(row, col_widths)
-                    )
-                )
-
-            click.echo(f"\n({len(rows)} rows)")
+        else:
+            result = db.execute(text(sql))
+            rows = result.fetchall()
+            _format_results(rows, result, format, json_lib)
 
     except Exception as e:
         click.echo(f"❌ Query failed: {e}")
