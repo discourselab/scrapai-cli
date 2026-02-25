@@ -55,6 +55,8 @@ class CloudflareDownloadHandler:
     - CLOUDFLARE_COOKIE_REFRESH_THRESHOLD: seconds before refresh (default: 1500)
     """
 
+    lazy = True  # Scrapy lazy loading attribute
+
     # Class-level (shared) browser state
     _shared_browser = None
     _browser_started = False
@@ -262,7 +264,6 @@ class CloudflareDownloadHandler:
         need_refresh = await self._should_refresh_cookies(spider_name, spider)
 
         if need_refresh:
-            logger.info(f"[{spider_name}] Getting/refreshing CF cookies via browser")
             await self._refresh_cookies(spider_name, request.url, spider)
 
         # Fetch with HTTP + cookies
@@ -332,6 +333,9 @@ class CloudflareDownloadHandler:
                         # Another request already refreshed, use those cookies
                         logger.info(f"[{spider_name}] Cookies already refreshed by another request")
                         return
+
+            # Log AFTER acquiring lock (only winning thread logs this)
+            logger.info(f"[{spider_name}] Getting/refreshing CF cookies via browser")
 
             await self._ensure_browser_started(spider)
 

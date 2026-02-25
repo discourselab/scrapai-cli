@@ -18,14 +18,22 @@ def _serialize_datetime_recursive(obj):
 
 
 class ScrapaiPipeline:
-    def process_item(self, item, spider):
+    @classmethod
+    def from_crawler(cls, crawler):
+        """Create pipeline from crawler (Scrapy convention)."""
+        pipe = cls()
+        pipe.crawler = crawler
+        return pipe
+
+    def process_item(self, item):
         adapter = ItemAdapter(item)
 
         # Add scraped timestamp
         adapter['scraped_at'] = datetime.now().isoformat()
 
-        # Add source
-        adapter['source'] = spider.name
+        # Add source (get spider name from crawler)
+        spider_name = self.crawler.spider.name if hasattr(self, 'crawler') and self.crawler.spider else 'unknown'
+        adapter['source'] = spider_name
 
         return item
 
