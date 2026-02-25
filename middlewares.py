@@ -26,7 +26,10 @@ class SmartProxyMiddleware:
     Expert-in-the-loop: Expensive proxies (residential) require explicit user approval.
     """
 
-    def __init__(self, settings=None):
+    def __init__(self, settings=None, crawler=None):
+        # Store crawler reference for accessing spider (Scrapy new API)
+        self.crawler = crawler
+
         # Determine proxy type (auto, datacenter, or residential)
         self.proxy_mode = settings.get('PROXY_TYPE', 'auto') if settings else 'auto'
 
@@ -112,12 +115,12 @@ class SmartProxyMiddleware:
 
     @classmethod
     def from_crawler(cls, crawler):
-        middleware = cls(settings=crawler.settings)
+        middleware = cls(settings=crawler.settings, crawler=crawler)
         crawler.signals.connect(middleware.spider_opened, signal=signals.spider_opened)
         crawler.signals.connect(middleware.spider_closed, signal=signals.spider_closed)
         return middleware
 
-    def process_request(self, request, spider):
+    def process_request(self, request):
         """
         Decide whether to use proxy based on domain history.
         If domain was previously blocked, use proxy proactively.
@@ -136,7 +139,7 @@ class SmartProxyMiddleware:
 
         return None
 
-    def process_response(self, request, response, spider):
+    def process_response(self, request, response):
         """
         Detect rate limiting (429) or blocking (403) and retry with proxy.
         Implements expert-in-the-loop for expensive proxy escalation.
@@ -156,7 +159,7 @@ class SmartProxyMiddleware:
                     self.active_proxy_type == 'datacenter' and
                     self.residential_configured and
                     not self.expert_message_shown):
-                    self._show_expert_message(spider)
+                    self._show_expert_message()
 
                 return response
 
@@ -180,9 +183,10 @@ class SmartProxyMiddleware:
 
         return response
 
-    def _show_expert_message(self, spider):
+    def _show_expert_message(self):
         """Show expert-in-the-loop message for residential proxy escalation."""
         self.expert_message_shown = True
+        spider_name = self.crawler.spider.name if self.crawler and self.crawler.spider else "unknown"
         logger.warning("")
         logger.warning("=" * 80)
         logger.warning("⚠️  EXPERT-IN-THE-LOOP: Datacenter proxy failed for some domains")
@@ -192,7 +196,7 @@ class SmartProxyMiddleware:
         logger.warning(f"Blocked domains: {', '.join(sorted(self.failed_with_proxy_domains))}")
         logger.warning("")
         logger.warning("To proceed with residential proxy, run:")
-        logger.warning(f"  ./scrapai crawl {spider.name} --project <project> --proxy-type residential")
+        logger.warning(f"  ./scrapai crawl {spider_name} --project <project> --proxy-type residential")
         logger.warning("")
         logger.warning("=" * 80)
         logger.warning("")
@@ -225,4 +229,4 @@ class SmartProxyMiddleware:
             self.active_proxy_type == 'datacenter' and
             self.residential_configured and
             not self.expert_message_shown):
-            self._show_expert_message(spider)
+            self._show_expert_message()
