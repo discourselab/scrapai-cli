@@ -132,75 +132,73 @@ def setup(args):
         click.echo(f"❌ Database setup failed: {e}")
         sys.exit(1)
 
-    claude_home = Path.home() / ".claude"
-    if claude_home.exists():
-        click.echo("🔧 Configuring Claude Code permissions...")
-        try:
-            import json
+    click.echo("🔧 Configuring Claude Code permissions...")
+    try:
+        import json
 
-            settings_dir = Path(".claude")
-            settings_dir.mkdir(exist_ok=True)
-            settings_file = settings_dir / "settings.local.json"
+        settings_dir = Path(".claude")
+        settings_dir.mkdir(exist_ok=True)
+        settings_file = settings_dir / "settings.local.json"
 
-            new_allow = [
-                "Read",
-                "Write",
-                "Edit",
-                "Update",
-                "Glob",
-                "Grep",
-                "Bash(./scrapai:*)",
-                "Bash(source:*)",
-                "Bash(sqlite3:*)",
-                "Bash(psql:*)",
-                "Bash(xvfb-run:*)",
-            ]
-            new_deny = [
-                "Edit(scrapai)",
-                "Update(scrapai)",
-                "Edit(.claude/*)",
-                "Update(.claude/*)",
-                "Write(**/*.py)",
-                "Edit(**/*.py)",
-                "Update(**/*.py)",
-                "MultiEdit(**/*.py)",
-                "Write(.env)",
-                "Write(secrets/**)",
-                "Write(config/**/*.key)",
-                "Write(**/*password*)",
-                "Write(**/*secret*)",
-                "WebFetch",
-                "WebSearch",
-                "Bash(rm:*)",
-            ]
+        new_allow = [
+            "Read",
+            "Write",
+            "Edit",
+            "Update",
+            "Glob",
+            "Grep",
+            "Bash(./scrapai:*)",
+            "Bash(source:*)",
+            "Bash(sqlite3:*)",
+            "Bash(psql:*)",
+            "Bash(xvfb-run:*)",
+        ]
+        new_deny = [
+            "Edit(scrapai)",
+            "Update(scrapai)",
+            "Edit(.claude/*)",
+            "Update(.claude/*)",
+            "Write(**/*.py)",
+            "Edit(**/*.py)",
+            "Update(**/*.py)",
+            "MultiEdit(**/*.py)",
+            "Write(.env)",
+            "Write(secrets/**)",
+            "Write(config/**/*.key)",
+            "Write(**/*password*)",
+            "Write(**/*secret*)",
+            "WebFetch",
+            "WebSearch",
+            "Bash(rm:*)",
+        ]
 
-            if settings_file.exists():
-                with open(settings_file, "r") as f:
-                    settings = json.load(f)
-            else:
-                settings = {"permissions": {}}
+        if settings_file.exists():
+            with open(settings_file, "r") as f:
+                settings = json.load(f)
+        else:
+            settings = {"permissions": {}}
 
-            if "permissions" not in settings:
-                settings["permissions"] = {}
+        if "permissions" not in settings:
+            settings["permissions"] = {}
 
-            existing_allow = settings["permissions"].get("allow", [])
-            for item in new_allow:
-                if item not in existing_allow:
-                    existing_allow.append(item)
-            settings["permissions"]["allow"] = existing_allow
+        existing_allow = settings["permissions"].get("allow", [])
+        for item in new_allow:
+            if item not in existing_allow:
+                existing_allow.append(item)
+        settings["permissions"]["allow"] = existing_allow
 
-            existing_deny = settings["permissions"].get("deny", [])
-            for item in new_deny:
-                if item not in existing_deny:
-                    existing_deny.append(item)
-            settings["permissions"]["deny"] = existing_deny
+        existing_deny = settings["permissions"].get("deny", [])
+        for item in new_deny:
+            if item not in existing_deny:
+                existing_deny.append(item)
+        settings["permissions"]["deny"] = existing_deny
 
-            with open(settings_file, "w") as f:
-                json.dump(settings, f, indent=2)
+        with open(settings_file, "w") as f:
+            json.dump(settings, f, indent=2)
 
-            click.echo("✅ Claude Code permissions configured")
-        except Exception as e:
-            click.echo(f"⚠️  Warning: Could not configure Claude Code settings: {e}")
+        click.echo("✅ Claude Code permissions configured")
+    except Exception as e:
+        click.echo(f"⚠️  Warning: Could not configure Claude Code settings: {e}")
 
     click.echo("🎉 ScrapAI setup complete!")
     click.echo("📝 You can now:")
