@@ -8,6 +8,7 @@ challenges once and reuse the verified session for subsequent requests.
 import os
 import asyncio
 import logging
+import random
 import threading
 from typing import Optional
 
@@ -15,6 +16,11 @@ import nodriver as uc
 from nodriver_cf_verify import CFVerify
 
 logger = logging.getLogger(__name__)
+
+
+def random_delay(min_sec: float, max_sec: float) -> float:
+    """Generate random delay to mimic human timing variance"""
+    return random.uniform(min_sec, max_sec)
 
 
 class CloudflareBrowserClient:
@@ -111,9 +117,10 @@ class CloudflareBrowserClient:
             )
             logger.info("Started nodriver browser for Cloudflare bypass")
 
-            # Wait for browser to fully initialize before attempting navigation
-            logger.debug("Waiting for browser to fully initialize...")
-            await asyncio.sleep(2)
+            # Wait for browser to fully initialize (random delay like human)
+            init_delay = random_delay(1.5, 2.5)
+            logger.debug(f"Waiting {init_delay:.2f}s for browser to fully initialize...")
+            await asyncio.sleep(init_delay)
             logger.debug("Browser initialization wait complete")
         except Exception as e:
             logger.error(f"Failed to start nodriver browser: {e}")
@@ -154,15 +161,20 @@ class CloudflareBrowserClient:
             logger.info(f"Cloudflare verified successfully for {url}")
             self.cf_verified = True
 
-            # Wait for content to load after CF verification
-            logger.info(
-                f"Waiting {self.post_cf_delay}s for content to load after CF verification"
+            # Wait for content to load after CF verification (random like human)
+            post_delay = random_delay(
+                max(3.0, self.post_cf_delay - 1),
+                self.post_cf_delay + 2
             )
-            await self.tab.sleep(self.post_cf_delay)
+            logger.info(
+                f"Waiting {post_delay:.2f}s for content to load after CF verification"
+            )
+            await self.tab.sleep(post_delay)
 
-            # Additional wait to ensure full page render
-            logger.info("Waiting additional time for full page render...")
-            await self.tab.sleep(3)
+            # Additional wait to ensure full page render (random)
+            render_delay = random_delay(2.0, 4.0)
+            logger.info(f"Waiting {render_delay:.2f}s for full page render...")
+            await self.tab.sleep(render_delay)
 
             return True
 
@@ -213,9 +225,10 @@ class CloudflareBrowserClient:
                 # Navigate same tab to new URL
                 await self.tab.get(url)
 
-                # Wait for page to fully load (not just network idle)
-                logger.debug("Waiting for page to stabilize...")
-                await self.tab.sleep(2)  # Initial wait for JS to start
+                # Wait for page to fully load (random like human)
+                stabilize_delay = random_delay(1.5, 2.5)
+                logger.debug(f"Waiting {stabilize_delay:.2f}s for page to stabilize...")
+                await self.tab.sleep(stabilize_delay)
 
                 # If wait_selector provided, wait for it to appear
                 if wait_selector:
@@ -226,30 +239,34 @@ class CloudflareBrowserClient:
                         # Wait for the selector to be present in the DOM
                         await self.tab.select(wait_selector, timeout=wait_timeout)
                         logger.info(f"Selector '{wait_selector}' found")
-                        # Additional wait to ensure full rendering
-                        await self.tab.sleep(2)
+                        # Additional wait to ensure full rendering (random)
+                        render_wait = random_delay(1.5, 2.5)
+                        await self.tab.sleep(render_wait)
                     except Exception as e:
                         logger.warning(
                             f"Timeout waiting for selector '{wait_selector}': {e}"
                         )
-                        # Wait longer anyway - maybe content is loading
-                        await self.tab.sleep(3)
+                        # Wait longer anyway - maybe content is loading (random)
+                        fallback_wait = random_delay(2.5, 4.0)
+                        await self.tab.sleep(fallback_wait)
                 else:
-                    # No specific selector - wait longer for full page render
+                    # No specific selector - wait longer for full page render (random)
+                    full_render_wait = random_delay(4.0, 6.0)
                     logger.info(
-                        "No wait selector specified, waiting for full page render"
+                        f"No wait selector specified, waiting {full_render_wait:.2f}s for full page render"
                     )
-                    await self.tab.sleep(5)
+                    await self.tab.sleep(full_render_wait)
 
                 # Verify we got actual content, not empty skeleton
                 html = await self.tab.get_content()
                 text_length = len(html.replace("<", "").replace(">", "").strip())
 
                 if text_length < 5000:
+                    additional_wait = random_delay(4.0, 6.0)
                     logger.warning(
-                        f"HTML seems small ({text_length} chars), waiting longer for content..."
+                        f"HTML seems small ({text_length} chars), waiting {additional_wait:.2f}s longer for content..."
                     )
-                    await self.tab.sleep(5)
+                    await self.tab.sleep(additional_wait)
                     html = await self.tab.get_content()
                     text_length = len(html.replace("<", "").replace(">", "").strip())
                     logger.info(f"After additional wait: {text_length} chars")
