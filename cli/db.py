@@ -2,6 +2,32 @@ import click
 import subprocess
 import sys
 import os
+import re
+
+
+# Whitelist of valid table names (prevents SQL injection)
+VALID_TABLES = {
+    "spiders",
+    "scraped_items",
+    "crawl_queue",
+    "spider_rules",
+    "spider_settings",
+    "alembic_version",
+}
+
+
+def validate_table_name(table_name):
+    """Validate table name against whitelist.
+
+    Raises:
+        ValueError: If table name is not in whitelist
+    """
+    if table_name not in VALID_TABLES:
+        valid_list = ", ".join(sorted(VALID_TABLES))
+        raise ValueError(
+            f"Invalid table name: '{table_name}'\n"
+            f"Valid tables: {valid_list}"
+        )
 
 
 def is_postgresql():
@@ -57,30 +83,31 @@ def current():
 def stats():
     """Show database statistics (counts of spiders, items, queue)"""
     from core.db import get_db
+    from sqlalchemy import text
 
     try:
         db = next(get_db())
 
         # Get counts
-        spider_count = db.execute("SELECT COUNT(*) FROM spiders").scalar()
-        item_count = db.execute("SELECT COUNT(*) FROM scraped_items").scalar()
+        spider_count = db.execute(text("SELECT COUNT(*) FROM spiders")).scalar()
+        item_count = db.execute(text("SELECT COUNT(*) FROM scraped_items")).scalar()
         project_count = db.execute(
-            "SELECT COUNT(DISTINCT project) FROM spiders WHERE project IS NOT NULL"
+            text("SELECT COUNT(DISTINCT project) FROM spiders WHERE project IS NOT NULL")
         ).scalar()
 
         # Queue breakdown
-        queue_total = db.execute("SELECT COUNT(*) FROM crawl_queue").scalar()
+        queue_total = db.execute(text("SELECT COUNT(*) FROM crawl_queue")).scalar()
         queue_pending = db.execute(
-            "SELECT COUNT(*) FROM crawl_queue WHERE status = 'pending'"
+            text("SELECT COUNT(*) FROM crawl_queue WHERE status = 'pending'")
         ).scalar()
         queue_processing = db.execute(
-            "SELECT COUNT(*) FROM crawl_queue WHERE status = 'processing'"
+            text("SELECT COUNT(*) FROM crawl_queue WHERE status = 'processing'")
         ).scalar()
         queue_completed = db.execute(
-            "SELECT COUNT(*) FROM crawl_queue WHERE status = 'completed'"
+            text("SELECT COUNT(*) FROM crawl_queue WHERE status = 'completed'")
         ).scalar()
         queue_failed = db.execute(
-            "SELECT COUNT(*) FROM crawl_queue WHERE status = 'failed'"
+            text("SELECT COUNT(*) FROM crawl_queue WHERE status = 'failed'")
         ).scalar()
 
         click.echo("📊 Database Statistics\n")
@@ -102,25 +129,26 @@ def stats():
 def tables():
     """List all tables with row counts"""
     from core.db import get_db
+    from sqlalchemy import text
 
     try:
         db = next(get_db())
 
         # Get table names (works for both SQLite and PostgreSQL)
         if is_postgresql():
-            result = db.execute("""
+            result = db.execute(text("""
                 SELECT table_name
                 FROM information_schema.tables
                 WHERE table_schema = 'public'
                 ORDER BY table_name
-            """)
+            """))
         else:  # SQLite
-            result = db.execute("""
+            result = db.execute(text("""
                 SELECT name as table_name
                 FROM sqlite_master
                 WHERE type='table'
                 ORDER BY name
-            """)
+            """))
 
         table_names = [row[0] for row in result]
 
@@ -135,8 +163,13 @@ def tables():
 
         for table_name in table_names:
             try:
-                count = db.execute(f"SELECT COUNT(*) FROM {table_name}").scalar()
+                # Validate table name before using in SQL
+                validate_table_name(table_name)
+                count = db.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar()
                 click.echo(f"   {table_name.ljust(max_name_len)}  {count:,} rows")
+            except ValueError as e:
+                # Invalid table name - skip it
+                click.echo(f"   {table_name.ljust(max_name_len)}  (skipped: not a ScrapAI table)")
             except Exception as e:
                 click.echo(f"   {table_name.ljust(max_name_len)}  (error: {e})")
 
@@ -153,14 +186,23 @@ def inspect(table):
     """
     from core.db import get_db
 
+    # Validate table name before using in SQL
+    try:
+        validate_table_name(table)
+    except ValueError as e:
+        click.echo(f"❌ {e}")
+        return
+
     try:
         db = next(get_db())
+        from sqlalchemy import text
 
         click.echo(f"🔍 Table: {table}\n")
 
         # Get schema (works for both SQLite and PostgreSQL)
+        # Note: table name already validated against whitelist above
         if is_postgresql():
-            result = db.execute(f"""
+            result = db.execute(text(f"""
                 SELECT
                     column_name,
                     data_type,
@@ -170,7 +212,7 @@ def inspect(table):
                 FROM information_schema.columns
                 WHERE table_name = '{table}'
                 ORDER BY ordinal_position
-            """)
+            """))
 
             click.echo("Column                Type                 Nullable  Default")
             click.echo("-" * 70)
@@ -193,7 +235,8 @@ def inspect(table):
                 click.echo(f"{col_name:20}  {type_str:18}  {null_str:8}  {default_str}")
 
         else:  # SQLite
-            result = db.execute(f"PRAGMA table_info({table})")
+            # Note: table name already validated against whitelist above
+            result = db.execute(text(f"PRAGMA table_info({table})"))
 
             click.echo("Column                Type                 Nullable  Default")
             click.echo("-" * 70)
@@ -212,7 +255,8 @@ def inspect(table):
                 )
 
         # Show row count
-        count = db.execute(f"SELECT COUNT(*) FROM {table}").scalar()
+        # Note: table name already validated against whitelist above
+        count = db.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
         click.echo(f"\nTotal rows: {count:,}")
 
     except Exception as e:
@@ -248,7 +292,9 @@ def query(sql, format):
 
     try:
         db = next(get_db())
-        result = db.execute(sql)
+        from sqlalchemy import text
+
+        result = db.execute(text(sql))
         rows = result.fetchall()
 
         if not rows:
