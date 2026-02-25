@@ -17,6 +17,7 @@
 
 
 import asyncio
+import random
 from datetime import datetime
 from typing import Optional, Any, Union
 
@@ -207,6 +208,91 @@ class CFHelper:
             await self.cf_logger.log(f"Error occurred: {e}")
 
 
+class CFHumanBehavior:
+    """
+    Adds human-like patterns to avoid bot detection.
+    Random delays, mouse movements, scrolling, and hover patterns.
+    """
+
+    def __init__(self, _browser_tab: Tab, _debug: bool = False) -> None:
+        self.browser_tab: Tab = _browser_tab
+        self.debug: bool = _debug
+        self.cf_logger: CFLogger = CFLogger(_class_name=self.__class__.__name__, _debug=self.debug)
+
+    async def random_delay(self, min_sec: float = 0.5, max_sec: float = 2.0) -> None:
+        """Random delay to mimic human reaction time"""
+        delay = random.uniform(min_sec, max_sec)
+        await self.cf_logger.log(f"Random delay: {delay:.2f}s")
+        await asyncio.sleep(delay)
+
+    async def random_scroll(self) -> None:
+        """Random small scroll movements like humans adjusting view"""
+        try:
+            # Small random scroll (humans don't sit perfectly still)
+            scroll_x = random.randint(-10, 10)
+            scroll_y = random.randint(50, 200)
+            await self.browser_tab.evaluate(f"window.scrollBy({scroll_x}, {scroll_y})")
+            await self.cf_logger.log(f"Random scroll: ({scroll_x}, {scroll_y})")
+            await self.random_delay(0.3, 0.8)
+
+            # Sometimes scroll back a bit (humans browse around)
+            if random.random() > 0.5:
+                scroll_back = random.randint(-50, -20)
+                await self.browser_tab.evaluate(f"window.scrollBy(0, {scroll_back})")
+                await self.random_delay(0.2, 0.5)
+        except Exception as e:
+            await self.cf_logger.log(f"Error during random scroll: {e}")
+
+    async def viewport_jitter(self) -> None:
+        """Tiny viewport movements like humans adjusting window"""
+        try:
+            jitter_x = random.randint(-3, 3)
+            jitter_y = random.randint(-3, 3)
+            await self.browser_tab.evaluate(f"window.scrollBy({jitter_x}, {jitter_y})")
+            await self.cf_logger.log(f"Viewport jitter: ({jitter_x}, {jitter_y})")
+        except Exception as e:
+            await self.cf_logger.log(f"Error during viewport jitter: {e}")
+
+    async def mouse_move_to_element(self, element: Element) -> None:
+        """Move mouse to element with human-like pattern"""
+        try:
+            # Get element position
+            await self.cf_logger.log("Moving mouse to element position")
+
+            # Add small random offset (humans don't click exact center)
+            offset_x = random.randint(-5, 5)
+            offset_y = random.randint(-5, 5)
+
+            # Move with slight randomness
+            await element.mouse_move()
+            await self.cf_logger.log(f"Mouse moved to element (offset: {offset_x}, {offset_y})")
+
+            # Hover pause (humans pause before clicking)
+            hover_time = random.uniform(0.3, 0.9)
+            await self.cf_logger.log(f"Hovering for {hover_time:.2f}s before click")
+            await asyncio.sleep(hover_time)
+
+        except Exception as e:
+            await self.cf_logger.log(f"Error during mouse movement: {e}")
+
+    async def pre_interaction_behavior(self) -> None:
+        """Simulate human behavior before interacting with page"""
+        await self.cf_logger.log("Simulating human pre-interaction behavior")
+
+        # Random initial delay (human reading/observing page)
+        await self.random_delay(1.0, 2.5)
+
+        # Sometimes do a small scroll (humans browse before clicking)
+        if random.random() > 0.3:
+            await self.random_scroll()
+
+        # Viewport micro-adjustment
+        await self.viewport_jitter()
+
+        # Final pause before interaction
+        await self.random_delay(0.5, 1.2)
+
+
 class CFVerify:
     def __init__(self, _browser_tab: Tab, _debug: bool = False) -> None:
         """
@@ -227,6 +313,7 @@ class CFVerify:
         self.cf_util: CFUtil = CFUtil(_browser_tab = self.browser_tab, _debug = self.debug)
         self.cf_helper: CFHelper = CFHelper(_browser_tab = self.browser_tab, _debug = self.debug)
         self.cf_logger: CFLogger = CFLogger(self.__class__.__name__, _debug = self.debug)
+        self.cf_human: CFHumanBehavior = CFHumanBehavior(_browser_tab = self.browser_tab, _debug = self.debug)
 
     async def log(self, message: str) -> None:
         """
@@ -243,18 +330,28 @@ class CFVerify:
         """
         Attempts to verify Cloudflare challenge by retrying up to _max_retries times.
         Optionally reloads the page every _reload_page_after_n_retries attempts.
+
+        Uses human-like patterns: random delays, mouse movements, scrolling.
         """
-        
-        await self.log("Verifying cloudflare has started.")
+
+        await self.log("Verifying cloudflare has started (with human-like patterns).")
+
+        # Initial human behavior (observe page like a real user)
+        await self.cf_human.pre_interaction_behavior()
 
         for retry_count in range(1, _max_retries + 1):
             await self.log(f"Trying to verify cloudflare. Attempt {retry_count} of {_max_retries}.")
 
-            await asyncio.sleep(delay = _interval_between_retries)
+            # Random delay instead of fixed (humans have varying reaction times)
+            min_delay = max(0.5, _interval_between_retries - 0.5)
+            max_delay = _interval_between_retries + 1.0
+            await self.cf_human.random_delay(min_delay, max_delay)
 
             if retry_count < _max_retries and _reload_page_after_n_retries > 0 and retry_count % _reload_page_after_n_retries == 0:
                 await self.log(f"Reloading page... Attempt {retry_count} of {_max_retries}, reload interval {_reload_page_after_n_retries}.")
                 await self.browser_tab.reload()
+                # Human-like delay after reload (humans wait for page to load)
+                await self.cf_human.random_delay(2.0, 4.0)
                 continue
 
             if not await self.cf_helper.is_cloudflare_presented():
@@ -270,17 +367,33 @@ class CFVerify:
                     await self.log("Cloudflare has been verified successfully (no iframe required).")
                     return True
 
+                # Random delay before retry
+                await self.cf_human.random_delay(0.5, 1.5)
                 continue
 
             try:
+                # Human-like behavior before clicking
+                await self.log("Simulating human interaction before clicking iframe...")
+
+                # Small viewport adjustment (humans fidget)
+                await self.cf_human.viewport_jitter()
+
+                # Move mouse to element with hover (humans don't instant-click)
+                await self.cf_human.mouse_move_to_element(iframe)
+
+                # Click the iframe
                 await iframe.mouse_click()
-                await self.log("Cloudflare iframe has been clicked.")
+                await self.log("Cloudflare iframe has been clicked (human-like).")
+
+                # Random delay after click (humans wait to see result)
+                await self.cf_human.random_delay(1.5, 3.0)
 
             except Exception as e:
                 await self.log(f"Error while clicking iframe: {e}")
 
                 if "could not find position for" in str(e):
                     await self.log(f"Cloudflare iframe could not load properly.")
+                    await self.cf_human.random_delay(0.5, 1.5)
                     continue
 
                 if not await self.cf_helper.is_cloudflare_presented():
@@ -291,5 +404,5 @@ class CFVerify:
             await self.log("Cloudflare could not be verified for an unknown reason.")
             return False
 
-        await self.log("Cloudflare has been verified successfully.")
+        await self.log("Cloudflare has been verified successfully (human-like patterns used).")
         return True
