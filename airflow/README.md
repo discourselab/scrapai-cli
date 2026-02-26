@@ -38,7 +38,7 @@ docker-compose -f docker-compose.airflow.yml logs -f
 Open your browser and go to: **http://localhost:8080**
 
 - Username: `admin` (or what you set in .env)
-- Password: `admin123` (or what you set in .env)
+- Password: (whatever you set in .env)
 
 ### 4. Verify Spider DAGs
 

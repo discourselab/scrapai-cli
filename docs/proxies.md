@@ -164,7 +164,7 @@ Recommend proxy setup when:
 SmartProxyMiddleware works with any HTTP proxy provider:
 
 **Datacenter Proxies** (recommended for most use cases):
-- [Decodo](https://decodo.com/) ⭐ **(We use this)** - Residential and datacenter proxies, good value
+- [Decodo](https://decodo.com/) ⭐ **(Recommended)** - Residential and datacenter proxies, good value
 - [Bright Data](https://brightdata.com/) - Industry leader
 - [Oxylabs](https://oxylabs.io/) - High quality
 - [IPRoyal](https://iproyal.com/) - Budget friendly
@@ -217,7 +217,6 @@ SmartProxyMiddleware should already minimize costs by using direct connections f
 ## Future Enhancements
 
 Planned features:
-- [ ] Residential proxy support
 - [ ] Per-spider proxy configuration (override .env)
 - [ ] Proxy pool rotation (multiple proxies)
 - [ ] Automatic proxy health checks

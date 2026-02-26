@@ -9,7 +9,7 @@ Features:
 - Project-based tagging and access control
 - Configurable schedules per spider
 - Integration with existing ./scrapai crawl commands
-- Optional S3 upload (if Hetzner credentials are set)
+- Optional S3 upload (if S3 credentials are set)
 """
 
 import os
@@ -237,8 +237,8 @@ def create_spider_dag(spider):
 
 
 # Filter DAGs by project (set to None to show all projects)
-# Options: None (all), 'brown', 'default', or list like ['brown', 'default']
-AIRFLOW_PROJECT_FILTER = os.getenv('AIRFLOW_PROJECT_FILTER', 'brown')
+# Options: None (all), or comma-separated project names like 'project1,project2'
+AIRFLOW_PROJECT_FILTER = os.getenv('AIRFLOW_PROJECT_FILTER', None)
 
 
 # Generate DAGs for all spiders
