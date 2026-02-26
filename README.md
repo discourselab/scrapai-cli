@@ -346,3 +346,7 @@ ScrapAI is a tool. What you scrape is your responsibility. Respect robots.txt, c
 [AGPL-3.0](LICENSE)
 
 Commercial licenses available for organizations that cannot comply with AGPL v3. Contact info@discourselab.ai.
+
+---
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-yellow?style=flat&logo=buy-me-a-coffee)](https://buymeacoffee.com/scrapai)
