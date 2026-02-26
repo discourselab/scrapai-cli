@@ -226,4 +226,4 @@ Tests to add:
 - [ ] URL extraction tests
 - [ ] Browser automation tests
 
-See `AUDIT.md` for full testing recommendations.
+See the test files for coverage details and testing patterns.

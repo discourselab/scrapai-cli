@@ -242,7 +242,7 @@ ScrapAI auto-detects missing displays on Linux servers and sets up Xvfb for Clou
 | **MCP server** | Yes | Yes | No |
 | **First release** | 2024 | 2024 | 2025 |
 
-crawl4ai has the largest community by far. Scrapling is newer but growing fast. ScrapAI has been used internally across 500+ websites for a knowledge graph. Production-tested, but the public community is just starting.
+crawl4ai has the largest community by far. Scrapling is newer but growing fast. ScrapAI has been production-tested across hundreds of websites. The public community is just starting.
 
 ---
 
