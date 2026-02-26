@@ -10,6 +10,10 @@ Minutes later you have a tested, production-ready scraper stored in a database. 
 
 Built by [DiscourseLab](https://www.discourselab.ai/). Used in production across 500+ websites.
 
+<p align="center">
+  <img src="demo.svg" alt="ScrapAI Demo" width="800">
+</p>
+
 ## Who This Is For
 
 **Good fit:**

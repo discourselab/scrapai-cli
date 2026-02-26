@@ -162,7 +162,7 @@ class TestURLValidation:
             }
             with pytest.raises(ValidationError) as exc_info:
                 SpiderConfigSchema(**config)
-            assert "localhost or private IP" in str(exc_info.value)
+            assert "SSRF" in str(exc_info.value)
 
     @pytest.mark.unit
     def test_ssrf_private_ip(self):
@@ -182,7 +182,26 @@ class TestURLValidation:
             }
             with pytest.raises(ValidationError) as exc_info:
                 SpiderConfigSchema(**config)
-            assert "localhost or private IP" in str(exc_info.value)
+            assert "SSRF" in str(exc_info.value)
+
+    @pytest.mark.unit
+    def test_ssrf_bypass_attempts(self):
+        """Test that SSRF bypass techniques are blocked."""
+        bypass_urls = [
+            "http://172.17.0.1/",       # 172.16.0.0/12 range beyond 172.16.x
+            "http://172.24.5.5/",       # mid-range 172.16.0.0/12
+            "http://172.31.255.255/",   # top of 172.16.0.0/12 range
+        ]
+        for url in bypass_urls:
+            config = {
+                "name": "test",
+                "source_url": "https://example.com",
+                "allowed_domains": ["example.com"],
+                "start_urls": [url],
+            }
+            with pytest.raises(ValidationError) as exc_info:
+                SpiderConfigSchema(**config)
+            assert "SSRF" in str(exc_info.value), f"Expected SSRF block for {url}"
 
 
 class TestDomainValidation:

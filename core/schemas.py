@@ -1,7 +1,10 @@
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
+import ipaddress
 import re
+import socket
+from urllib.parse import urlparse
 
 
 class ScrapedArticle(BaseModel):
@@ -266,22 +269,53 @@ class SpiderConfigSchema(BaseModel):
                 )
 
             # Prevent SSRF to localhost/private IPs
-            dangerous_hosts = [
-                "localhost",
-                "127.0.0.1",
-                "0.0.0.0",
-                "::1",
-                "[::1]",
-                "169.254.",
-                "10.",
-                "172.16.",
-                "192.168.",
-            ]
-            if any(host in url_lower for host in dangerous_hosts):
-                raise ValueError(
-                    f"URL points to localhost or private IP: {url}. "
-                    "This is blocked to prevent SSRF attacks."
-                )
+            # Parse hostname and resolve to catch all encodings
+            # (hex IPs, octal, IPv6 mapped, etc.)
+            parsed = urlparse(url)
+            hostname = parsed.hostname  # lowercased, brackets stripped
+            if hostname:
+                # Check string patterns first (catches "localhost" etc.)
+                if hostname in ("localhost", "0.0.0.0"):
+                    raise ValueError(
+                        f"URL points to localhost: {url}. "
+                        "Blocked to prevent SSRF attacks."
+                    )
+                # Try parsing as IP directly (handles hex, octal, decimal)
+                try:
+                    ip = ipaddress.ip_address(hostname)
+                    if (
+                        ip.is_private
+                        or ip.is_loopback
+                        or ip.is_link_local
+                        or ip.is_reserved
+                    ):
+                        raise ValueError(
+                            f"URL points to private/reserved IP: {url}. "
+                            "Blocked to prevent SSRF attacks."
+                        )
+                except ValueError as ip_err:
+                    if "Blocked to prevent SSRF" in str(ip_err):
+                        raise
+                    # Not an IP literal — resolve the hostname
+                    try:
+                        results = socket.getaddrinfo(
+                            hostname, None, socket.AF_UNSPEC
+                        )
+                        for family, _, _, _, sockaddr in results:
+                            ip = ipaddress.ip_address(sockaddr[0])
+                            if (
+                                ip.is_private
+                                or ip.is_loopback
+                                or ip.is_link_local
+                                or ip.is_reserved
+                            ):
+                                raise ValueError(
+                                    f"URL hostname '{hostname}' resolves to "
+                                    f"private IP {ip}: {url}. "
+                                    "Blocked to prevent SSRF attacks."
+                                )
+                    except socket.gaierror:
+                        pass  # unresolvable host — let Scrapy handle it
 
             # Basic length check
             if len(url) > 2048:
