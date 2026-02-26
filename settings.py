@@ -8,7 +8,7 @@ SPIDER_MODULES = ["spiders"]
 NEWSPIDER_MODULE = "spiders"
 
 # Obey robots.txt rules
-ROBOTSTXT_OBEY = False
+ROBOTSTXT_OBEY = True
 
 # Configure delays for requests
 DOWNLOAD_DELAY = 1
