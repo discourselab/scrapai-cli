@@ -1,6 +1,10 @@
-# ScrapAI
+<p align="center">
+  <img src="logo.png" alt="ScrapAI" width="120">
+</p>
 
-A CLI where you describe what you want to scrape in plain English, an AI agent builds the scraper, and [Scrapy](https://scrapy.org/) runs it.
+<h1 align="center">ScrapAI</h1>
+
+<p align="center">A CLI where you describe what you want to scrape in plain English, an AI agent builds the scraper, and <a href="https://scrapy.org/">Scrapy</a> runs it.</p>
 
 ```
 You: "Add https://bbc.co.uk to my news project"
@@ -349,6 +353,10 @@ Commercial licenses available for organizations that cannot comply with AGPL v3.
 
 ---
 
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-yellow?style=flat&logo=buy-me-a-coffee)](https://buymeacoffee.com/scrapai)
+<p align="center">
+  <a href="https://buymeacoffee.com/scrapai">
+    <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" width="200">
+  </a>
+</p>
 
-Made with 🔥 by [DiscourseLab](https://www.discourselab.ai/)
+<p align="center">Made with 🔥 by <a href="https://www.discourselab.ai/">DiscourseLab</a></p>
