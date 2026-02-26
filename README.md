@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="logo.png" alt="ScrapAI" width="120">
-</p>
-
 <h1 align="center">ScrapAI</h1>
 
 <p align="center">A CLI where you describe what you want to scrape in plain English, an AI agent builds the scraper, and <a href="https://scrapy.org/">Scrapy</a> runs it.</p>
