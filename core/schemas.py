@@ -171,7 +171,9 @@ class FieldExtractSchema(BaseModel):
     )
 
     # For nested list extraction
-    type: Optional[str] = Field(default=None, description="Field type (e.g., 'nested_list')")
+    type: Optional[str] = Field(
+        default=None, description="Field type (e.g., 'nested_list')"
+    )
     selector: Optional[str] = Field(
         default=None, description="CSS selector for nested list items"
     )
@@ -298,9 +300,7 @@ class SpiderConfigSchema(BaseModel):
                         raise
                     # Not an IP literal — resolve the hostname
                     try:
-                        results = socket.getaddrinfo(
-                            hostname, None, socket.AF_UNSPEC
-                        )
+                        results = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC)
                         for family, _, _, _, sockaddr in results:
                             ip = ipaddress.ip_address(sockaddr[0])
                             if (

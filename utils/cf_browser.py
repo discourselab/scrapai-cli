@@ -57,7 +57,9 @@ class CloudflareBrowserClient:
         self.cf_max_retries = cf_max_retries
         self.cf_retry_interval = cf_retry_interval
         self.post_cf_delay = post_cf_delay
-        self.fetch_lock = None  # Created lazily on first fetch to bind to correct event loop
+        self.fetch_lock = (
+            None  # Created lazily on first fetch to bind to correct event loop
+        )
         self._lock_init_lock = threading.Lock()  # Thread-safe lock initialization
 
     async def start(self):
@@ -119,7 +121,9 @@ class CloudflareBrowserClient:
 
             # Wait for browser to fully initialize (random delay like human)
             init_delay = random_delay(1.5, 2.5)
-            logger.debug(f"Waiting {init_delay:.2f}s for browser to fully initialize...")
+            logger.debug(
+                f"Waiting {init_delay:.2f}s for browser to fully initialize..."
+            )
             await asyncio.sleep(init_delay)
             logger.debug("Browser initialization wait complete")
         except Exception as e:
@@ -163,8 +167,7 @@ class CloudflareBrowserClient:
 
             # Wait for content to load after CF verification (random like human)
             post_delay = random_delay(
-                max(3.0, self.post_cf_delay - 1),
-                self.post_cf_delay + 2
+                max(3.0, self.post_cf_delay - 1), self.post_cf_delay + 2
             )
             logger.info(
                 f"Waiting {post_delay:.2f}s for content to load after CF verification"

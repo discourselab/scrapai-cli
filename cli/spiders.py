@@ -102,7 +102,8 @@ def import_spider(file, project, skip_validation):
                 callbacks_dict = None
                 if validated.callbacks:
                     callbacks_dict = {
-                        name: cb.model_dump() for name, cb in validated.callbacks.items()
+                        name: cb.model_dump()
+                        for name, cb in validated.callbacks.items()
                     }
             except ValidationError as e:
                 click.echo("❌ Spider configuration validation failed:")
@@ -194,7 +195,9 @@ def import_spider(file, project, skip_validation):
         click.echo(f"   Start URLs: {len(start_urls)}")
         click.echo(f"   Rules: {len(rules)}")
         if callbacks_dict:
-            click.echo(f"   Callbacks: {len(callbacks_dict)} ({', '.join(callbacks_dict.keys())})")
+            click.echo(
+                f"   Callbacks: {len(callbacks_dict)} ({', '.join(callbacks_dict.keys())})"
+            )
 
     except json.JSONDecodeError as e:
         click.echo(f"❌ Invalid JSON file: {e}")

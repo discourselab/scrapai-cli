@@ -153,8 +153,15 @@ def export(spider_name, project, fmt, output, limit, url, text, title):
 
                     # Define standard field order (custom fields come after)
                     standard_fields = [
-                        "id", "url", "title", "content", "author",
-                        "published_date", "scraped_at", "callback", "metadata"
+                        "id",
+                        "url",
+                        "title",
+                        "content",
+                        "author",
+                        "published_date",
+                        "scraped_at",
+                        "callback",
+                        "metadata",
                     ]
                     ordered_fields = [f for f in standard_fields if f in all_fields]
                     custom_fields = sorted(all_fields - set(standard_fields))

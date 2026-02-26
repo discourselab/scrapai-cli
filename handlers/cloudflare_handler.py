@@ -327,11 +327,13 @@ class CloudflareDownloadHandler:
                     spider_settings = getattr(spider, "custom_settings", {})
                     threshold = spider_settings.get(
                         "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD",
-                        self.DEFAULT_COOKIE_REFRESH_THRESHOLD
+                        self.DEFAULT_COOKIE_REFRESH_THRESHOLD,
                     )
                     if age < threshold:
                         # Another request already refreshed, use those cookies
-                        logger.info(f"[{spider_name}] Cookies already refreshed by another request")
+                        logger.info(
+                            f"[{spider_name}] Cookies already refreshed by another request"
+                        )
                         return
 
             # Log AFTER acquiring lock (only winning thread logs this)

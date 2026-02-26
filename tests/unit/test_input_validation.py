@@ -188,9 +188,9 @@ class TestURLValidation:
     def test_ssrf_bypass_attempts(self):
         """Test that SSRF bypass techniques are blocked."""
         bypass_urls = [
-            "http://172.17.0.1/",       # 172.16.0.0/12 range beyond 172.16.x
-            "http://172.24.5.5/",       # mid-range 172.16.0.0/12
-            "http://172.31.255.255/",   # top of 172.16.0.0/12 range
+            "http://172.17.0.1/",  # 172.16.0.0/12 range beyond 172.16.x
+            "http://172.24.5.5/",  # mid-range 172.16.0.0/12
+            "http://172.31.255.255/",  # top of 172.16.0.0/12 range
         ]
         for url in bypass_urls:
             config = {

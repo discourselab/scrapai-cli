@@ -40,7 +40,9 @@ class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
         # Load and register callbacks FIRST (before compiling rules)
         callbacks_config = getattr(spider, "callbacks_config", None) or {}
         if callbacks_config:
-            logger.info(f"Loading {len(callbacks_config)} callbacks: {list(callbacks_config.keys())}")
+            logger.info(
+                f"Loading {len(callbacks_config)} callbacks: {list(callbacks_config.keys())}"
+            )
             for callback_name, callback_config in callbacks_config.items():
                 # Create dynamic method and register it on the spider instance
                 callback_method = self._make_callback(callback_name, callback_config)

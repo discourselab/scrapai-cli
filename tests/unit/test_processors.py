@@ -1,6 +1,5 @@
 """Unit tests for field processors."""
 
-import pytest
 from datetime import datetime
 from core.processors import (
     strip_processor,
@@ -32,7 +31,10 @@ class TestStripProcessor:
 
 class TestReplaceProcessor:
     def test_replace_string(self):
-        assert replace_processor("hello world", old="world", new="python") == "hello python"
+        assert (
+            replace_processor("hello world", old="world", new="python")
+            == "hello python"
+        )
         assert replace_processor("foo-bar-baz", old="-", new="_") == "foo_bar_baz"
 
     def test_replace_list(self):
@@ -49,7 +51,9 @@ class TestRegexProcessor:
         assert result == "99.99"
 
     def test_regex_extract_specific_group(self):
-        result = regex_processor("Name: John Doe", pattern=r"Name: (\w+) (\w+)", group=2)
+        result = regex_processor(
+            "Name: John Doe", pattern=r"Name: (\w+) (\w+)", group=2
+        )
         assert result == "Doe"
 
     def test_regex_no_match(self):
@@ -213,8 +217,14 @@ class TestApplyProcessors:
 class TestProcessorRegistry:
     def test_all_processors_registered(self):
         expected = {
-            "strip", "replace", "regex", "cast", "join",
-            "default", "lowercase", "parse_datetime"
+            "strip",
+            "replace",
+            "regex",
+            "cast",
+            "join",
+            "default",
+            "lowercase",
+            "parse_datetime",
         }
         assert set(PROCESSORS.keys()) == expected
 
