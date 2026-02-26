@@ -395,7 +395,7 @@ class TestHandlerLifecycle:
 
     @pytest.mark.unit
     def test_handler_close_stops_browser(self):
-        """Test that handler close stops browser."""
+        """Test that handler close cleans up browser state."""
         handler = CloudflareDownloadHandler({})
 
         # Mock browser as started
@@ -407,9 +407,14 @@ class TestHandlerLifecycle:
         CloudflareDownloadHandler._shared_browser = mock_browser
         CloudflareDownloadHandler._browser_started = True
 
-        handler.close()
+        # Mock _run_async since close() uses it to stop browser on event loop
+        with patch.object(
+            CloudflareDownloadHandler, "_run_async", return_value=None
+        ) as mock_run_async:
+            handler.close()
 
-        # Browser should be stopped
-        mock_driver.stop.assert_called_once()
+            # _run_async should have been called to stop the browser
+            mock_run_async.assert_called_once()
+
         assert CloudflareDownloadHandler._browser_started is False
         assert CloudflareDownloadHandler._shared_browser is None

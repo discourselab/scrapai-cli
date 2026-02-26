@@ -13,8 +13,8 @@ if [ $# -eq 0 ]; then
     echo "Usage: bin/parallel-crawl <project> [spider1 spider2 ...]"
     echo ""
     echo "Examples:"
-    echo "  bin/parallel-crawl brown_v2                    # Run all spiders in project"
-    echo "  bin/parallel-crawl brown_v2 spider1 spider2    # Run specific spiders"
+    echo "  bin/parallel-crawl myproject                    # Run all spiders in project"
+    echo "  bin/parallel-crawl myproject spider1 spider2   # Run specific spiders"
     exit 1
 fi
 

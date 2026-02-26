@@ -115,7 +115,7 @@ Our contribution is the orchestration: the CLI, the database-first spider manage
 
 **Requirements:** Python 3.9+, Git
 
-**Supported platforms:** Linux, macOS (Windows coming soon)
+**Supported platforms:** Linux, macOS, Windows
 
 ```bash
 git clone https://github.com/discourselab/scrapai-cli.git
@@ -155,7 +155,7 @@ Agent: [Queues them, processes in parallel batches]
 
 **Other coding agents** (OpenCode, Cursor, Antigravity, etc.) should work with any agent that can read instructions and run shell commands. An `Agents.md` file is included. These agents lack Claude Code's permission enforcement, so review changes carefully.
 
-**Claws.** ScrapAI works with any Claw that can read instructions and execute shell commands. We tested with [NanoClaw](https://github.com/qwibitai/nanoclaw) for autonomous operation via Telegram. More rigorous testing is in progress, and we're excited to try other Claws like PicoClaw, IronClaw, and Nanobot. See[Security](#security) for how the architecture keeps agents safe.
+**Claws.** ScrapAI works with any Claw that can read instructions and execute shell commands. We tested with [NanoClaw](https://github.com/qwibitai/nanoclaw) for autonomous operation via Telegram. More rigorous testing is in progress, and we're excited to try other Claws like PicoClaw, IronClaw, and Nanobot. See [Security](#security) for how the architecture keeps agents safe.
 
 ### Migrating Existing Scrapers
 
