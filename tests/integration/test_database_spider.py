@@ -588,7 +588,7 @@ class TestSpiderWithCallbacks:
         self, temp_db: Session, sample_project_name: str
     ):
         """Test that datetime objects from processors are serialized correctly."""
-        from pipelines import DatabasePipeline, _serialize_datetime_recursive
+        from pipelines import _serialize_datetime_recursive
         from datetime import datetime, timezone
 
         # Test the helper function
@@ -596,14 +596,10 @@ class TestSpiderWithCallbacks:
             "simple_date": datetime(2024, 2, 24, 10, 30, 0, tzinfo=timezone.utc),
             "nested": {
                 "date": datetime(2024, 1, 1, tzinfo=timezone.utc),
-                "text": "hello"
+                "text": "hello",
             },
-            "list_dates": [
-                datetime(2024, 2, 1, tzinfo=timezone.utc),
-                "text",
-                123
-            ],
-            "text": "plain string"
+            "list_dates": [datetime(2024, 2, 1, tzinfo=timezone.utc), "text", 123],
+            "text": "plain string",
         }
 
         result = _serialize_datetime_recursive(test_data)

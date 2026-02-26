@@ -70,8 +70,12 @@ def setup(args):
 
                 # On Linux, remind about system dependencies
                 if sys.platform.startswith("linux"):
-                    click.echo("\n⚠️  Linux users: If Chromium fails to launch, install system dependencies:")
-                    click.echo("   sudo .venv/bin/python -m playwright install-deps chromium")
+                    click.echo(
+                        "\n⚠️  Linux users: If Chromium fails to launch, install system dependencies:"
+                    )
+                    click.echo(
+                        "   sudo .venv/bin/python -m playwright install-deps chromium"
+                    )
                     click.echo("   (requires sudo for system package installation)\n")
             except subprocess.CalledProcessError as e:
                 click.echo(f"❌ Failed to install requirements: {e}")

@@ -29,8 +29,14 @@ class TestProcessorSchema:
 
     def test_all_valid_types(self):
         valid_types = [
-            "strip", "replace", "regex", "cast", "join",
-            "default", "lowercase", "parse_datetime"
+            "strip",
+            "replace",
+            "regex",
+            "cast",
+            "join",
+            "default",
+            "lowercase",
+            "parse_datetime",
         ]
         for ptype in valid_types:
             schema = ProcessorSchema(type=ptype)
@@ -125,8 +131,12 @@ class TestSpiderConfigSchemaWithCallbacks:
 
     def test_reserved_callback_name_fails(self):
         reserved_names = [
-            "parse_article", "parse_start_url", "start_requests",
-            "from_crawler", "closed", "parse"
+            "parse_article",
+            "parse_start_url",
+            "start_requests",
+            "from_crawler",
+            "closed",
+            "parse",
         ]
         for reserved in reserved_names:
             with pytest.raises(ValidationError) as exc_info:
@@ -135,11 +145,7 @@ class TestSpiderConfigSchemaWithCallbacks:
                     source_url="https://example.com",
                     allowed_domains=["example.com"],
                     start_urls=["https://example.com"],
-                    callbacks={
-                        reserved: {
-                            "extract": {"title": {"css": "h1::text"}}
-                        }
-                    },
+                    callbacks={reserved: {"extract": {"title": {"css": "h1::text"}}}},
                 )
             assert "reserved" in str(exc_info.value).lower()
 
@@ -166,14 +172,8 @@ class TestSpiderConfigSchemaWithCallbacks:
                 source_url="https://example.com",
                 allowed_domains=["example.com"],
                 start_urls=["https://example.com"],
-                rules=[
-                    {"allow": [r"/product/\d+"], "callback": "parse_product"}
-                ],
-                callbacks={
-                    "parse_review": {
-                        "extract": {"title": {"css": "h1::text"}}
-                    }
-                }
+                rules=[{"allow": [r"/product/\d+"], "callback": "parse_product"}],
+                callbacks={"parse_review": {"extract": {"title": {"css": "h1::text"}}}},
             )
         assert "undefined callback" in str(exc_info.value).lower()
 
@@ -184,14 +184,8 @@ class TestSpiderConfigSchemaWithCallbacks:
             source_url="https://example.com",
             allowed_domains=["example.com"],
             start_urls=["https://example.com"],
-            rules=[
-                {"allow": [r"/product/\d+"], "callback": "parse_product"}
-            ],
-            callbacks={
-                "parse_product": {
-                    "extract": {"title": {"css": "h1::text"}}
-                }
-            },
+            rules=[{"allow": [r"/product/\d+"], "callback": "parse_product"}],
+            callbacks={"parse_product": {"extract": {"title": {"css": "h1::text"}}}},
         )
         assert config.rules[0].callback == "parse_product"
 
@@ -202,9 +196,7 @@ class TestSpiderConfigSchemaWithCallbacks:
             source_url="https://example.com",
             allowed_domains=["example.com"],
             start_urls=["https://example.com"],
-            rules=[
-                {"allow": [r"/article/\d+"], "callback": "parse_article"}
-            ],
+            rules=[{"allow": [r"/article/\d+"], "callback": "parse_article"}],
         )
         assert config.rules[0].callback == "parse_article"
 
@@ -239,7 +231,9 @@ class TestFieldExtraction:
         selector = Selector(text=html)
 
         mixin = BaseDBSpiderMixin()
-        result = mixin._extract_field(selector, {"xpath": "//span[@class='price']/text()"})
+        result = mixin._extract_field(
+            selector, {"xpath": "//span[@class='price']/text()"}
+        )
         assert result == "$99"
 
     def test_extract_field_missing_selector(self):

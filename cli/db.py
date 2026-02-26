@@ -4,7 +4,6 @@ import sys
 import os
 import re
 
-
 # Whitelist of valid table names (prevents SQL injection)
 VALID_TABLES = {
     "spiders",
@@ -25,8 +24,7 @@ def validate_table_name(table_name):
     if table_name not in VALID_TABLES:
         valid_list = ", ".join(sorted(VALID_TABLES))
         raise ValueError(
-            f"Invalid table name: '{table_name}'\n"
-            f"Valid tables: {valid_list}"
+            f"Invalid table name: '{table_name}'\n" f"Valid tables: {valid_list}"
         )
 
 
@@ -92,7 +90,9 @@ def stats():
         spider_count = db.execute(text("SELECT COUNT(*) FROM spiders")).scalar()
         item_count = db.execute(text("SELECT COUNT(*) FROM scraped_items")).scalar()
         project_count = db.execute(
-            text("SELECT COUNT(DISTINCT project) FROM spiders WHERE project IS NOT NULL")
+            text(
+                "SELECT COUNT(DISTINCT project) FROM spiders WHERE project IS NOT NULL"
+            )
         ).scalar()
 
         # Queue breakdown
@@ -167,9 +167,11 @@ def tables():
                 validate_table_name(table_name)
                 count = db.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar()
                 click.echo(f"   {table_name.ljust(max_name_len)}  {count:,} rows")
-            except ValueError as e:
+            except ValueError:
                 # Invalid table name - skip it
-                click.echo(f"   {table_name.ljust(max_name_len)}  (skipped: not a ScrapAI table)")
+                click.echo(
+                    f"   {table_name.ljust(max_name_len)}  (skipped: not a ScrapAI table)"
+                )
             except Exception as e:
                 click.echo(f"   {table_name.ljust(max_name_len)}  (error: {e})")
 
@@ -332,9 +334,7 @@ def _format_results(rows, result, format, json_lib):
         # Print rows
         for row in rows:
             click.echo(
-                " | ".join(
-                    str(val).ljust(width) for val, width in zip(row, col_widths)
-                )
+                " | ".join(str(val).ljust(width) for val, width in zip(row, col_widths))
             )
 
         click.echo(f"\n({len(rows)} rows)")
@@ -349,7 +349,8 @@ def _format_results(rows, result, format, json_lib):
     help="Output format",
 )
 @click.option(
-    "--yes", "-y",
+    "--yes",
+    "-y",
     is_flag=True,
     help="Skip confirmation prompt for UPDATE/DELETE",
 )
@@ -396,7 +397,9 @@ def query(sql, format, yes):
             op = "UPDATE" if sql_upper.startswith("UPDATE") else "DELETE"
 
             if not yes:
-                click.echo(f"⚠️  This will {op} {affected} row(s). Continue? [y/N] ", nl=False)
+                click.echo(
+                    f"⚠️  This will {op} {affected} row(s). Continue? [y/N] ", nl=False
+                )
                 confirm = click.getchar()
                 click.echo()  # newline after input
                 if confirm.lower() != "y":

@@ -2,7 +2,6 @@
 
 import json
 import logging
-from scrapy.exceptions import CloseSpider
 
 logger = logging.getLogger(__name__)
 
