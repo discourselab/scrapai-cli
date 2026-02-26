@@ -182,7 +182,7 @@ ScrapAI doesn't replace developers. It removes the repetitive parts so you can f
 
 **Consistency across the fleet.** When 5 developers write 100 spiders, you get 5 different styles, naming conventions, and quality levels. ScrapAI produces uniform configs with the same schema, validation, and structure. Easier to review, easier to debug, easier to onboard new people.
 
-**Small, readable codebase.** ~4,000 lines of code (vs ~6,000 for Scrapling and ~27,000 for crawl4ai). Built on Scrapy, SQLAlchemy, Alembic — tools you already know. Read the whole thing in an afternoon. Easy to extend, easy to contribute to.
+**Small, readable codebase.** ~4,000 lines of code. Built on Scrapy, SQLAlchemy, Alembic — tools you already know. Read the whole thing in an afternoon. Easy to extend, easy to contribute to.
 
 ## Architecture
 
