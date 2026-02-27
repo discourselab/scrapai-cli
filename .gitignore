@@ -34,7 +34,10 @@ seed/
 pitch/
 # Output files (but keep example configs)
 *.json
-!templates/*.json
+!templates/**/*.json
+!templates/**/*.md
+!templates/**/*.txt
+templates/**/*.html
 !alembic/versions/*.py
 # Allow version control of alembic migration files
 

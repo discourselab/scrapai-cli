@@ -1,0 +1,84 @@
+{
+  "name": "hn_discussions",
+  "source_url": "https://news.ycombinator.com/",
+  "allowed_domains": ["news.ycombinator.com"],
+  "start_urls": [
+    "https://news.ycombinator.com/item?id=47173121"
+  ],
+  "rules": [
+    {
+      "allow": ["/item\\?id=\\d+"],
+      "callback": "parse_discussion",
+      "follow": false
+    }
+  ],
+  "callbacks": {
+    "parse_discussion": {
+      "extract": {
+        "story_title": {
+          "css": "tr.athing td.title a::text"
+        },
+        "story_url": {
+          "css": "tr.athing td.title a::attr(href)"
+        },
+        "story_points": {
+          "css": "span.score::text",
+          "processors": [
+            {"type": "regex", "pattern": "(\\d+)"},
+            {"type": "default", "value": "0"},
+            {"type": "cast", "to": "int"}
+          ]
+        },
+        "comments": {
+          "type": "nested_list",
+          "selector": "tr.athing.comtr",
+          "extract": {
+            "comment_id": {
+              "css": "::attr(id)"
+            },
+            "author": {
+              "css": "a.hnuser::text"
+            },
+            "time_text": {
+              "css": "span.age a::text"
+            },
+            "timestamp": {
+              "css": "span.age::attr(title)"
+            },
+            "indent_level": {
+              "css": "td.ind::attr(indent)",
+              "processors": [
+                {"type": "default", "value": "0"},
+                {"type": "cast", "to": "int"}
+              ]
+            },
+            "comment_text": {
+              "css": "div.commtext",
+              "get_all": true,
+              "processors": [
+                {"type": "join", "separator": " "}
+              ]
+            },
+            "parent_link": {
+              "css": "a.clicky::attr(href)"
+            },
+            "reply_count": {
+              "css": "a.togg::attr(n)",
+              "processors": [
+                {"type": "default", "value": "0"},
+                {"type": "cast", "to": "int"}
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "settings": {
+    "EXTRACTOR_ORDER": [],
+    "DOWNLOAD_DELAY": 2,
+    "CONCURRENT_REQUESTS": 2,
+    "ROBOTSTXT_OBEY": true,
+    "DEPTH_LIMIT": 1
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "name": "amazon_mac_accessories",
+  "source_url": "https://www.amazon.co.uk/s?k=mac+accessories",
+  "allowed_domains": ["amazon.co.uk", "www.amazon.co.uk"],
+  "start_urls": [
+    "https://www.amazon.co.uk/dp/B077T4FBSP",
+    "https://www.amazon.co.uk/dp/B0BQLLB61B",
+    "https://www.amazon.co.uk/dp/B0DKT8BB4M",
+    "https://www.amazon.co.uk/dp/B096KHQWMF",
+    "https://www.amazon.co.uk/dp/B07X1VZRT1"
+  ],
+  "rules": [
+    {
+      "allow": [".*"],
+      "callback": "parse_product",
+      "follow": false
+    }
+  ],
+  "callbacks": {
+    "parse_product": {
+      "extract": {
+        "product_name": {
+          "css": "span#productTitle::text",
+          "processors": [{"type": "strip"}]
+        },
+        "delivery_primary": {
+          "css": "div#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span::text",
+          "get_all": true,
+          "processors": [{"type": "join", "separator": " "}]
+        },
+        "delivery_fastest": {
+          "css": "div#mir-layout-DELIVERY_BLOCK-slot-SECONDARY_DELIVERY_MESSAGE_LARGE span::text",
+          "get_all": true,
+          "processors": [{"type": "join", "separator": " "}]
+        },
+        "delivery_full": {
+          "css": "div#deliveryBlockMessage span::text",
+          "get_all": true,
+          "processors": [{"type": "join", "separator": " "}]
+        },
+        "price": {
+          "css": "span.a-price span.a-offscreen::text"
+        },
+        "availability": {
+          "css": "div#availability span::text",
+          "processors": [{"type": "strip"}]
+        },
+        "asin": {
+          "css": "input#ASIN::attr(value)"
+        }
+      }
+    }
+  },
+  "settings": {
+    "EXTRACTOR_ORDER": [],
+    "DOWNLOAD_DELAY": 2,
+    "CONCURRENT_REQUESTS": 4,
+    "ROBOTSTXT_OBEY": true,
+    "USER_AGENT": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  }
+}
