@@ -1,0 +1,42 @@
+{
+  "name": "bbc_co_uk",
+  "source_url": "https://bbc.co.uk/",
+  "allowed_domains": ["bbc.co.uk", "www.bbc.co.uk"],
+  "start_urls": ["https://www.bbc.co.uk/"],
+  "rules": [
+    {
+      "allow": ["/news/articles/.*"],
+      "deny": ["/news/articles/.*#comments"],
+      "callback": "parse_article"
+    },
+    {
+      "allow": ["/sport/.*/articles/.*"],
+      "deny": ["/sport/.*/articles/.*#comments"],
+      "callback": "parse_article"
+    },
+    {
+      "allow": ["/food/articles/.*"],
+      "callback": "parse_article"
+    },
+    {
+      "allow": ["/bitesize/articles/.*"],
+      "deny": ["/bitesize/articles/.*#z.*"],
+      "callback": "parse_article"
+    },
+    {
+      "allow": ["/newsround/articles/.*"],
+      "deny": ["/newsround/articles/.*#comments"],
+      "callback": "parse_article"
+    },
+    {
+      "allow": ["/mediacentre/articles/.*"],
+      "callback": "parse_article"
+    }
+  ],
+  "settings": {
+    "EXTRACTOR_ORDER": ["newspaper", "trafilatura"],
+    "DOWNLOAD_DELAY": 1,
+    "CONCURRENT_REQUESTS": 16,
+    "ROBOTSTXT_OBEY": true
+  }
+}

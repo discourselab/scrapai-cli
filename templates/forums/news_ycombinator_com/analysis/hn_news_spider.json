@@ -1,0 +1,64 @@
+{
+  "name": "hackernews",
+  "source_url": "https://news.ycombinator.com/",
+  "allowed_domains": ["news.ycombinator.com"],
+  "start_urls": [
+    "https://news.ycombinator.com/",
+    "https://news.ycombinator.com/?p=2",
+    "https://news.ycombinator.com/?p=3",
+    "https://news.ycombinator.com/?p=4"
+  ],
+  "rules": [
+    {
+      "allow": [".*"],
+      "callback": "parse_news",
+      "follow": false
+    }
+  ],
+  "callbacks": {
+    "parse_news": {
+      "extract": {
+        "items": {
+          "type": "nested_list",
+          "selector": "tr.athing",
+          "extract": {
+            "title": {
+              "css": "span.titleline a::text"
+            },
+            "link": {
+              "css": "span.titleline a::attr(href)"
+            },
+            "source": {
+              "css": "span.sitestr::text"
+            },
+            "points": {
+              "xpath": "following-sibling::tr[1]//span[@class='score']/text()",
+              "processors": [
+                {"type": "regex", "pattern": "(\\d+)"},
+                {"type": "default", "value": "0"},
+                {"type": "cast", "to": "int"}
+              ]
+            },
+            "date": {
+              "xpath": "following-sibling::tr[1]//span[@class='age']/a/text()"
+            },
+            "comments": {
+              "xpath": "following-sibling::tr[1]//a[contains(text(), 'comment')]/text()",
+              "processors": [
+                {"type": "regex", "pattern": "(\\d+)"},
+                {"type": "default", "value": "0"},
+                {"type": "cast", "to": "int"}
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "settings": {
+    "EXTRACTOR_ORDER": [],
+    "DOWNLOAD_DELAY": 1,
+    "CONCURRENT_REQUESTS": 4,
+    "ROBOTSTXT_OBEY": true
+  }
+}

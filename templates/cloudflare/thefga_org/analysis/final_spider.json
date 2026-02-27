@@ -1,0 +1,67 @@
+{
+  "name": "thefga_org",
+  "source_url": "https://thefga.org/",
+  "allowed_domains": ["thefga.org"],
+  "start_urls": ["https://thefga.org/"],
+  "rules": [
+    {
+      "allow": ["/blog/.*"],
+      "deny": ["/blog/$", "/blog/\\?paged="],
+      "callback": "parse_article"
+    },
+    {
+      "allow": ["/op-eds/.*"],
+      "deny": ["/op-eds/$"],
+      "callback": "parse_article"
+    },
+    {
+      "allow": ["/research/.*"],
+      "deny": ["/research/$"],
+      "callback": "parse_article"
+    },
+    {
+      "allow": ["/press/.*"],
+      "deny": ["/press/$"],
+      "callback": "parse_article"
+    },
+    {
+      "allow": ["/in-the-news/.*"],
+      "deny": ["/in-the-news/$"],
+      "callback": "parse_article"
+    },
+    {
+      "allow": ["/papers/.*"],
+      "deny": ["/papers/$"],
+      "callback": "parse_article"
+    },
+    {
+      "allow": ["/one-pagers/.*"],
+      "deny": ["/one-pagers/$"],
+      "callback": "parse_article"
+    },
+    {
+      "allow": ["/polling/.*"],
+      "deny": ["/polling/$"],
+      "callback": "parse_article"
+    },
+    {
+      "allow": ["/videos/.*"],
+      "deny": ["/videos/$"],
+      "callback": "parse_article"
+    },
+    {
+      "allow": ["/additional-research/.*"],
+      "deny": ["/additional-research/$"],
+      "callback": "parse_article"
+    }
+  ],
+  "settings": {
+    "EXTRACTOR_ORDER": ["newspaper", "trafilatura"],
+    "CLOUDFLARE_ENABLED": true,
+    "CLOUDFLARE_STRATEGY": "hybrid",
+    "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 600,
+    "CF_MAX_RETRIES": 5,
+    "CF_RETRY_INTERVAL": 1,
+    "CF_POST_DELAY": 5
+  }
+}

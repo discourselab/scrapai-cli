@@ -83,7 +83,7 @@ Here's what an AI-generated spider config looks like:
 }
 ```
 
-Adding a new website means adding a new row.
+Adding a new website means adding a new row. See [`templates/`](templates/) for complete working examples — news sites, e-commerce, forums, and Cloudflare-protected sites with full analysis and exported data.
 
 ### What's Under the Hood
 

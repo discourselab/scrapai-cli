@@ -1,0 +1,25 @@
+{
+  "name": "bbc_co_uk",
+  "source_url": "https://bbc.co.uk/",
+  "allowed_domains": ["bbc.co.uk", "www.bbc.co.uk"],
+  "start_urls": [
+    "https://www.bbc.co.uk/news/articles/cgjz1x5e1xyo",
+    "https://www.bbc.co.uk/sport/cricket/articles/ce3gyx49z52o",
+    "https://www.bbc.co.uk/food/articles/c0q45xx5g03o",
+    "https://www.bbc.co.uk/bitesize/articles/z74wrmn",
+    "https://www.bbc.co.uk/newsround/articles/c5ykx6xng0qo"
+  ],
+  "rules": [
+    {
+      "allow": [".*"],
+      "callback": "parse_article",
+      "follow": false
+    }
+  ],
+  "settings": {
+    "EXTRACTOR_ORDER": ["newspaper", "trafilatura"],
+    "DOWNLOAD_DELAY": 1,
+    "CONCURRENT_REQUESTS": 16,
+    "ROBOTSTXT_OBEY": true
+  }
+}

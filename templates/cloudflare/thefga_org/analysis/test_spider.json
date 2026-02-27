@@ -1,0 +1,28 @@
+{
+  "name": "thefga_org",
+  "source_url": "https://thefga.org/",
+  "allowed_domains": ["thefga.org"],
+  "start_urls": [
+    "https://thefga.org/blog/100-days-in-governor-braun-is-making-indiana-great-again/",
+    "https://thefga.org/blog/minnesota-fraud-scandal-proves-trump-republicans-were-right-on-welfare-reform/",
+    "https://thefga.org/op-eds/trump-is-right-wall-street-should-not-buy-single-family-homes/",
+    "https://thefga.org/research/make-america-healthy-again-most-states-commit-banning-taxpayer-funded-junk-food/",
+    "https://thefga.org/research/congress-should-stop-runaway-spending-enacting-discretionary-spending-caps-reconciliation/"
+  ],
+  "rules": [
+    {
+      "allow": [".*"],
+      "callback": "parse_article",
+      "follow": false
+    }
+  ],
+  "settings": {
+    "EXTRACTOR_ORDER": ["newspaper", "trafilatura"],
+    "CLOUDFLARE_ENABLED": true,
+    "CLOUDFLARE_STRATEGY": "hybrid",
+    "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 600,
+    "CF_MAX_RETRIES": 5,
+    "CF_RETRY_INTERVAL": 1,
+    "CF_POST_DELAY": 5
+  }
+}
