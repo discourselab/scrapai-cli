@@ -1,5 +1,11 @@
 <h1 align="center">ScrapAI</h1>
 
+<p align="center">
+  <a href="https://github.com/discourselab/scrapai-cli/stargazers"><img src="https://img.shields.io/github/stars/discourselab/scrapai-cli" alt="GitHub stars"></a>
+  <a href="https://github.com/discourselab/scrapai-cli/blob/main/LICENSE"><img src="https://img.shields.io/github/license/discourselab/scrapai-cli" alt="License"></a>
+  <img src="https://img.shields.io/badge/python-3.9+-green" alt="Python 3.9+">
+</p>
+
 <p align="center">A CLI where you describe what you want to scrape in plain English, an AI agent builds the scraper, and <a href="https://scrapy.org/">Scrapy</a> runs it.</p>
 
 ```
@@ -354,5 +360,7 @@ Commercial licenses available for organizations that cannot comply with AGPL v3.
     <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" width="200">
   </a>
 </p>
+
+<p align="center">⭐ Star this repo if you find it useful</p>
 
 <p align="center">Made with 🔥 by <a href="https://www.discourselab.ai/">DiscourseLab</a></p>
