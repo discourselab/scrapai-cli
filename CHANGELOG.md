@@ -24,13 +24,21 @@ All notable changes to ScrapAI will be documented in this file.
 
 ### Changed
 
-- **CloakBrowser replaces nodriver for Cloudflare bypass**
+- **CloakBrowser replaces all browser implementations**
+  - Replaced nodriver for Cloudflare bypass
+  - Replaced old Playwright browser with CloakBrowser for all JS rendering
+  - **Single browser implementation** - all operations use CloakBrowser C++ stealth patches
   - **Visible browser by default** for easier debugging (Xvfb auto-used on headless servers)
   - Superior stealth: 0.9 reCAPTCHA score (vs 0.5-0.7)
   - Passes FingerprintJS, BrowserScan, Cloudflare Turnstile (30/30 tests)
   - Source-level C++ patches (more reliable, survives Chrome updates)
   - Platform: Linux, macOS, Windows (via WSL or Docker)
-  - Migration: Existing configs work unchanged
+  - Migration: Existing spider configs work unchanged
+
+- **Simplified CLI flags**
+  - Removed `--cloudflare` flag (redundant)
+  - Use `--browser` for both JS-rendered and Cloudflare-protected sites
+  - Backward compatible: spider settings with `CLOUDFLARE_ENABLED` unchanged
 
 - **Improved platform detection** - Switched to `platform.system()` for better WSL and cross-platform support
 
