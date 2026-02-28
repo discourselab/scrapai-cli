@@ -1,183 +1,160 @@
-# Cloudflare Bypass
+# Browser Mode (JS Rendering + Cloudflare Bypass)
 
-Only enable when the site requires it. Test WITHOUT `--cloudflare` first.
+Use `--browser` for JavaScript-rendered sites and Cloudflare-protected sites. ScrapAI uses **CloakBrowser** - a stealth Chromium with C++ patches that achieves **0.9 reCAPTCHA scores** and passes advanced bot detection.
 
-## Detection Indicators
-
-- "Checking your browser" or "Just a moment" messages
-- 403/503 HTTP errors with Cloudflare branding
-- Challenge pages before content loads
-
-## Display Requirements
-
-**Cloudflare bypass requires a visible browser** (not headless) - Cloudflare detects headless browsers and blocks them.
-
-- **Windows:** Uses native display automatically ✓
-- **macOS:** Uses native display automatically ✓
-- **Linux desktop:** Uses native display automatically ✓
-- **Linux servers (VPS without GUI):** Auto-detects missing display and uses **Xvfb** (virtual display) ✓
-
-**Installing Xvfb on Linux servers:**
-```bash
-# Debian/Ubuntu
-sudo apt-get install xvfb
-
-# RHEL/CentOS
-sudo yum install xorg-x11-server-Xvfb
-```
-
-The crawler automatically detects your environment and uses Xvfb when no display is available on Linux - no additional configuration needed.
-
-## Inspector
+## Quick Start
 
 ```bash
-# Lightweight HTTP (default) - fast, works for most sites
-./scrapai inspect https://example.com --project proj
-
-# Browser mode - for JS-rendered sites
+# Inspector - analyze a site
 ./scrapai inspect https://example.com --project proj --browser
 
-# Cloudflare bypass - for protected sites
-./scrapai inspect https://example.com --project proj --cloudflare
+# Crawl - test with 5 pages
+./scrapai crawl spider_name --project proj --limit 5 --browser
 ```
 
-**Smart resource usage:** Start with default HTTP (fast). Escalate to `--browser` if content is JS-rendered. Use `--cloudflare` only when site shows "Checking your browser" or 403/503 errors.
+**When to use:**
+- Site content is JavaScript-rendered (blank with HTTP)
+- Site shows "Checking your browser" or Cloudflare challenge
+- Getting 403/503 errors with regular HTTP
 
-## Hybrid Mode (Default)
+**Otherwise:** Use default HTTP mode (faster, no browser overhead).
 
-Browser verification once per 10 min, then fast HTTP with cached cookies. **20-100x faster** than browser-only. Do NOT set `CONCURRENT_REQUESTS` (uses Scrapy default of 16).
+---
+
+## How It Works
+
+**Hybrid mode (automatic):**
+1. **Browser opens once** → solves Cloudflare challenge → extracts cookies
+2. **HTTP requests with cookies** → 20-100x faster than keeping browser open
+3. **Auto-refresh cookies** every 10 minutes (configurable)
+
+**Performance:** 8min for 1000 pages vs 2+ hours with browser-only mode.
+
+**Headless by default:** Runs in true headless mode (no Xvfb needed on Linux servers).
+
+---
+
+## Platform Support
+
+✅ **Linux x64** (production servers)
+✅ **macOS** (Apple Silicon & Intel)
+✅ **Windows** via WSL or Docker
+
+**Native Windows (cmd/PowerShell):** Use [WSL](https://docs.microsoft.com/en-us/windows/wsl/install) (5-minute setup).
+
+---
+
+## Why CloakBrowser?
+
+**Source-level C++ patches (not runtime JavaScript injection):**
+- **0.9 reCAPTCHA v3 score** (human-level)
+- **Passes 30/30 bot detection tests** (FingerprintJS, BrowserScan, Cloudflare Turnstile, DataDome)
+- **Works in headless mode** (no visible browser or Xvfb needed)
+- **Survives Chrome updates** (patches compiled into binary)
+
+Other tools use JavaScript injection or config tweaks that break on updates and get detected.
+
+---
+
+## Backward Compatibility
+
+**Existing spiders with Cloudflare settings still work:**
 
 ```json
 {
-  "CLOUDFLARE_ENABLED": true,
-  "CLOUDFLARE_STRATEGY": "hybrid",
-  "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 600,
-  "CF_MAX_RETRIES": 5,
-  "CF_RETRY_INTERVAL": 1,
-  "CF_POST_DELAY": 5
+  "CLOUDFLARE_ENABLED": true
 }
 ```
 
-## Browser-Only Mode (Legacy)
+No changes needed. The `--browser` flag is just a simpler way to enable it from CLI.
 
-Only if hybrid fails. Browser for every request. **Requires `CONCURRENT_REQUESTS: 1`.**
+---
+
+## Advanced Configuration
+
+### Custom Settings (Optional)
+
+Fine-tune browser behavior in spider settings:
 
 ```json
 {
   "CLOUDFLARE_ENABLED": true,
+  "CLOUDFLARE_STRATEGY": "hybrid",           // "hybrid" (default) or "browser_only"
+  "CLOUDFLARE_HEADLESS": true,               // true (default) or false (debugging)
+  "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 600 // seconds (10 min default)
+}
+```
+
+### Browser-Only Mode
+
+Only use if hybrid mode fails. **Slow** - keeps browser open for every request.
+
+```json
+{
   "CLOUDFLARE_STRATEGY": "browser_only",
-  "CONCURRENT_REQUESTS": 1
+  "CONCURRENT_REQUESTS": 1  // Required for browser-only
 }
 ```
 
-## Settings Reference
+### All Settings
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `CLOUDFLARE_ENABLED` | false | Enable CF bypass |
-| `CLOUDFLARE_STRATEGY` | "hybrid" | "hybrid" or "browser_only" |
+| `CLOUDFLARE_ENABLED` | false | Enable browser mode |
+| `CLOUDFLARE_STRATEGY` | "hybrid" | "hybrid" (fast) or "browser_only" (slow) |
+| `CLOUDFLARE_HEADLESS` | true | Headless mode (no GUI) |
 | `CLOUDFLARE_COOKIE_REFRESH_THRESHOLD` | 600 | Seconds before cookie refresh |
 | `CF_MAX_RETRIES` | 5 | Max verification attempts |
 | `CF_RETRY_INTERVAL` | 1 | Seconds between retries |
 | `CF_POST_DELAY` | 5 | Seconds after successful verification |
-| `CF_WAIT_SELECTOR` | — | CSS selector to wait for before extracting |
-| `CF_WAIT_TIMEOUT` | 10 | Max seconds to wait for selector |
-| `CF_PAGE_TIMEOUT` | 120000 | Page navigation timeout (ms) |
-| `CONCURRENT_REQUESTS` | — | Must be 1 for browser-only mode |
+| `CF_WAIT_SELECTOR` | — | CSS selector to wait for |
+| `CF_WAIT_TIMEOUT` | 10 | Selector wait timeout (seconds) |
+| `CONCURRENT_REQUESTS` | 16 | Must be 1 for browser-only mode |
 
-## Timeouts & Hang Prevention
-
-**Browser operation timeout:** 300 seconds (5 minutes) per operation to prevent infinite hangs.
-
-If a browser operation (CF verification, page load, etc.) exceeds 300 seconds, the crawl will fail with a `TimeoutError` instead of hanging forever. This protects against:
-- Browser subprocess hangs
-- Network stalls
-- Infinite CF challenge loops
-- Cross-thread asyncio deadlocks
-
-**Typical operation times:**
-- CF verification: 10-60 seconds
-- Page load: 5-30 seconds
-- Cookie refresh: 10-30 seconds
-
-If you consistently hit the 300s timeout, investigate:
-- Network connectivity issues
-- Site blocking your IP/region
-- Browser/Chrome subprocess problems
-- System resource constraints (CPU/memory)
+---
 
 ## Troubleshooting
 
-### Crawl Hangs at "Getting/refreshing CF cookies"
+### Crawl Hangs
 
-**Symptoms:** Browser opens but never navigates to URL. Logs show "Getting/refreshing CF cookies" but no progress.
-
-**Possible causes:**
-1. **Asyncio event loop mismatch** (fixed in latest version)
-2. **Browser subprocess issues** - Chrome/nodriver not compatible with thread-based event loop
-3. **Display/X11 issues** on Linux servers
-4. **Network/firewall blocking browser traffic**
+**Symptoms:** Browser opens but never navigates.
 
 **Solutions:**
-- Ensure you're on latest version with timeout fix
-- Check browser actually opens (not headless failing)
-- On Linux servers, verify Xvfb is installed
-- Test with `--cloudflare` flag on inspector first
-- Check system resources (CPU, memory, disk)
+1. Check browser actually opens (test with `--browser` flag on inspector first)
+2. Verify display available or Xvfb installed (only needed if `CLOUDFLARE_HEADLESS=false`)
+3. Check system resources (CPU, memory)
+4. Test with different `CLOUDFLARE_STRATEGY` (try browser_only)
 
-### Works on One Machine But Not Another
+### Wrong Content Extracted
 
-**Environmental factors affecting browser subprocesses:**
-- Python/asyncio version differences
-- Display environment (X11 vs Wayland vs headless)
-- Chrome/Chromium version and availability
-- System resources and timing (race conditions)
-- Network conditions (DNS, latency, firewalls)
-- Security software interfering with browser
+**Symptom:** Titles show "Related Articles" instead of actual title.
 
-**Debugging steps:**
-1. Test inspector with `--cloudflare` on both machines
-2. Check Chrome is installed and accessible: `google-chrome --version`
-3. On Linux servers, verify display: `echo $DISPLAY` (should show `:99` with Xvfb)
-4. Check logs for specific error messages
-5. Try with different `CLOUDFLARE_STRATEGY` (hybrid vs browser_only)
-
-## Full Spider Example (Hybrid)
+**Solution:** Set `CF_WAIT_SELECTOR` to the main title element:
 
 ```json
 {
-  "name": "americafirstpolicy",
-  "allowed_domains": ["americafirstpolicy.com"],
-  "start_urls": ["https://www.americafirstpolicy.com/issues/energy"],
-  "rules": [
-    { "allow": ["/issues/[^/]+$"], "callback": "parse_article", "follow": false, "priority": 100 },
-    { "allow": ["/issues/"], "callback": null, "follow": true, "priority": 50 }
-  ],
-  "settings": {
-    "CLOUDFLARE_ENABLED": true,
-    "CLOUDFLARE_STRATEGY": "hybrid",
-    "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 600,
-    "CF_MAX_RETRIES": 5,
-    "CF_RETRY_INTERVAL": 1,
-    "CF_POST_DELAY": 5,
-    "CF_WAIT_SELECTOR": "h1.title-med-1",
-    "DOWNLOAD_DELAY": 2
-  }
+  "CF_WAIT_SELECTOR": "h1.article-title"
 }
 ```
 
-## Troubleshooting
+This captures HTML before related content loads.
 
-**Diagnosing via logs (hybrid mode):**
-- Success: `Cached N cookies (cf_clearance: ...)` → cookies working
-- Warning: `Blocked despite cookies - re-verifying CF` → cookies expired/blocked, will auto-retry
-- Error: `Still blocked - falling back to browser` → hybrid failing, may need browser-only
-- If cookies fail repeatedly, system auto-falls back to browser-only mode
+### Blocked Despite Cookies
 
-**Diagnosing via logs (browser-only):**
-- `Cloudflare verified successfully` → bypass working
-- `Opened persistent browser` / `Closed browser` → normal lifecycle
+**Symptom:** Logs show "Blocked despite cookies - re-verifying CF"
 
-**Title contamination:** If extracted titles show wrong text (e.g., "Related Articles" instead of actual title), set `CF_WAIT_SELECTOR` to the main title element (e.g., `h1.article-title`). This captures HTML before related content loads.
+**What happens:** System auto-retries with fresh cookies, then falls back to browser if still blocked.
 
-**Wait times:** Initial page load 2s → after selector found +2s → no selector 5s total → small HTML detected +5s → post-CF verification: `CF_POST_DELAY` + 3s.
+**If repeated:** Consider:
+1. IP reputation issue (try residential proxy: `--proxy-type residential`)
+2. Switch to browser-only mode
+3. Site may have additional detection beyond Cloudflare
+
+---
+
+## Performance Tips
+
+1. **Start with hybrid mode** (default) - 20-100x faster
+2. **Only use browser-only if hybrid fails** - fallback for tough sites
+3. **Use --limit for testing** - verify extraction works before full crawl
+4. **Monitor logs** - "Cached N cookies" = hybrid working

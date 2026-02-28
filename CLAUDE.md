@@ -72,7 +72,7 @@ These are non-negotiable. Violating these will cause failures:
 - Any external tools not listed in "Allowed" section above
 
 **HTML processing commands:**
-- `./scrapai inspect <url>` — fetch and save HTML (default: lightweight HTTP, use `--browser` for JS sites, `--cloudflare` for protected sites)
+- `./scrapai inspect <url>` — fetch and save HTML (default: lightweight HTTP, use `--browser` for JS-rendered or Cloudflare-protected sites)
 - `./scrapai extract-urls --file <html>` — extract URLs from saved HTML
 - `./scrapai analyze <html>` — analyze HTML structure, test selectors, find fields
 
@@ -150,11 +150,8 @@ See [docs/analysis-workflow.md](docs/analysis-workflow.md) for detailed Phase 1-
    # Default: lightweight HTTP (works for most sites)
    ./scrapai inspect https://website.com/article-url --project proj
 
-   # Use --browser if site needs JavaScript
+   # Use --browser if site needs JavaScript OR has Cloudflare protection
    ./scrapai inspect https://website.com/article-url --project proj --browser
-
-   # Use --cloudflare if site is protected
-   ./scrapai inspect https://website.com/article-url --project proj --cloudflare
 
    ./scrapai analyze data/proj/spider/analysis/page.html
    ```
@@ -366,25 +363,21 @@ Report back: status, spider name, queue item ID, summary.
 { "USE_SITEMAP": true, "EXTRACTOR_ORDER": ["newspaper", "trafilatura"] }
 ```
 
-**Cloudflare bypass (only when needed):** See [docs/cloudflare.md](docs/cloudflare.md).
+**Browser mode (JS + Cloudflare):** See [docs/cloudflare.md](docs/cloudflare.md).
 
-Test WITHOUT `--cloudflare` first. Only enable if inspector fails with 403/503 or "Checking your browser".
+Use `--browser` flag for JS-rendered or Cloudflare-protected sites. **Hybrid mode automatic** (fast - browser once, then HTTP with cookies).
 
-Hybrid mode (default, 20-100x faster):
 ```json
 {
-  "CLOUDFLARE_ENABLED": true,
-  "CLOUDFLARE_STRATEGY": "hybrid",
-  "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 600,
-  "CF_MAX_RETRIES": 5, "CF_RETRY_INTERVAL": 1, "CF_POST_DELAY": 5
+  "CLOUDFLARE_ENABLED": true  // Enable browser mode (hybrid by default)
 }
 ```
 
-Browser-only mode (legacy, slow — only if hybrid fails):
+Advanced (if hybrid fails - rare):
 ```json
 {
   "CLOUDFLARE_ENABLED": true,
-  "CLOUDFLARE_STRATEGY": "browser_only",
+  "CLOUDFLARE_STRATEGY": "browser_only",  // Keep browser open (slow)
   "CONCURRENT_REQUESTS": 1
 }
 ```

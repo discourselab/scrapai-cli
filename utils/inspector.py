@@ -8,7 +8,7 @@ It's designed to be used as part of the scraper development process.
 Supports three modes:
 - HTTP (default): Lightweight aiohttp fetch for most sites
 - Browser: Playwright for JS-rendered sites
-- Cloudflare: nodriver for Cloudflare-protected sites
+- Cloudflare: CloakBrowser for Cloudflare-protected sites
 
 Usage:
     python -m utils.inspector https://example.com/fact-checks
@@ -43,7 +43,7 @@ async def inspect_page_async(
         output_dir (str): Directory to save analysis and HTML. If None, a directory is created based on the domain
         proxy_type (str): Proxy type to use (unused now, browser handles this)
         save_html (bool): Whether to save the full HTML
-        mode (str): Fetch mode - 'http' (default), 'browser' (Playwright), or 'cloudflare' (nodriver)
+        mode (str): Fetch mode - 'http' (default), 'browser' (Playwright), or 'cloudflare' (CloakBrowser)
         project (str): Project name for organizing analysis files (default: "default")
 
     Returns:
@@ -97,22 +97,12 @@ async def inspect_page_async(
     # Fetch HTML based on mode
     html_content = None
 
-    if mode == "cloudflare":
-        # Mode 3: Use nodriver with Cloudflare bypass
+    if mode == "cloudflare" or mode == "browser":
+        # Use CloakBrowser for both JS rendering and Cloudflare bypass
         from utils.cf_browser import CloudflareBrowserClient
 
-        async with CloudflareBrowserClient(headless=False) as browser:
+        async with CloudflareBrowserClient(headless=True) as browser:
             html_content = await browser.fetch(url)
-
-            if not html_content:
-                print(f"Failed to fetch page (Cloudflare bypass failed): {url}")
-                return None
-
-    elif mode == "browser":
-        # Mode 2: Use Playwright for JS-rendered sites
-        async with BrowserClient(headless=True) as browser:
-            await browser.goto(url)
-            html_content = await browser.get_html()
 
             if not html_content:
                 print(f"Failed to fetch page: {url}")
