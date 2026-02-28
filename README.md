@@ -267,8 +267,7 @@ Found a vulnerability? See [SECURITY.md](SECURITY.md). Do not use public GitHub 
 
 # Inspection
 ./scrapai inspect <url> --project <name>                 # Lightweight HTTP (default)
-./scrapai inspect <url> --project <name> --browser       # Browser for JS sites
-./scrapai inspect <url> --project <name> --cloudflare    # Cloudflare bypass
+./scrapai inspect <url> --project <name> --browser       # CloakBrowser (JS + Cloudflare bypass)
 
 # Database
 ./scrapai db migrate                                     # Run migrations

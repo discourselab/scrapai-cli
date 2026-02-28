@@ -22,7 +22,6 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 
-from utils.browser import BrowserClient
 from core.config import DATA_DIR
 from settings import USER_AGENT
 
@@ -43,17 +42,15 @@ async def inspect_page_async(
         output_dir (str): Directory to save analysis and HTML. If None, a directory is created based on the domain
         proxy_type (str): Proxy type to use (unused now, browser handles this)
         save_html (bool): Whether to save the full HTML
-        mode (str): Fetch mode - 'http' (default), 'browser' (Playwright), or 'cloudflare' (CloakBrowser)
+        mode (str): Fetch mode - 'http' (default) or 'browser' (CloakBrowser for JS + Cloudflare)
         project (str): Project name for organizing analysis files (default: "default")
 
     Returns:
         dict: Analysis results
     """
     print(f"Inspecting: {url}")
-    if mode == "cloudflare":
-        print("Using Cloudflare bypass mode...")
-    elif mode == "browser":
-        print("Using browser for JS-rendered content...")
+    if mode == "browser":
+        print("Using CloakBrowser (JS rendering + Cloudflare bypass)...")
     else:
         print("Using lightweight HTTP fetch...")
 
@@ -97,11 +94,12 @@ async def inspect_page_async(
     # Fetch HTML based on mode
     html_content = None
 
-    if mode == "cloudflare" or mode == "browser":
-        # Use CloakBrowser for both JS rendering and Cloudflare bypass
+    if mode == "browser":
+        # Use CloakBrowser for JS rendering and Cloudflare bypass
+        # Always headed mode (headless=False) for best stealth
         from utils.cf_browser import CloudflareBrowserClient
 
-        async with CloudflareBrowserClient(headless=True) as browser:
+        async with CloudflareBrowserClient(headless=False) as browser:
             html_content = await browser.fetch(url)
 
             if not html_content:
@@ -121,7 +119,7 @@ async def inspect_page_async(
                     if response.status != 200:
                         print(f"HTTP {response.status} - {url}")
                         print(
-                            "Hint: Try --browser for JS sites or --cloudflare for protected sites"
+                            "Hint: Try --browser for JS-rendered or Cloudflare-protected sites"
                         )
                         return None
 
@@ -130,7 +128,7 @@ async def inspect_page_async(
         except aiohttp.ClientError as e:
             print(f"Failed to fetch page: {e}")
             print(
-                "Hint: Try --browser for JS sites or --cloudflare for protected sites"
+                "Hint: Try --browser for JS-rendered or Cloudflare-protected sites"
             )
             return None
         except asyncio.TimeoutError:
@@ -168,7 +166,7 @@ def inspect_page(
         output_dir (str): Directory to save analysis and HTML
         proxy_type (str): Proxy type to use (unused)
         save_html (bool): Whether to save the full HTML
-        mode (str): Fetch mode - 'http' (default), 'browser', or 'cloudflare'
+        mode (str): Fetch mode - 'http' (default) or 'browser' (CloakBrowser)
         project (str): Project name for organizing analysis files
 
     Returns:

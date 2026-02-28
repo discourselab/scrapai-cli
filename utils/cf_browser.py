@@ -32,7 +32,7 @@ class CloudflareBrowserClient:
     - Actively maintained
 
     Usage:
-        async with CloudflareBrowserClient(headless=True) as browser:
+        async with CloudflareBrowserClient(headless=False) as browser:
             html1 = await browser.fetch("https://example.com/page1")
             html2 = await browser.fetch("https://example.com/page2")
     """

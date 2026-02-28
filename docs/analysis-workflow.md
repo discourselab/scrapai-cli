@@ -81,7 +81,7 @@ Inspect an article page:
 ./scrapai inspect https://website.com/article-url --project proj
 ```
 
-If inspector shows "Checking your browser" or 403/503 → re-run with `--cloudflare`.
+If inspector shows "Checking your browser" or 403/503 → re-run with `--browser`.
 
 Check if newspaper/trafilatura would extract correctly:
 - Clean `<article>` tags / semantic HTML → generic extractors work
@@ -202,7 +202,7 @@ Verify ALL phases passed:
 
 **Inspector overwrites files:** NEVER run multiple inspectors in parallel. Each run overwrites `page.html`. Always process output (extract-urls, analyze) before next inspector run.
 
-**Cloudflare during analysis:** If inspector shows "Checking your browser" or 403/503, re-run with `--cloudflare`. Note this for Phase 4 — add `CLOUDFLARE_ENABLED: true` to spider settings. If inspector works fine, do NOT enable Cloudflare.
+**Cloudflare during analysis:** If inspector shows "Checking your browser" or 403/503, re-run with `--browser`. Note this for Phase 4 — add `CLOUDFLARE_ENABLED: true` to spider settings. If inspector works fine, do NOT enable Cloudflare.
 
 **Bad extraction in 4A:** Go back to Phase 2, fix selectors or switch extractor order. Delete spider if needed:
 ```bash
