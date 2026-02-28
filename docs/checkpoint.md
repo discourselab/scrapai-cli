@@ -18,6 +18,7 @@ Scrapy's JOBDIR feature saves:
 1. **Pending requests** - All URLs waiting to be crawled
 2. **Duplicates filter** - URLs already visited (prevents re-crawling)
 3. **Spider state** - Any custom state stored in `spider.state` dict
+4. **Output filename** - Resumes append to same file (no new file created)
 
 ## Usage
 
@@ -29,6 +30,7 @@ Scrapy's JOBDIR feature saves:
 
 # Output shows:
 # 💾 Checkpoint enabled: ./data/myproject/myspider/checkpoint
+# 📝 Creating new file: ./data/myproject/myspider/crawls/crawl_28022026.jsonl
 # Press Ctrl+C to pause, run same command to resume
 
 # Press Ctrl+C to pause
@@ -36,8 +38,16 @@ Scrapy's JOBDIR feature saves:
 
 # Resume later - run same command
 ./scrapai crawl myspider --project myproject
-# Automatically detects checkpoint and resumes
+# Output shows:
+# ♻️  Resuming from checkpoint - continuing to same file
+# Automatically appends to crawl_28022026.jsonl (no new file created)
 ```
+
+**Date-based filenames:**
+- Filename format: `crawl_DDMMYYYY.jsonl` (e.g., `crawl_28022026.jsonl`)
+- **One file per day** - multiple runs on same day append to same file
+- Resume always uses same filename (no `_resumed` suffix)
+- New day = new file automatically
 
 ### Test Crawl (No Checkpoint)
 
