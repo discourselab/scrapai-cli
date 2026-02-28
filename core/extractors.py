@@ -457,16 +457,16 @@ class SmartExtractor:
 
                 logger.info("Browser navigated")
                 html = await browser.page.content()
-                    logger.info(f"Got HTML from browser: {len(html)} bytes")
-                    if html:
-                        # Try Trafilatura on rendered HTML
-                        return await asyncio.to_thread(
-                            TrafilaturaExtractor().extract,
-                            url,
-                            html,
-                            title_hint,
-                            include_html,
-                        )
+                logger.info(f"Got HTML from browser: {len(html)} bytes")
+                if html:
+                    # Try Trafilatura on rendered HTML
+                    return await asyncio.to_thread(
+                        TrafilaturaExtractor().extract,
+                        url,
+                        html,
+                        title_hint,
+                        include_html,
+                    )
                 else:
                     logger.warning("Browser navigation failed")
         except Exception as e:
