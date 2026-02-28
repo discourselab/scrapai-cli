@@ -2,17 +2,36 @@
 
 Skips pages unchanged since last crawl. First crawl scrapes everything; subsequent crawls only process new/changed pages.
 
+**✓ Enabled by default** in ScrapAI - all crawls automatically use incremental crawling.
+
 ## Configuration
+
+**Already enabled!** DeltaFetch is ON by default in `settings.py`. No configuration needed.
+
+**To disable (if needed):**
 
 ```json
 {
   "settings": {
-    "DELTAFETCH_ENABLED": true
+    "DELTAFETCH_ENABLED": false
   }
 }
 ```
 
-**Custom storage location:**
+## CLI: Reset DeltaFetch Cache
+
+**Recommended way to clear cache and start fresh:**
+```bash
+./scrapai crawl myspider --project myproject --reset-deltafetch
+```
+
+This clears:
+1. DeltaFetch database (URL cache) - `.scrapy/deltafetch/<project>/<spider>.db`
+2. Checkpoint (old dupefilter state) - prevents crawling only 1 item
+
+Then starts a completely fresh crawl.
+
+**Custom storage location (advanced):**
 ```json
 {
   "DELTAFETCH_ENABLED": true,
@@ -30,17 +49,22 @@ Skips pages unchanged since last crawl. First crawl scrapes everything; subseque
 
 ## Reset Options
 
-**Delete all hash storage:**
+**Preferred: Use CLI flag** (clears both DeltaFetch + checkpoint):
+```bash
+./scrapai crawl spider --project proj --reset-deltafetch
+```
+
+**Manual: Delete all hash storage:**
 ```bash
 rm -rf .scrapy/deltafetch/
 ```
 
-**Delete specific spider's data:**
+**Manual: Delete specific project/spider:**
 ```bash
-rm -rf .scrapy/deltafetch/<spider_name>/
+rm -rf .scrapy/deltafetch/<project>/<spider>.db
 ```
 
-**One-time reset via config:** Set `DELTAFETCH_RESET: true` (re-crawls everything once).
+**Deprecated: Config-based reset:** Set `DELTAFETCH_RESET: true` (use CLI flag instead).
 
 ## Combining with Other Features
 

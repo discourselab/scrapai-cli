@@ -258,8 +258,16 @@ Production crawls can take hours or days depending on site size. You MUST NOT ru
 - `./scrapai crawl <name> --project <name> --limit 5` — test (saves to DB, verify with `show`)
 
 **Production (USER runs this):**
-- `./scrapai crawl <name> --project <name>` — full crawl (exports to `DATA_DIR/<project>/<spider>/crawls/crawl_TIMESTAMP.jsonl`)
+- `./scrapai crawl <name> --project <name>` — full crawl (exports to `DATA_DIR/<project>/<spider>/crawls/crawl_DDMMYYYY.jsonl`)
 - **Checkpoint auto-enabled:** Ctrl+C to pause, run same command to resume (see [docs/checkpoint.md](docs/checkpoint.md))
+- **DeltaFetch enabled:** Incremental crawling - subsequent runs only crawl new/changed URLs (see [docs/deltafetch.md](docs/deltafetch.md))
+- **Output filenames:** Date-based (one file per day) - multiple runs same day append to same file
+
+**Optional flags:**
+- `--browser` — Enable JS rendering + Cloudflare bypass (visible browser by default, Xvfb auto-used on servers)
+- `--save-html` — Include raw HTML in output (default: OFF for smaller files)
+- `--reset-deltafetch` — Clear URL cache to re-crawl everything (also clears checkpoint)
+- `--scrapy-args "..."` — Pass any Scrapy setting (e.g., `-s CONCURRENT_REQUESTS=32 -s LOG_LEVEL=DEBUG`)
 
 **If user asks to run a full/production crawl:**
 1. Explain: "Full crawls can take hours/days. I can't run this for you as it would block our session."
@@ -383,8 +391,15 @@ Advanced (if hybrid fails - rare):
 ```
 
 **DeltaFetch (incremental crawling):** See [docs/deltafetch.md](docs/deltafetch.md).
+
+**Enabled by default** - subsequent crawls automatically skip already-seen URLs. To disable:
 ```json
-{ "DELTAFETCH_ENABLED": true }
+{ "DELTAFETCH_ENABLED": false }
+```
+
+To clear cache and re-crawl everything:
+```bash
+./scrapai crawl spider --project proj --reset-deltafetch
 ```
 
 **Infinite scroll:**
