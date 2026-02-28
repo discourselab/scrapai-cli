@@ -18,6 +18,7 @@ class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
             raise ValueError("spider_name argument is required")
 
         self.spider_name = spider_name
+        self.name = spider_name  # Set Scrapy's spider.name for DeltaFetch per-spider DB
         self._items_scraped = 0
         self._item_limit = None
         self._load_config()

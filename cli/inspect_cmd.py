@@ -44,40 +44,16 @@ def inspect_cmd(
     logger = logging.getLogger("inspector")
     logger.info(f"Starting inspection of {url}")
 
-    # Validate flags - can't use both browser and cloudflare
-    if browser and cloudflare:
-        click.echo("❌ ERROR: Cannot use both --browser and --cloudflare")
-        click.echo(
-            "   Choose one: --browser for JS sites, --cloudflare for protected sites"
-        )
-        sys.exit(1)
+    # Both flags do the same thing now (use CloakBrowser)
+    # Keep both for backward compatibility, but they're identical
 
     # Determine mode
-    if cloudflare:
-        mode = "cloudflare"
-        from utils.display_helper import needs_xvfb, has_xvfb
-
-        if needs_xvfb():
-            if not has_xvfb():
-                click.echo("❌ ERROR: Cloudflare bypass requires a display")
-                click.echo("   No display available and xvfb not installed")
-                click.echo("\nOptions:")
-                click.echo("   1. Install xvfb: sudo apt-get install xvfb")
-                click.echo(
-                    "   2. Then run: xvfb-run -a ./scrapai inspect <url> --cloudflare"
-                )
-                click.echo("   3. Or run on a machine with a display")
-                sys.exit(1)
-            click.echo(
-                "🖥️  Headless environment detected - make sure to use: xvfb-run -a ./scrapai inspect ..."
-            )
+    if cloudflare or browser:
+        mode = "browser"  # Both use CloakBrowser now
+        if cloudflare:
+            click.echo("🌐 Using CloakBrowser (visible mode, JS + CF bypass)")
         else:
-            click.echo(
-                "🖥️  Display available - using native browser for Cloudflare bypass"
-            )
-    elif browser:
-        mode = "browser"
-        click.echo("🌐 Using browser for JS-rendered content")
+            click.echo("🌐 Using CloakBrowser (visible mode, JS rendering + CF bypass)")
     else:
         mode = "http"
         click.echo("⚡ Using lightweight HTTP fetch")

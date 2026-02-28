@@ -13,6 +13,6 @@ pydantic
 alembic
 pandas>=2.0.0
 pyarrow>=14.0.0
-nodriver==0.48.1
+cloakbrowser>=0.1.0
 aiohttp
 click>=8.0.0

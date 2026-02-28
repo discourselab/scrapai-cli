@@ -97,7 +97,7 @@ ScrapAI is glue. These projects do the heavy lifting:
 
 - **[Scrapy](https://scrapy.org/)** for crawling. Everything runs through Scrapy; we just load configs from a database instead of Python files.
 - **[newspaper4k](https://github.com/AndyTheFactory/newspaper4k)** and **[trafilatura](https://github.com/adbar/trafilatura)** for article extraction (title, content, author, date). For non-article content (products, jobs, listings), the agent writes custom callbacks with CSS/XPath selectors and data processors.
-- **[nodriver](https://github.com/ultrafunkamsterdam/nodriver)** for Cloudflare bypass via browser automation.
+- **[CloakBrowser](https://github.com/CloakHQ/CloakBrowser)** for Cloudflare bypass with source-level stealth (0.9 reCAPTCHA score, passes advanced bot detection).
 - **[Playwright](https://playwright.dev/)** for JavaScript rendering.
 - **[SQLAlchemy](https://www.sqlalchemy.org/)** and **[Alembic](https://alembic.sqlalchemy.org/)** for the database layer and migrations.
 
@@ -125,7 +125,7 @@ Our contribution is the orchestration: the CLI, the database-first spider manage
 
 **Requirements:** Python 3.9+, Git
 
-**Supported platforms:** Linux, macOS, Windows
+**Supported platforms:** Linux, macOS, Windows (WSL or Docker for Cloudflare bypass)
 
 ```bash
 git clone https://github.com/discourselab/scrapai-cli.git

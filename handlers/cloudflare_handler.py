@@ -138,7 +138,7 @@ class CloudflareDownloadHandler:
             "CloudflareDownloadHandler: Handler opened (browser will start on first request)"
         )
 
-    def close(self):
+    async def close(self):
         """Called when spider closes - close browser and stop event loop."""
         if (
             CloudflareDownloadHandler._browser_started
@@ -147,11 +147,14 @@ class CloudflareDownloadHandler:
             try:
                 logger.info("CloudflareDownloadHandler: Closing shared browser...")
 
-                # Close browser on the correct event loop
-                if CloudflareDownloadHandler._shared_browser.driver:
+                # Close browser on persistent event loop (where it was started)
+                if CloudflareDownloadHandler._shared_browser.browser:
                     try:
-                        # Run browser stop on persistent event loop to avoid "different loop" errors
-                        self._run_async(self._stop_browser_async())
+                        # Run on persistent event loop to avoid cross-loop issues
+                        await asyncio.get_event_loop().run_in_executor(
+                            None,
+                            lambda: self._run_async(self._stop_browser_async())
+                        )
                         logger.info(
                             "CloudflareDownloadHandler: Browser stopped successfully"
                         )
@@ -266,15 +269,30 @@ class CloudflareDownloadHandler:
         if need_refresh:
             await self._refresh_cookies(spider_name, request.url, spider)
 
-        # Fetch with HTTP + cookies
+        # Get cached cookies and check if we already have HTML for this URL
         cached = CloudflareDownloadHandler._cookie_cache.get(spider_name)
         if not cached:
             raise Exception("No cookies available after refresh")
 
+        # If we just fetched this same URL with browser during refresh, reuse that HTML
+        if cached.get("last_browser_url") == request.url and cached.get("last_browser_html"):
+            logger.debug(f"[{spider_name}] Reusing browser HTML for {request.url}")
+            html = cached["last_browser_html"]
+            # Clear cached HTML after using (one-time use to avoid stale data)
+            with CloudflareDownloadHandler._cookie_cache_lock:
+                if "last_browser_html" in CloudflareDownloadHandler._cookie_cache[spider_name]:
+                    CloudflareDownloadHandler._cookie_cache[spider_name]["last_browser_html"] = None
+                    CloudflareDownloadHandler._cookie_cache[spider_name]["last_browser_url"] = None
+            return html
+
+        # Otherwise fetch with HTTP + cookies
         html = await self._fetch_with_http(request.url, cached)
 
-        # Check if blocked
-        if self._is_blocked(html):
+        # Skip blocking detection for robots.txt and other utility files
+        is_utility_file = request.url.endswith(('robots.txt', 'sitemap.xml', '.ico'))
+
+        # Check if blocked (skip for utility files to avoid false positives)
+        if not is_utility_file and self._is_blocked(html):
             logger.warning(f"[{spider_name}] Blocked despite cookies - re-verifying CF")
             # Invalidate cache and retry
             await self._invalidate_cookies(spider_name)
@@ -350,12 +368,14 @@ class CloudflareDownloadHandler:
             # Extract cookies from browser
             cookies, user_agent = await self._extract_cookies_from_browser()
 
-            # Cache cookies
+            # Cache cookies and the HTML we just fetched
             with CloudflareDownloadHandler._cookie_cache_lock:
                 CloudflareDownloadHandler._cookie_cache[spider_name] = {
                     "cookies": cookies,
                     "user_agent": user_agent,
                     "timestamp": time.time(),
+                    "last_browser_url": url,
+                    "last_browser_html": html,
                 }
 
             cf_value = cookies.get("cf_clearance", "N/A")[:20]
@@ -428,11 +448,13 @@ class CloudflareDownloadHandler:
                 cf_max_retries = spider_settings.get("CF_MAX_RETRIES", 5)
                 cf_retry_interval = spider_settings.get("CF_RETRY_INTERVAL", 1)
                 cf_post_delay = spider_settings.get("CF_POST_DELAY", 5)
+                cf_headless = spider_settings.get("CLOUDFLARE_HEADLESS", False)
 
-                logger.info("Starting shared browser for CF verification")
+                headless_mode = "headless" if cf_headless else "visible"
+                logger.info(f"Starting shared browser for CF verification ({headless_mode} mode)")
 
                 CloudflareDownloadHandler._shared_browser = CloudflareBrowserClient(
-                    headless=False,
+                    headless=cf_headless,
                     cf_max_retries=cf_max_retries,
                     cf_retry_interval=cf_retry_interval,
                     post_cf_delay=cf_post_delay,
@@ -460,19 +482,19 @@ class CloudflareDownloadHandler:
         if not CloudflareDownloadHandler._shared_browser:
             raise Exception("Browser not started")
 
-        tab = CloudflareDownloadHandler._shared_browser.tab
-        if not tab:
-            raise Exception("No browser tab available")
+        context = CloudflareDownloadHandler._shared_browser.context
+        page = CloudflareDownloadHandler._shared_browser.page
 
-        # Get cookies via CDP
-        import nodriver as uc
+        if not context or not page:
+            raise Exception("No browser context/page available")
 
-        cookies_cdp = await tab.send(uc.cdp.network.get_cookies())
-        cookies = {c.name: c.value for c in cookies_cdp if c.name}  # Filter empty names
+        # Get cookies via Playwright API
+        cookies_list = await context.cookies()
+        cookies = {c['name']: c['value'] for c in cookies_list if c.get('name')}
 
         # Get user agent
         try:
-            user_agent = await tab.evaluate("navigator.userAgent")
+            user_agent = await page.evaluate("navigator.userAgent")
         except Exception:
             user_agent = USER_AGENT
 

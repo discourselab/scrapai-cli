@@ -1,38 +1,40 @@
 """
-Cloudflare bypass browser client using nodriver.
+Cloudflare bypass browser client using CloakBrowser.
 
-This module provides a persistent browser session that can solve Cloudflare
-challenges once and reuse the verified session for subsequent requests.
+CloakBrowser provides source-level C++ stealth patches for maximum
+bot detection bypass (0.9 reCAPTCHA score, passes FingerprintJS, etc.).
 """
 
-import os
 import asyncio
 import logging
 import random
 import threading
 from typing import Optional
 
-import nodriver as uc
-from nodriver_cf_verify import CFVerify
+from cloakbrowser import launch_async
 
 logger = logging.getLogger(__name__)
 
 
 def random_delay(min_sec: float, max_sec: float) -> float:
-    """Generate random delay to mimic human timing variance"""
+    """Generate random delay to mimic human timing variance."""
     return random.uniform(min_sec, max_sec)
 
 
 class CloudflareBrowserClient:
-    """Persistent browser session with Cloudflare bypass capability.
+    """Persistent browser session with CloakBrowser for maximum stealth.
 
-    This client starts a browser once, solves the Cloudflare challenge on first
-    request, and reuses the verified session for all subsequent requests.
+    Advantages:
+    - Source-level C++ patches (vs UC-style runtime patches)
+    - 0.9 reCAPTCHA v3 score (vs ~0.5-0.7)
+    - Passes FingerprintJS, BrowserScan (30/30 tests)
+    - Clean Playwright API
+    - Actively maintained
 
     Usage:
-        async with CloudflareBrowserClient(headless=False) as browser:
+        async with CloudflareBrowserClient(headless=True) as browser:
             html1 = await browser.fetch("https://example.com/page1")
-            html2 = await browser.fetch("https://example.com/page2")  # Reuses session
+            html2 = await browser.fetch("https://example.com/page2")
     """
 
     def __init__(
@@ -42,255 +44,201 @@ class CloudflareBrowserClient:
         cf_retry_interval: int = 1,
         post_cf_delay: int = 5,
     ):
-        """Initialize the Cloudflare browser client.
+        """Initialize CloakBrowser client.
 
         Args:
-            headless: Whether to run browser in headless mode (may fail CF verification)
-            cf_max_retries: Maximum number of CF verification attempts
-            cf_retry_interval: Seconds to wait between CF retry attempts
-            post_cf_delay: Seconds to wait after successful CF verification
+            headless: Run in headless mode (visible by default for debugging)
+            cf_max_retries: Max retry attempts (kept for API compat, not needed)
+            cf_retry_interval: Retry interval (kept for API compat, not needed)
+            post_cf_delay: Seconds to wait after CF verification
         """
-        self.driver = None
-        self.tab = None
+        self.browser = None
+        self.context = None
+        self.page = None
         self.headless = headless
         self.cf_verified = False
+        self.post_cf_delay = post_cf_delay
+        self.fetch_lock = None  # Created lazily on first fetch
+        self._lock_init_lock = threading.Lock()
+
+        # Not needed with CloakBrowser (automatic bypass), kept for API compat
         self.cf_max_retries = cf_max_retries
         self.cf_retry_interval = cf_retry_interval
-        self.post_cf_delay = post_cf_delay
-        self.fetch_lock = (
-            None  # Created lazily on first fetch to bind to correct event loop
-        )
-        self._lock_init_lock = threading.Lock()  # Thread-safe lock initialization
+
+        # Compatibility attrs for nodriver-style code
+        self.driver = None  # Alias for browser
+        self.tab = None  # Alias for page
 
     async def start(self):
-        """Start the browser instance."""
-        from utils.display_helper import ensure_display_for_cf
-
-        # Check if display is available for CF bypass
-        try:
-            ensure_display_for_cf()
-        except RuntimeError as e:
-            logger.error(str(e))
-            raise
-
-        # Try to find Chrome/Chromium binary
-        browser_path = os.getenv("CHROME_PATH")
-        if not browser_path:
-            # Try common paths based on OS
-            import sys
-            import glob
-
-            if sys.platform == "darwin":
-                # macOS - Playwright Chromium
-                pattern = os.path.expanduser(
-                    "~/Library/Caches/ms-playwright/chromium-*/chrome-mac/Chromium.app/Contents/MacOS/Chromium"
-                )
-                matches = glob.glob(pattern)
-                if matches:
-                    browser_path = matches[0]
-                    logger.info(f"Found Playwright Chromium: {browser_path}")
-            else:
-                # Linux - try both chrome-linux64 (newer) and chrome-linux (older)
-                for pattern in [
-                    "~/.cache/ms-playwright/chromium-*/chrome-linux64/chrome",
-                    "~/.cache/ms-playwright/chromium-*/chrome-linux/chrome",
-                ]:
-                    playwright_chrome = os.path.expanduser(pattern)
-                    matches = glob.glob(playwright_chrome)
-                    if matches:
-                        browser_path = matches[0]
-                        logger.info(f"Found Playwright Chromium: {browser_path}")
-                        break
-
-        browser_args = [
-            "--disable-dev-shm-usage",
-        ]
+        """Start CloakBrowser instance."""
+        logger.info("Starting CloakBrowser for Cloudflare bypass")
 
         try:
-            self.driver = await uc.start(
-                headless=self.headless,
-                browser_executable_path=(
-                    browser_path
-                    if browser_path and os.path.exists(browser_path)
-                    else None
-                ),
-                browser_args=browser_args,
-                sandbox=False,  # Disable sandbox
-            )
-            logger.info("Started nodriver browser for Cloudflare bypass")
+            # Launch CloakBrowser with stealth patches
+            self.browser = await launch_async(headless=self.headless)
+            self.context = await self.browser.new_context()
+            self.page = await self.context.new_page()
 
-            # Wait for browser to fully initialize (random delay like human)
+            # Compatibility aliases
+            self.driver = self.browser
+            self.tab = self.page
+
+            logger.info("CloakBrowser started successfully")
+
+            # Initial delay (mimic human)
             init_delay = random_delay(1.5, 2.5)
-            logger.debug(
-                f"Waiting {init_delay:.2f}s for browser to fully initialize..."
-            )
+            logger.debug(f"Waiting {init_delay:.2f}s for initialization...")
             await asyncio.sleep(init_delay)
-            logger.debug("Browser initialization wait complete")
+
         except Exception as e:
-            logger.error(f"Failed to start nodriver browser: {e}")
+            logger.error(f"Failed to start CloakBrowser: {e}")
             raise
 
     async def verify_cloudflare(self, url: str) -> bool:
-        """Navigate to URL and solve Cloudflare challenge.
+        """Navigate to URL and verify Cloudflare.
+
+        With CloakBrowser, this is automatic - no CFVerify needed!
+        The C++ patches handle all detection automatically.
 
         Args:
-            url: The URL to navigate to and verify
+            url: URL to navigate and verify
 
         Returns:
-            True if verification succeeded, False otherwise
+            True if successful, False otherwise
         """
-        if not self.driver:
+        if not self.page:
             await self.start()
 
         try:
-            # Navigate to URL (timeout set at browser config level)
-            self.tab = await self.driver.get(url)
-            logger.info(f"Navigating to {url} for Cloudflare verification")
+            logger.info(f"Navigating to {url} (CloakBrowser auto-bypasses CF)")
 
-            # Create CF verifier and solve challenge
-            cf_verify = CFVerify(
-                _browser_tab=self.tab, _debug=logger.level <= logging.DEBUG
-            )
+            # Navigate (CloakBrowser automatically bypasses Cloudflare)
+            await self.page.goto(url, wait_until="domcontentloaded", timeout=120000)
 
-            success = await cf_verify.verify(
-                _max_retries=10,  # More attempts
-                _interval_between_retries=2,  # More time between attempts
-                _reload_page_after_n_retries=3,  # Reload after 3 failed attempts
-            )
+            # Wait for CF to redirect and page to stabilize
+            # CF challenge completes → redirects → new page loads
+            # Retry getting content until page stops navigating
+            logger.debug("Waiting for CF redirect to complete...")
+            max_retries = 6  # 6 retries = up to 30 seconds total wait
+            for attempt in range(max_retries):
+                await asyncio.sleep(5)  # Wait 5s between attempts
 
-            if not success:
-                logger.error(f"Failed to verify Cloudflare for {url}")
-                return False
+                try:
+                    # Try to get content - if successful, page is stable
+                    test_html = await self.page.content()
+                    logger.info(f"Page stable after {(attempt + 1) * 5}s - CF bypass successful")
+                    break
+                except Exception as e:
+                    if "navigating" in str(e).lower():
+                        if attempt < max_retries - 1:
+                            logger.debug(f"Page still navigating (attempt {attempt + 1}/{max_retries}), waiting...")
+                        else:
+                            logger.error(f"Page still navigating after {max_retries * 5}s - giving up")
+                            return False
+                    else:
+                        # Different error, re-raise
+                        raise
 
-            logger.info(f"Cloudflare verified successfully for {url}")
             self.cf_verified = True
-
-            # Wait for content to load after CF verification (random like human)
-            post_delay = random_delay(
-                max(3.0, self.post_cf_delay - 1), self.post_cf_delay + 2
-            )
-            logger.info(
-                f"Waiting {post_delay:.2f}s for content to load after CF verification"
-            )
-            await self.tab.sleep(post_delay)
-
-            # Additional wait to ensure full page render (random)
-            render_delay = random_delay(2.0, 4.0)
-            logger.info(f"Waiting {render_delay:.2f}s for full page render...")
-            await self.tab.sleep(render_delay)
-
             return True
 
         except Exception as e:
-            logger.error(f"Error during Cloudflare verification: {e}")
+            logger.error(f"Error during navigation: {e}")
             return False
 
     async def fetch(
         self, url: str, wait_selector: Optional[str] = None, wait_timeout: int = 10
     ) -> Optional[str]:
-        """Fetch a URL using the verified session.
-
-        On first call, this will verify Cloudflare. Subsequent calls reuse
-        the same tab (sequential fetching with lock).
+        """Fetch a URL using CloakBrowser.
 
         Args:
-            url: The URL to fetch
-            wait_selector: CSS selector to wait for before extracting HTML (e.g., 'h1.title-med-1')
-            wait_timeout: Maximum seconds to wait for selector (default: 10)
+            url: URL to fetch
+            wait_selector: CSS selector to wait for (optional)
+            wait_timeout: Max seconds to wait for selector
 
         Returns:
-            HTML content as string, or None if fetch failed
+            HTML content as string, or None if failed
         """
-        # Lazy lock creation - ensures lock is bound to correct event loop
-        # Use double-checked locking to prevent race condition
+        # Lazy lock creation
         if self.fetch_lock is None:
             with self._lock_init_lock:
-                if self.fetch_lock is None:  # Double-check after acquiring thread lock
+                if self.fetch_lock is None:
                     self.fetch_lock = asyncio.Lock()
 
-        # Use lock to ensure only one fetch at a time (sequential, using same tab)
+        # Use lock to ensure sequential fetching (reusing same page)
         async with self.fetch_lock:
             # First request - verify CF
             if not self.cf_verified:
                 success = await self.verify_cloudflare(url)
                 if not success:
                     return None
-                # Return content from CF verification
-                html = await self.tab.get_content()
+
+                # Wait for content to be fully available after CF bypass
+                await asyncio.sleep(1)
+
+                html = await self.page.content()
                 logger.info(f"Fetched {len(html)} bytes from {url}")
                 return html
 
-            # Subsequent requests - reuse same tab
-            logger.info(
-                f"Fetching {url} using verified Cloudflare session (reusing tab)"
-            )
+            # Subsequent requests - reuse same page
+            logger.info(f"Fetching {url} using verified session (reusing page)")
             try:
-                # Navigate same tab to new URL
-                await self.tab.get(url)
+                # Navigate same page to new URL
+                # Use domcontentloaded (recommended by Playwright, faster than load)
+                await self.page.goto(url, wait_until="domcontentloaded", timeout=60000)
 
-                # Wait for page to fully load (random like human)
-                stabilize_delay = random_delay(1.5, 2.5)
-                logger.debug(f"Waiting {stabilize_delay:.2f}s for page to stabilize...")
-                await self.tab.sleep(stabilize_delay)
+                # Let page stabilize after navigation
+                await asyncio.sleep(2)
 
-                # If wait_selector provided, wait for it to appear
+                # Wait for specific selector if requested
                 if wait_selector:
                     logger.info(
-                        f"Waiting for selector '{wait_selector}' to appear (timeout: {wait_timeout}s)"
+                        f"Waiting for selector '{wait_selector}' (timeout: {wait_timeout}s)"
                     )
                     try:
-                        # Wait for the selector to be present in the DOM
-                        await self.tab.select(wait_selector, timeout=wait_timeout)
-                        logger.info(f"Selector '{wait_selector}' found")
-                        # Additional wait to ensure full rendering (random)
-                        render_wait = random_delay(1.5, 2.5)
-                        await self.tab.sleep(render_wait)
-                    except Exception as e:
-                        logger.warning(
-                            f"Timeout waiting for selector '{wait_selector}': {e}"
+                        await self.page.wait_for_selector(
+                            wait_selector, timeout=wait_timeout * 1000
                         )
-                        # Wait longer anyway - maybe content is loading (random)
-                        fallback_wait = random_delay(2.5, 4.0)
-                        await self.tab.sleep(fallback_wait)
+                        logger.info(f"Selector '{wait_selector}' found")
+                        await asyncio.sleep(1)
+                    except Exception as e:
+                        logger.warning(f"Timeout waiting for selector: {e}")
+                        await asyncio.sleep(1.5)
                 else:
-                    # No specific selector - wait longer for full page render (random)
-                    full_render_wait = random_delay(4.0, 6.0)
-                    logger.info(
-                        f"No wait selector specified, waiting {full_render_wait:.2f}s for full page render"
-                    )
-                    await self.tab.sleep(full_render_wait)
-
-                # Verify we got actual content, not empty skeleton
-                html = await self.tab.get_content()
-                text_length = len(html.replace("<", "").replace(">", "").strip())
-
-                if text_length < 5000:
-                    additional_wait = random_delay(4.0, 6.0)
-                    logger.warning(
-                        f"HTML seems small ({text_length} chars), waiting {additional_wait:.2f}s longer for content..."
-                    )
-                    await self.tab.sleep(additional_wait)
-                    html = await self.tab.get_content()
-                    text_length = len(html.replace("<", "").replace(">", "").strip())
-                    logger.info(f"After additional wait: {text_length} chars")
+                    # No selector - wait for content to fully render
+                    await asyncio.sleep(2)
 
                 # Get HTML content
-                html = await self.tab.get_content()
+                html = await self.page.content()
+
+                # Only warn about small HTML if it's not robots.txt or similar
+                if "robots.txt" not in url.lower():
+                    text_length = len(html.replace("<", "").replace(">", "").strip())
+                    if text_length < 1000:
+                        logger.debug(f"HTML seems small ({text_length} chars), waiting longer...")
+                        await asyncio.sleep(1.5)  # Additional wait for content
+                        html = await self.page.content()
+
                 logger.info(f"Fetched {len(html)} bytes from {url}")
                 return html
 
             except Exception as e:
-                logger.error(f"Error navigating to {url}: {e}")
+                logger.error(f"Error fetching {url}: {e}")
                 return None
 
     async def close(self):
-        """Close the browser."""
-        if self.driver:
+        """Close CloakBrowser."""
+        if self.browser:
             try:
-                self.driver.stop()
-                logger.info("Closed nodriver browser")
+                await self.browser.close()
+                self.browser = None
+                self.context = None
+                self.page = None
+                self.driver = None
+                self.tab = None
+                logger.info("CloakBrowser closed")
             except Exception as e:
-                logger.warning(f"Error closing browser: {e}")
+                logger.warning(f"Error closing CloakBrowser: {e}")
 
     async def __aenter__(self):
         """Async context manager entry."""

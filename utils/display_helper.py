@@ -1,16 +1,23 @@
 """Display helper utilities for detecting headless environments."""
 
 import os
+import platform
 import shutil
-import sys
 
 
 def needs_xvfb() -> bool:
-    """Check if xvfb is needed (Linux servers without DISPLAY)."""
+    """Check if xvfb is needed (Linux/WSL servers without DISPLAY).
+
+    Returns:
+        True if Xvfb is needed (Linux/WSL without DISPLAY)
+        False if native GUI available (macOS, Windows, Linux with DISPLAY)
+    """
     # macOS and Windows have native GUI support
-    if sys.platform in ("darwin", "win32"):
+    if platform.system() in ("Darwin", "Windows"):
         return False
-    # Linux without DISPLAY needs Xvfb
+
+    # Linux (including WSL) without DISPLAY needs Xvfb
+    # WSL reports as "Linux", so this handles both
     return not os.environ.get("DISPLAY")
 
 

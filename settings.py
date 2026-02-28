@@ -8,7 +8,7 @@ SPIDER_MODULES = ["spiders"]
 NEWSPIDER_MODULE = "spiders"
 
 # Obey robots.txt rules
-ROBOTSTXT_OBEY = True
+ROBOTSTXT_OBEY = False
 
 # Configure delays for requests
 DOWNLOAD_DELAY = 1
@@ -46,9 +46,9 @@ SPIDER_MIDDLEWARES = {
     "scrapy_deltafetch.DeltaFetch": 100,
 }
 
-# DeltaFetch settings (disabled by default, enable per-spider)
-DELTAFETCH_ENABLED = False
-DELTAFETCH_DIR = os.path.join(".scrapy", "deltafetch")
+# DeltaFetch settings (enabled by default for incremental crawling)
+DELTAFETCH_ENABLED = True
+DELTAFETCH_DIR = "deltafetch"  # DeltaFetch middleware prepends ".scrapy/" automatically
 DELTAFETCH_RESET = False
 
 # Cloudflare handler is NOT enabled globally
