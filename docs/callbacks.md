@@ -146,7 +146,7 @@ Never use: `parse_article`, `parse_start_url`, `start_requests`, `from_crawler`,
 
 **Field returns None:**
 - Test selector: `./scrapai analyze page.html --test "selector"`
-- Check if page needs `--browser` or `--cloudflare`
+- Check if page needs `--browser` (for JS-rendered or Cloudflare-protected sites)
 - Verify processor chain (failed processor may return None)
 
 **Wrong type in output:**

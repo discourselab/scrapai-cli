@@ -283,17 +283,25 @@ def _run_spider(
         if needs_xvfb():
             if has_xvfb():
                 click.echo(
-                    "🖥️  Headless server detected - using Xvfb for visible browser"
+                    "🖥️  Headless server detected - using Xvfb for headed browser (best stealth)"
                 )
                 cmd = ["xvfb-run", "-a"] + cmd
             else:
                 click.echo(
-                    "⚠️  WARNING: No display available and xvfb not installed"
+                    "❌ ERROR: Browser mode requires a display but Xvfb is not installed"
                 )
-                click.echo("   Options:")
-                click.echo("   1. Install Xvfb: sudo apt-get install xvfb")
-                click.echo("   2. Or set CLOUDFLARE_HEADLESS=true in spider settings (headless mode)")
-                click.echo("   Attempting to continue anyway...")
+                click.echo("")
+                click.echo("Browser runs in HEADED mode (headless=False) for maximum stealth.")
+                click.echo("On servers without a display, Xvfb provides a virtual framebuffer.")
+                click.echo("")
+                click.echo("Fix options:")
+                click.echo("  1. Install Xvfb (recommended):")
+                click.echo("     sudo apt-get update && sudo apt-get install -y xvfb")
+                click.echo("")
+                click.echo("  2. Or force headless mode (worse stealth):")
+                click.echo("     Add to spider settings: CLOUDFLARE_HEADLESS=true")
+                click.echo("")
+                sys.exit(1)
 
         if browser:
             click.echo("🌐 Browser mode enabled via --browser flag")

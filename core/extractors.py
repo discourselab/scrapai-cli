@@ -430,20 +430,33 @@ class SmartExtractor:
                     f"Will perform infinite scroll: {max_scrolls} scrolls with {scroll_delay}s delay"
                 )
 
-            from utils.browser import BrowserClient
+            from utils.cf_browser import CloudflareBrowserClient
 
-            async with BrowserClient() as browser:
-                logger.info("BrowserClient started")
-                if await browser.goto(
-                    url,
-                    wait_for_selector,
-                    additional_delay,
-                    enable_scroll,
-                    max_scrolls,
-                    scroll_delay,
-                ):
-                    logger.info("Browser navigated")
-                    html = await browser.get_html()
+            async with CloudflareBrowserClient(headless=False) as browser:
+                logger.info("CloudflareBrowserClient started")
+
+                # Navigate to URL
+                await browser.page.goto(url, wait_until="networkidle", timeout=60000)
+                logger.info(f"Navigated to {url}")
+
+                # Wait for selector if specified
+                if wait_for_selector:
+                    await browser.page.wait_for_selector(wait_for_selector, timeout=30000)
+                    logger.info(f"Selector found: {wait_for_selector}")
+
+                # Additional delay if specified
+                if additional_delay > 0:
+                    await asyncio.sleep(additional_delay)
+
+                # Infinite scroll if enabled
+                if enable_scroll:
+                    for i in range(max_scrolls):
+                        await browser.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                        await asyncio.sleep(scroll_delay)
+                        logger.info(f"Scroll {i+1}/{max_scrolls}")
+
+                logger.info("Browser navigated")
+                html = await browser.page.content()
                     logger.info(f"Got HTML from browser: {len(html)} bytes")
                     if html:
                         # Try Trafilatura on rendered HTML
