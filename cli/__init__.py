@@ -1,6 +1,12 @@
 """ScrapAI CLI - click-based command interface."""
 
 import click
+import sys
+import os
+
+# Add parent directory to path to import __version__
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from __version__ import __version__
 
 from .spiders import spiders
 from .queue import queue
@@ -16,6 +22,7 @@ from .projects import projects
 
 
 @click.group()
+@click.version_option(version=__version__, prog_name="scrapai")
 def cli():
     """ScrapAI - AI-powered web scraping CLI"""
     pass
