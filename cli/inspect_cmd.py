@@ -14,7 +14,11 @@ import logging
     help="Proxy type to use",
 )
 @click.option("--no-save-html", is_flag=True, help="Do not save the full HTML")
-@click.option("--browser", is_flag=True, help="Use CloakBrowser for JS-rendered sites and Cloudflare bypass")
+@click.option(
+    "--browser",
+    is_flag=True,
+    help="Use CloakBrowser for JS-rendered sites and Cloudflare bypass",
+)
 @click.option(
     "--log-level",
     type=click.Choice(["debug", "info", "warning", "error", "critical"]),
@@ -50,10 +54,16 @@ def inspect_cmd(
         from utils.display_helper import needs_xvfb, has_xvfb
 
         if needs_xvfb() and not has_xvfb():
-            click.echo("❌ ERROR: Browser mode requires a display but Xvfb is not installed")
+            click.echo(
+                "❌ ERROR: Browser mode requires a display but Xvfb is not installed"
+            )
             click.echo("")
-            click.echo("Browser runs in HEADED mode (headless=False) for maximum stealth.")
-            click.echo("On servers without a display, Xvfb provides a virtual framebuffer.")
+            click.echo(
+                "Browser runs in HEADED mode (headless=False) for maximum stealth."
+            )
+            click.echo(
+                "On servers without a display, Xvfb provides a virtual framebuffer."
+            )
             click.echo("")
             click.echo("Install Xvfb:")
             click.echo("  sudo apt-get update && sudo apt-get install -y xvfb")

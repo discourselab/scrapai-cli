@@ -22,13 +22,49 @@ from core.config import DATA_DIR
     default="auto",
     help="Proxy strategy: auto (smart escalation), datacenter, or residential (default: auto)",
 )
-@click.option("--browser", is_flag=True, help="Use browser for JS-rendered sites and Cloudflare bypass")
-@click.option("--scrapy-args", default=None, help="Additional Scrapy arguments (e.g., '-s SETTING=value -L DEBUG')")
-@click.option("--reset-deltafetch", is_flag=True, help="Clear DeltaFetch cache to re-crawl all URLs")
-@click.option("--save-html", is_flag=True, help="Save raw HTML in output (makes files larger)")
-def crawl(spider, project, output, limit, timeout, proxy_type, browser, scrapy_args, reset_deltafetch, save_html):
+@click.option(
+    "--browser",
+    is_flag=True,
+    help="Use browser for JS-rendered sites and Cloudflare bypass",
+)
+@click.option(
+    "--scrapy-args",
+    default=None,
+    help="Additional Scrapy arguments (e.g., '-s SETTING=value -L DEBUG')",
+)
+@click.option(
+    "--reset-deltafetch",
+    is_flag=True,
+    help="Clear DeltaFetch cache to re-crawl all URLs",
+)
+@click.option(
+    "--save-html", is_flag=True, help="Save raw HTML in output (makes files larger)"
+)
+def crawl(
+    spider,
+    project,
+    output,
+    limit,
+    timeout,
+    proxy_type,
+    browser,
+    scrapy_args,
+    reset_deltafetch,
+    save_html,
+):
     """Run a spider"""
-    _run_spider(project, spider, output, limit, timeout, proxy_type, browser, scrapy_args, reset_deltafetch, save_html)
+    _run_spider(
+        project,
+        spider,
+        output,
+        limit,
+        timeout,
+        proxy_type,
+        browser,
+        scrapy_args,
+        reset_deltafetch,
+        save_html,
+    )
 
 
 @click.command()
@@ -57,7 +93,9 @@ def crawl_all(project, limit):
         click.echo(f"\n{'='*50}")
         click.echo(f"Running: {s.name}")
         click.echo(f"{'='*50}")
-        _run_spider(project, s.name, None, limit, None, "auto", False, None, False, False)
+        _run_spider(
+            project, s.name, None, limit, None, "auto", False, None, False, False
+        )
 
 
 def _run_spider(
@@ -96,9 +134,13 @@ def _run_spider(
 
         if deltafetch_db.exists():
             deltafetch_db.unlink()
-            click.echo(f"🔄 DeltaFetch cache cleared for '{spider_name}' - will re-crawl all URLs")
+            click.echo(
+                f"🔄 DeltaFetch cache cleared for '{spider_name}' - will re-crawl all URLs"
+            )
         else:
-            click.echo(f"ℹ️  No DeltaFetch cache found for '{spider_name}' (already clean)")
+            click.echo(
+                f"ℹ️  No DeltaFetch cache found for '{spider_name}' (already clean)"
+            )
 
         # Also clear checkpoint when resetting (otherwise dupefilter has old state)
         if project_name:
@@ -108,7 +150,7 @@ def _run_spider(
 
         if checkpoint_path.exists():
             shutil.rmtree(checkpoint_path)
-            click.echo(f"🗑️  Checkpoint cleared - starting completely fresh")
+            click.echo("🗑️  Checkpoint cleared - starting completely fresh")
 
     if proxy_type == "auto":
         click.echo("🔄 Proxy mode: auto (smart escalation with expert-in-the-loop)")
@@ -122,7 +164,9 @@ def _run_spider(
     use_sitemap = False
     if db_spider.settings:
         for setting in db_spider.settings:
-            if setting.key in ["CLOUDFLARE_ENABLED", "BROWSER_ENABLED"] and str(setting.value).lower() in [
+            if setting.key in ["CLOUDFLARE_ENABLED", "BROWSER_ENABLED"] and str(
+                setting.value
+            ).lower() in [
                 "true",
                 "1",
             ]:
@@ -161,7 +205,9 @@ def _run_spider(
     # Enable browser mode if --browser flag used
     if browser:
         cmd.extend(["-s", "CLOUDFLARE_ENABLED=True"])
-        click.echo("🌐 Browser mode enabled (CloakBrowser with JS rendering + CF bypass)")
+        click.echo(
+            "🌐 Browser mode enabled (CloakBrowser with JS rendering + CF bypass)"
+        )
 
     # HTML storage configuration
     if save_html:
@@ -195,8 +241,12 @@ def _run_spider(
         requests_queue = list(Path(checkpoint_dir).glob("requests.queue*"))
 
         if requests_seen.exists() and not requests_queue:
-            click.echo("⚠️  Detected corrupted checkpoint (dupefilter persisted but queue empty)")
-            click.echo("   This is a known Scrapy bug: URLs marked seen but never crawled")
+            click.echo(
+                "⚠️  Detected corrupted checkpoint (dupefilter persisted but queue empty)"
+            )
+            click.echo(
+                "   This is a known Scrapy bug: URLs marked seen but never crawled"
+            )
             click.echo("   Clearing dupefilter to allow re-discovery...")
             requests_seen.unlink()
             click.echo("✓ Dupefilter cleared - crawl will resume properly")
@@ -235,14 +285,16 @@ def _run_spider(
                 # Resuming - use same output file
                 with open(output_file_marker, "r") as f:
                     output_file = f.read().strip()
-                click.echo(f"♻️  Resuming from checkpoint - continuing to same file")
+                click.echo("♻️  Resuming from checkpoint - continuing to same file")
             else:
                 # New crawl - use date-based filename (one file per day)
                 now = datetime.now()
                 timestamp = now.strftime("%d%m%Y")  # Just date, no time
 
                 if project_name:
-                    output_dir = str(Path(DATA_DIR) / project_name / spider_name / "crawls")
+                    output_dir = str(
+                        Path(DATA_DIR) / project_name / spider_name / "crawls"
+                    )
                 else:
                     output_dir = str(Path(DATA_DIR) / spider_name / "crawls")
 
@@ -251,7 +303,9 @@ def _run_spider(
 
                 # Check if file already exists (multiple crawls on same day will append)
                 if Path(output_file).exists():
-                    click.echo(f"📝 Appending to existing file for today: {output_file}")
+                    click.echo(
+                        f"📝 Appending to existing file for today: {output_file}"
+                    )
                 else:
                     click.echo(f"📝 Creating new file: {output_file}")
 
@@ -291,8 +345,12 @@ def _run_spider(
                     "❌ ERROR: Browser mode requires a display but Xvfb is not installed"
                 )
                 click.echo("")
-                click.echo("Browser runs in HEADED mode (headless=False) for maximum stealth.")
-                click.echo("On servers without a display, Xvfb provides a virtual framebuffer.")
+                click.echo(
+                    "Browser runs in HEADED mode (headless=False) for maximum stealth."
+                )
+                click.echo(
+                    "On servers without a display, Xvfb provides a virtual framebuffer."
+                )
                 click.echo("")
                 click.echo("Fix options:")
                 click.echo("  1. Install Xvfb (recommended):")
@@ -310,7 +368,6 @@ def _run_spider(
 
     # Add custom Scrapy arguments if provided
     if scrapy_args:
-        import shlex
         extra_args = shlex.split(scrapy_args)
         cmd.extend(extra_args)
         click.echo(f"🔧 Custom Scrapy args: {scrapy_args}")

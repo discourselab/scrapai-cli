@@ -127,9 +127,7 @@ async def inspect_page_async(
 
         except aiohttp.ClientError as e:
             print(f"Failed to fetch page: {e}")
-            print(
-                "Hint: Try --browser for JS-rendered or Cloudflare-protected sites"
-            )
+            print("Hint: Try --browser for JS-rendered or Cloudflare-protected sites")
             return None
         except asyncio.TimeoutError:
             print(f"Request timed out: {url}")

@@ -125,15 +125,21 @@ class CloudflareBrowserClient:
 
                 try:
                     # Try to get content - if successful, page is stable
-                    test_html = await self.page.content()
-                    logger.info(f"Page stable after {(attempt + 1) * 5}s - CF bypass successful")
+                    await self.page.content()
+                    logger.info(
+                        f"Page stable after {(attempt + 1) * 5}s - CF bypass successful"
+                    )
                     break
                 except Exception as e:
                     if "navigating" in str(e).lower():
                         if attempt < max_retries - 1:
-                            logger.debug(f"Page still navigating (attempt {attempt + 1}/{max_retries}), waiting...")
+                            logger.debug(
+                                f"Page still navigating (attempt {attempt + 1}/{max_retries}), waiting..."
+                            )
                         else:
-                            logger.error(f"Page still navigating after {max_retries * 5}s - giving up")
+                            logger.error(
+                                f"Page still navigating after {max_retries * 5}s - giving up"
+                            )
                             return False
                     else:
                         # Different error, re-raise
@@ -215,7 +221,9 @@ class CloudflareBrowserClient:
                 if "robots.txt" not in url.lower():
                     text_length = len(html.replace("<", "").replace(">", "").strip())
                     if text_length < 1000:
-                        logger.debug(f"HTML seems small ({text_length} chars), waiting longer...")
+                        logger.debug(
+                            f"HTML seems small ({text_length} chars), waiting longer..."
+                        )
                         await asyncio.sleep(1.5)  # Additional wait for content
                         html = await self.page.content()
 

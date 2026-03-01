@@ -152,8 +152,7 @@ class CloudflareDownloadHandler:
                     try:
                         # Run on persistent event loop to avoid cross-loop issues
                         await asyncio.get_event_loop().run_in_executor(
-                            None,
-                            lambda: self._run_async(self._stop_browser_async())
+                            None, lambda: self._run_async(self._stop_browser_async())
                         )
                         logger.info(
                             "CloudflareDownloadHandler: Browser stopped successfully"
@@ -275,21 +274,30 @@ class CloudflareDownloadHandler:
             raise Exception("No cookies available after refresh")
 
         # If we just fetched this same URL with browser during refresh, reuse that HTML
-        if cached.get("last_browser_url") == request.url and cached.get("last_browser_html"):
+        if cached.get("last_browser_url") == request.url and cached.get(
+            "last_browser_html"
+        ):
             logger.debug(f"[{spider_name}] Reusing browser HTML for {request.url}")
             html = cached["last_browser_html"]
             # Clear cached HTML after using (one-time use to avoid stale data)
             with CloudflareDownloadHandler._cookie_cache_lock:
-                if "last_browser_html" in CloudflareDownloadHandler._cookie_cache[spider_name]:
-                    CloudflareDownloadHandler._cookie_cache[spider_name]["last_browser_html"] = None
-                    CloudflareDownloadHandler._cookie_cache[spider_name]["last_browser_url"] = None
+                if (
+                    "last_browser_html"
+                    in CloudflareDownloadHandler._cookie_cache[spider_name]
+                ):
+                    CloudflareDownloadHandler._cookie_cache[spider_name][
+                        "last_browser_html"
+                    ] = None
+                    CloudflareDownloadHandler._cookie_cache[spider_name][
+                        "last_browser_url"
+                    ] = None
             return html
 
         # Otherwise fetch with HTTP + cookies
         html = await self._fetch_with_http(request.url, cached)
 
         # Skip blocking detection for robots.txt and other utility files
-        is_utility_file = request.url.endswith(('robots.txt', 'sitemap.xml', '.ico'))
+        is_utility_file = request.url.endswith(("robots.txt", "sitemap.xml", ".ico"))
 
         # Check if blocked (skip for utility files to avoid false positives)
         if not is_utility_file and self._is_blocked(html):
@@ -451,7 +459,9 @@ class CloudflareDownloadHandler:
                 cf_headless = spider_settings.get("CLOUDFLARE_HEADLESS", False)
 
                 headless_mode = "headless" if cf_headless else "visible"
-                logger.info(f"Starting shared browser for CF verification ({headless_mode} mode)")
+                logger.info(
+                    f"Starting shared browser for CF verification ({headless_mode} mode)"
+                )
 
                 CloudflareDownloadHandler._shared_browser = CloudflareBrowserClient(
                     headless=cf_headless,
@@ -490,7 +500,7 @@ class CloudflareDownloadHandler:
 
         # Get cookies via Playwright API
         cookies_list = await context.cookies()
-        cookies = {c['name']: c['value'] for c in cookies_list if c.get('name')}
+        cookies = {c["name"]: c["value"] for c in cookies_list if c.get("name")}
 
         # Get user agent
         try:
