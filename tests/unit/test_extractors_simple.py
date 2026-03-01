@@ -67,7 +67,7 @@ class TestNewspaperExtractor:
         result = extractor.extract(
             url="https://example.com/article",
             html=html,
-            title_hint="Article Title from Hint"
+            title_hint="Article Title from Hint",
         )
 
         # May return None if content validation fails, that's OK
@@ -79,8 +79,7 @@ class TestNewspaperExtractor:
         extractor = NewspaperExtractor()
         # Invalid HTML that causes parsing exception
         result = extractor.extract(
-            url="https://example.com/article",
-            html=None  # This will cause an exception
+            url="https://example.com/article", html=None  # This will cause an exception
         )
 
         # Should return None, not crash
@@ -94,7 +93,7 @@ class TestNewspaperExtractor:
         result = extractor.extract(
             url="https://example.com/article",
             html=sample_html_simple,
-            include_html=True
+            include_html=True,
         )
 
         if result:
@@ -122,8 +121,7 @@ class TestTrafilaturaExtractor:
         extractor = TrafilaturaExtractor()
         # Empty HTML that trafilatura can't extract from
         result = extractor.extract(
-            url="https://example.com/article",
-            html="<html><body></body></html>"
+            url="https://example.com/article", html="<html><body></body></html>"
         )
 
         assert result is None
@@ -135,7 +133,7 @@ class TestTrafilaturaExtractor:
         # Minimal HTML with no real content
         result = extractor.extract(
             url="https://example.com/article",
-            html="<html><head><title>Test</title></head><body></body></html>"
+            html="<html><head><title>Test</title></head><body></body></html>",
         )
 
         # Should return None when no text extracted
@@ -146,17 +144,20 @@ class TestTrafilaturaExtractor:
         """Test that title_hint is used when trafilatura fails to extract title."""
         extractor = TrafilaturaExtractor()
         # HTML with content but unclear title
-        html = "<html><body><article><p>Some article content here that is long enough to be valid content for extraction purposes.</p></article></body></html>"
+        html = (
+            "<html><body><article><p>Some article content here that is long enough "
+            "to be valid content for extraction purposes.</p></article></body></html>"
+        )
 
         result = extractor.extract(
-            url="https://example.com/article",
-            html=html,
-            title_hint="Hint Title"
+            url="https://example.com/article", html=html, title_hint="Hint Title"
         )
 
         # If extraction succeeds, should use hint for title
         if result:
-            assert result.title == "Hint Title" or result.title  # trafilatura might find a title
+            assert (
+                result.title == "Hint Title" or result.title
+            )  # trafilatura might find a title
 
     @pytest.mark.unit
     def test_include_html_option(self, sample_html_simple):
@@ -166,7 +167,7 @@ class TestTrafilaturaExtractor:
         result = extractor.extract(
             url="https://example.com/article",
             html=sample_html_simple,
-            include_html=True
+            include_html=True,
         )
 
         if result:
@@ -225,7 +226,7 @@ class TestCustomExtractor:
         result = extractor.extract(
             url="https://example.com/article",
             html=sample_html_simple,
-            title_hint="Fallback Title"
+            title_hint="Fallback Title",
         )
 
         if result:
@@ -242,11 +243,7 @@ class TestCustomExtractor:
         </body></html>
         """
         extractor = CustomExtractor(
-            selectors={
-                "title": "h1",
-                "content": "div.content",
-                "date": "span.date"
-            }
+            selectors={"title": "h1", "content": "div.content", "date": "span.date"}
         )
 
         result = extractor.extract(url="https://example.com/article", html=html)
@@ -271,7 +268,7 @@ class TestCustomExtractor:
                 "title": "h1",
                 "content": "div.content",
                 "category": "span.category",
-                "rating": "span.rating"
+                "rating": "span.rating",
             }
         )
 
@@ -284,14 +281,11 @@ class TestCustomExtractor:
     @pytest.mark.unit
     def test_handles_extraction_exception(self):
         """Test that extractor handles parsing exceptions gracefully."""
-        extractor = CustomExtractor(
-            selectors={"title": "h1", "content": "div"}
-        )
+        extractor = CustomExtractor(selectors={"title": "h1", "content": "div"})
 
         # Pass invalid HTML that causes exception
         result = extractor.extract(
-            url="https://example.com/article",
-            html=None  # This will cause an exception
+            url="https://example.com/article", html=None  # This will cause an exception
         )
 
         # Should return None, not crash
@@ -302,10 +296,7 @@ class TestCustomExtractor:
         """Test that invalid CSS selector doesn't crash."""
         html = "<html><body><h1>Title</h1><p>Content here</p></body></html>"
         extractor = CustomExtractor(
-            selectors={
-                "title": "[[[invalid",  # Invalid CSS selector
-                "content": "p"
-            }
+            selectors={"title": "[[[invalid", "content": "p"}  # Invalid CSS selector
         )
 
         result = extractor.extract(url="https://example.com/article", html=html)
@@ -340,13 +331,10 @@ class TestSmartExtractor:
         """
         extractor = SmartExtractor(
             strategies=["custom", "newspaper"],
-            custom_selectors={"title": "h1.title", "content": "div.body"}
+            custom_selectors={"title": "h1.title", "content": "div.body"},
         )
 
-        result = await extractor.extract(
-            url="https://example.com/article",
-            html=html
-        )
+        result = await extractor.extract(url="https://example.com/article", html=html)
 
         # Custom extractor should work
         if result:
@@ -356,13 +344,11 @@ class TestSmartExtractor:
     async def test_custom_strategy_without_selectors(self, sample_html_simple):
         """Test that custom strategy is skipped when no selectors provided."""
         extractor = SmartExtractor(
-            strategies=["custom", "newspaper"],
-            custom_selectors=None  # No selectors
+            strategies=["custom", "newspaper"], custom_selectors=None  # No selectors
         )
 
         result = await extractor.extract(
-            url="https://example.com/article",
-            html=sample_html_simple
+            url="https://example.com/article", html=sample_html_simple
         )
 
         # Should skip custom and use newspaper
@@ -382,10 +368,7 @@ class TestSmartExtractor:
         """
         extractor = SmartExtractor(strategies=["newspaper", "trafilatura"])
 
-        result = await extractor.extract(
-            url="https://example.com/article",
-            html=html
-        )
+        result = await extractor.extract(url="https://example.com/article", html=html)
 
         # Should get result from one of them
         assert result is None or isinstance(result, ScrapedArticle)
@@ -396,10 +379,7 @@ class TestSmartExtractor:
         extractor = SmartExtractor(strategies=["newspaper", "trafilatura"])
 
         # Empty HTML that all extractors will fail on
-        result = await extractor.extract(
-            url="https://example.com/article",
-            html=""
-        )
+        result = await extractor.extract(url="https://example.com/article", html="")
 
         assert result is None
 
