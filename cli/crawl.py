@@ -380,3 +380,37 @@ def _run_spider(
         if checkpoint_path.exists():
             shutil.rmtree(checkpoint_path)
             click.echo("✓ Checkpoint cleaned up (successful completion)")
+
+    # Upload to S3 if configured (production mode only)
+    if output_file and not limit and result.returncode == 0:
+        from utils.s3_upload import is_s3_configured, upload_to_s3
+
+        if is_s3_configured():
+            click.echo("📤 Uploading to S3...")
+            try:
+                # Determine S3 key (path in bucket)
+                # Preserve project/spider structure: project/spider/crawls/filename
+                output_path = Path(output_file)
+                if project_name:
+                    s3_key = f"{project_name}/{spider_name}/crawls/{output_path.name}"
+                else:
+                    s3_key = f"{spider_name}/crawls/{output_path.name}"
+
+                success = upload_to_s3(
+                    output_file,
+                    s3_key=s3_key,
+                    compress=True,
+                    delete_after_upload=False,  # Keep local copy
+                )
+
+                if success:
+                    click.echo("✅ Upload to S3 completed")
+                else:
+                    click.echo("⚠️  S3 upload failed (file kept locally)")
+
+            except ImportError:
+                click.echo("⚠️  boto3 not installed")
+                click.echo("   Run: pip install -r requirements.txt")
+            except Exception as e:
+                click.echo(f"⚠️  S3 upload error: {e}")
+                click.echo("   File kept locally")
