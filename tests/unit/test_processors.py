@@ -63,6 +63,16 @@ class TestRegexProcessor:
     def test_regex_non_string(self):
         assert regex_processor(123, pattern=r"\d+") == 123
 
+    def test_regex_invalid_pattern(self):
+        # Invalid regex pattern should return original value
+        result = regex_processor("test", pattern=r"[invalid(")
+        assert result == "test"
+
+    def test_regex_invalid_group_index(self):
+        # Group index out of range should return original value
+        result = regex_processor("test 123", pattern=r"(\w+) (\d+)", group=5)
+        assert result == "test 123"
+
 
 class TestCastProcessor:
     def test_cast_to_int(self):
@@ -80,8 +90,20 @@ class TestCastProcessor:
         assert cast_processor("1", to="bool") is True
         assert cast_processor("0", to="bool") is False
 
+    def test_cast_to_bool_non_string(self):
+        # Non-string bool cast uses bool() fallback
+        assert cast_processor(1, to="bool") is True
+        assert cast_processor(0, to="bool") is False
+        assert cast_processor([], to="bool") is False
+        assert cast_processor([1], to="bool") is True
+
     def test_cast_to_str(self):
         assert cast_processor(42, to="str") == "42"
+
+    def test_cast_unknown_type(self):
+        # Unknown cast type returns original value
+        result = cast_processor("test", to="unknown_type")
+        assert result == "test"
 
     def test_cast_failure(self):
         # Invalid cast returns None
