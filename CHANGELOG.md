@@ -22,6 +22,12 @@ All notable changes to ScrapAI will be documented in this file.
   - Automatically cleans up on successful completion
   - Date-based output filenames (one file per day, appends if run multiple times)
 
+- **New `BROWSER_ENABLED` setting** - Clearer alternative to `CLOUDFLARE_ENABLED` for JS-rendered sites
+  - Use `CLOUDFLARE_ENABLED: true` for Cloudflare-protected sites
+  - Use `BROWSER_ENABLED: true` for JS-rendered sites (React, Angular, etc.)
+  - Both enable CloakBrowser, but naming clarifies intent
+  - Self-documenting spider configs
+
 ### Changed
 
 - **CloakBrowser replaces all browser implementations**

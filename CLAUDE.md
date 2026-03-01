@@ -359,10 +359,17 @@ Report back: status, spider name, queue item ID, summary.
 **JS-rendered sites:**
 ```json
 {
-  "EXTRACTOR_ORDER": ["playwright", "custom"],
-  "CUSTOM_SELECTORS": { ... },
-  "PLAYWRIGHT_WAIT_SELECTOR": ".article-content",
-  "PLAYWRIGHT_DELAY": 5
+  "BROWSER_ENABLED": true,  // Enable browser for all requests
+  "EXTRACTOR_ORDER": ["custom", "newspaper"],
+  "CUSTOM_SELECTORS": { "title": "h1.x", "content": "div.y", "author": "span.z", "date": "time.w" }
+}
+```
+
+**Or use generic extractors if site has clean HTML after JS rendering:**
+```json
+{
+  "BROWSER_ENABLED": true,
+  "EXTRACTOR_ORDER": ["newspaper", "trafilatura"]
 }
 ```
 
@@ -375,16 +382,28 @@ Report back: status, spider name, queue item ID, summary.
 
 Use `--browser` flag for JS-rendered or Cloudflare-protected sites. **Hybrid mode automatic** (fast - browser once, then HTTP with cookies).
 
+**For Cloudflare-protected sites:**
 ```json
 {
-  "CLOUDFLARE_ENABLED": true  // Enable browser mode (hybrid by default)
+  "CLOUDFLARE_ENABLED": true  // Enable browser mode for Cloudflare bypass
 }
 ```
+
+**For JS-rendered sites (no Cloudflare):**
+```json
+{
+  "BROWSER_ENABLED": true  // Enable browser mode for JavaScript rendering
+}
+```
+
+**Note:** Both settings do the same thing (enable CloakBrowser), but use the appropriate one for clarity:
+- `CLOUDFLARE_ENABLED` - Site has Cloudflare protection
+- `BROWSER_ENABLED` - Site needs JS rendering (React, Angular, etc.)
 
 Advanced (if hybrid fails - rare):
 ```json
 {
-  "CLOUDFLARE_ENABLED": true,
+  "CLOUDFLARE_ENABLED": true,  // or BROWSER_ENABLED
   "CLOUDFLARE_STRATEGY": "browser_only",  // Keep browser open (slow)
   "CONCURRENT_REQUESTS": 1
 }

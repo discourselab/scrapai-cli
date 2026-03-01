@@ -122,7 +122,7 @@ def _run_spider(
     use_sitemap = False
     if db_spider.settings:
         for setting in db_spider.settings:
-            if setting.key == "CLOUDFLARE_ENABLED" and str(setting.value).lower() in [
+            if setting.key in ["CLOUDFLARE_ENABLED", "BROWSER_ENABLED"] and str(setting.value).lower() in [
                 "true",
                 "1",
             ]:
