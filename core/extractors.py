@@ -441,7 +441,9 @@ class SmartExtractor:
 
                 # Wait for selector if specified
                 if wait_for_selector:
-                    await browser.page.wait_for_selector(wait_for_selector, timeout=30000)
+                    await browser.page.wait_for_selector(
+                        wait_for_selector, timeout=30000
+                    )
                     logger.info(f"Selector found: {wait_for_selector}")
 
                 # Additional delay if specified
@@ -451,7 +453,9 @@ class SmartExtractor:
                 # Infinite scroll if enabled
                 if enable_scroll:
                     for i in range(max_scrolls):
-                        await browser.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                        await browser.page.evaluate(
+                            "window.scrollTo(0, document.body.scrollHeight)"
+                        )
                         await asyncio.sleep(scroll_delay)
                         logger.info(f"Scroll {i+1}/{max_scrolls}")
 
