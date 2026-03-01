@@ -5,7 +5,7 @@ Integration tests cover the happy path, these cover error conditions.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from spiders.database_spider import DatabaseSpider
 from core.models import Spider, SpiderRule
 
@@ -128,11 +128,7 @@ class TestCallbackRegistration:
     def test_registers_callbacks_from_config(self, mock_get_db):
         """Test that callbacks are registered from config."""
         callbacks_config = {
-            "parse_product": {
-                "extract": {
-                    "name": {"css": "h1.title::text"}
-                }
-            }
+            "parse_product": {"extract": {"name": {"css": "h1.title::text"}}}
         }
 
         mock_spider = Mock(spec=Spider)
@@ -150,7 +146,9 @@ class TestCallbackRegistration:
 
         with patch.object(DatabaseSpider, "_load_settings_from_db"):
             with patch.object(DatabaseSpider, "_setup_cloudflare_handlers"):
-                with patch.object(DatabaseSpider, "_make_callback", return_value=lambda x: None):
+                with patch.object(
+                    DatabaseSpider, "_make_callback", return_value=lambda x: None
+                ):
                     spider = DatabaseSpider(spider_name="test_spider")
 
                     # Callback should be registered on spider
