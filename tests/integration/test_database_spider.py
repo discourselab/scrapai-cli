@@ -48,7 +48,9 @@ class TestDatabaseSpider:
 
         # Verify configuration loaded
         assert spider.spider_name == "test_spider"
-        assert spider.name == "database_spider"  # Class attribute
+        assert (
+            spider.name == "test_spider"
+        )  # Instance name (for DeltaFetch per-spider DB)
         assert "example.com" in spider.allowed_domains
         assert "https://example.com/" in spider.start_urls
 
