@@ -239,6 +239,7 @@ Include `source_url` when processing from queue:
 
 ### Setup
 - `./scrapai setup` / `./scrapai verify`
+- `./scrapai --version` — show ScrapAI version
 
 ### Projects
 - `./scrapai projects list`

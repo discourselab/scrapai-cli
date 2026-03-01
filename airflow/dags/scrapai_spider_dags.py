@@ -58,12 +58,13 @@ DEFAULT_DAG_ARGS = {
 }
 
 
-def upload_to_s3(spider_name: str, **context):
+def upload_to_s3(spider_name: str, project: str, **context):
     """
     Upload the latest crawl output to S3-compatible storage (gzip compressed)
 
     Args:
         spider_name: Name of the spider
+        project: Project name
         context: Airflow context
     """
     import boto3
@@ -78,7 +79,7 @@ def upload_to_s3(spider_name: str, **context):
     s3_bucket = os.getenv('S3_BUCKET')
 
     # Find the latest crawl file (search recursively for date-organized folders)
-    data_dir = SCRAPAI_PATH / 'data' / spider_name
+    data_dir = SCRAPAI_PATH / 'data' / project / spider_name
     crawl_files = sorted(glob(str(data_dir / '**' / 'crawl_*.jsonl'), recursive=True), reverse=True)
 
     if not crawl_files:
@@ -203,7 +204,7 @@ def create_spider_dag(spider):
             bash_command=f"""
             cd {SCRAPAI_PATH} && \
             source .venv/bin/activate && \
-            ./scrapai crawl {spider.name} --timeout 28800
+            ./scrapai crawl {spider.name} --project {project} --timeout 28800
             """,
             # Graceful stop at 8h (28800s), hard kill at 9h as fallback
             execution_timeout=timedelta(hours=9),
@@ -215,7 +216,7 @@ def create_spider_dag(spider):
             bash_command=f"""
             cd {SCRAPAI_PATH} && \
             source .venv/bin/activate && \
-            ./scrapai show {spider.name} --limit 5
+            ./scrapai show {spider.name} --project {project} --limit 5
             """,
             execution_timeout=timedelta(minutes=5),
         )
@@ -228,7 +229,7 @@ def create_spider_dag(spider):
             upload_task = PythonOperator(
                 task_id='upload_to_s3',
                 python_callable=upload_to_s3,
-                op_kwargs={'spider_name': spider.name},
+                op_kwargs={'spider_name': spider.name, 'project': project},
                 execution_timeout=timedelta(minutes=30),
             )
             verify_task >> upload_task
