@@ -268,7 +268,7 @@ crawl4ai has the largest community by far. Scrapling is newer but growing fast. 
 
 **crawl4ai** is the best exploration and research tool. Point it at a site, get back HTML, markdown, media, links, screenshots, metadata, everything in one call. Largest community, Capsolver for CAPTCHAs, Docker deployment with monitoring. The "I don't know what I'm looking for yet" tool.
 
-**ScrapAI** is built for managing scrapers at scale. An AI agent builds them, a database stores them, Scrapy runs them. CloakBrowser (0.9 reCAPTCHA), cookie-cached Cloudflare bypass, smart proxy escalation, queue system, automated health checks. We built it because we needed to scrape hundreds of sites and couldn't staff a team to write individual scrapers. Trade-off: you depend on AI agent quality and pay token costs instead of developer hours.
+**ScrapAI** is built for managing scrapers at scale. An AI agent builds them, a database stores them, Scrapy runs them. CloakBrowser (0.9 reCAPTCHA), cookie-cached Cloudflare bypass, smart proxy escalation, queue system, AI-assisted health checks. We built it because we needed to scrape hundreds of sites and couldn't staff a team to write individual scrapers. Trade-off: you depend on AI agent quality and pay token costs instead of developer hours.
 
 They're different tools for different problems. At small scale, pick whichever fits how you think. At large scale, the question shifts from "which library has better selectors" to "how do I manage hundreds of scrapers without a dedicated team."
 
