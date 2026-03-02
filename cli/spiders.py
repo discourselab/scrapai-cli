@@ -116,21 +116,24 @@ def import_spider(file, project, skip_validation):
                 )
                 return
 
-        # Validate spider name matches domain (to keep files organized)
-        if allowed_domains:
-            primary_domain = allowed_domains[0]
-            expected_name = primary_domain.replace(".", "_")
+        # Validate spider name matches inspector's folder structure
+        if source_url:
+            from urllib.parse import urlparse
+
+            parsed_url = urlparse(source_url)
+            domain = parsed_url.netloc.replace("www.", "")
+            expected_name = domain.replace(".", "_")
+
             if spider_name != expected_name:
+                click.echo("❌ Spider name mismatch detected!")
                 click.echo(
-                    f"❌ Spider name mismatch: '{spider_name}' does not match domain '{primary_domain}'"
+                    f"   Inspector created folder: data/{project}/{expected_name}/analysis/"
                 )
-                click.echo(f"   Expected spider name: '{expected_name}'")
-                click.echo("\n   Why this matters:")
+                click.echo(f"   But spider name is: '{spider_name}'")
                 click.echo(
-                    f"   - Analysis files: data/{project}/{expected_name}/analysis/"
+                    f"   Crawls will save to: data/{project}/{spider_name}/crawls/"
                 )
-                click.echo(f"   - Crawl files: data/{project}/{spider_name}/crawls/")
-                click.echo("   - Files will be scattered if names don't match!")
+                click.echo("\n   ⚠️  Files will be scattered across different folders!")
                 click.echo(
                     f"\n   Fix: Change spider name to '{expected_name}' in the JSON config."
                 )
