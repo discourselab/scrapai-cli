@@ -20,6 +20,26 @@ Built by [DiscourseLab](https://www.discourselab.ai/). Used in production across
   <img src="demo.svg" alt="ScrapAI Demo" width="800">
 </p>
 
+## Table of Contents
+
+- [Who This Is For](#who-this-is-for)
+- [Why ScrapAI?](#why-scrapai)
+- [How It Works](#how-it-works)
+- [Features](#features)
+- [Quick Start](#quick-start)
+  - [Using with AI Agents](#using-with-ai-agents)
+  - [Migrating Existing Scrapers](#migrating-existing-scrapers)
+- [For Developers](#for-developers)
+- [Architecture](#architecture)
+- [Security](#security)
+- [CLI Reference](#cli-reference)
+- [Configuration](#configuration)
+- [Limitations](#limitations)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [Responsible Use](#responsible-use)
+- [License](#license)
+
 ## Who This Is For
 
 **Good fit:**
@@ -97,15 +117,16 @@ ScrapAI is glue. These projects do the heavy lifting:
 
 - **[Scrapy](https://scrapy.org/)** for crawling. Everything runs through Scrapy; we just load configs from a database instead of Python files.
 - **[newspaper4k](https://github.com/AndyTheFactory/newspaper4k)** and **[trafilatura](https://github.com/adbar/trafilatura)** for article extraction (title, content, author, date). For non-article content (products, jobs, listings), the agent writes custom callbacks with CSS/XPath selectors and data processors.
-- **[CloakBrowser](https://github.com/CloakHQ/CloakBrowser)** for Cloudflare bypass with source-level stealth (0.9 reCAPTCHA score, passes advanced bot detection).
-- **[Playwright](https://playwright.dev/)** for JavaScript rendering.
+- **[CloakBrowser](https://github.com/CloakHQ/CloakBrowser)** for JavaScript rendering and Cloudflare bypass. Drop-in Playwright replacement with 16 source-level C++ patches that achieve 0.9 reCAPTCHA scores and pass 30/30 stealth tests (Cloudflare Turnstile, FingerprintJS, BrowserScan, DataDome). *Exceptional open-source stealth browser.*
 - **[SQLAlchemy](https://www.sqlalchemy.org/)** and **[Alembic](https://alembic.sqlalchemy.org/)** for the database layer and migrations.
 
 Our contribution is the orchestration: the CLI, the database-first spider management, the AI agent workflow, Cloudflare cookie caching, smart proxy escalation, and the glue that holds it together.
 
 ## Features
 
-**Cloudflare bypass with cookie caching.** Solves the challenge once, extracts session cookies, then switches to fast HTTP requests. The browser shuts down and only comes back every 10 minutes to refresh. Most tools keep the browser open for every request (~5-10s per page). On a 1,000-page Cloudflare-protected crawl, that's roughly 8 minutes vs 2+ hours. Works on headless Linux servers (auto-configures Xvfb).
+**Advanced stealth with CloakBrowser.** Source-level C++ patches (not JS injection or config flags) achieve 0.9 reCAPTCHA v3 scores and pass 30/30 detection tests including Cloudflare Turnstile (non-interactive auto-pass, managed single-click), FingerprintJS, BrowserScan, DataDome, and ShieldSquare. Fingerprints are compiled into the Chromium binary — detection sites see a real browser because it *is* a real browser with stealth baked in. Works in headless mode on Linux servers.
+
+**Cookie-cached Cloudflare bypass.** CloakBrowser solves the challenge once, extracts session cookies, then shuts down. Subsequent requests use Scrapy's fast HTTP engine with cached cookies. Browser reopens every ~10 minutes to refresh. **20-100x faster** than tools that keep the browser open for every request (~0.1-0.5s per page vs 5-10s). On a 1,000-page Cloudflare crawl: ~8 minutes vs 2+ hours.
 
 **Smart proxy escalation.** Starts with direct connections. If a site blocks you (403/429), retries through a datacenter proxy and remembers that domain for next time. Residential proxies require explicit opt-in.
 
@@ -119,7 +140,7 @@ Our contribution is the orchestration: the CLI, the database-first spider manage
 
 **Queue and batch processing.** Bulk-add hundreds of URLs into a database-backed queue with priorities, status tracking, and retry on failure. The agent processes them in parallel batches of 5, each through the full build-test-deploy workflow.
 
-**Low-maintenance at scale.** Every spider comes with a test config (5 sample URLs). Set up a cron job to run test crawls monthly and you'll know which spiders are healthy and which broke. When a site redesign breaks extraction, point the agent at the failing spider. It re-analyzes the site, updates the config, and verifies the fix.
+**Automated health checks.** `./scrapai health --project news` tests all spiders with 5 sample items, detects extraction vs crawling failures, and generates a markdown report for the agent to fix. Run monthly via cron to catch breakage early. When a site redesigns, the agent re-analyzes, updates selectors, and verifies the fix in 5-10 minutes vs 45 minutes manual.
 
 ## Quick Start
 

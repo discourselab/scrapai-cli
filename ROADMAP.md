@@ -22,9 +22,58 @@ ScrapAI is infrastructure for reliable, reusable web scraping. Like npm for Java
 
 **Test coverage:** 26% (critical modules: 70-100%)
 
-## Phase 1: Spider Library (Q2 2026)
+## Phase 1A: Minimal REST API + Health Checks (Q2 2026 - Month 1-2)
 
-**Goal:** Make spiders shareable and reusable - the core value proposition.
+**Goal:** Enable programmatic access, single-article scraping, and automated maintenance.
+
+### Spider Health Checks ✅ (Shipped)
+
+**Command:** `./scrapai health --project <name>`
+
+Tests all spiders in a project, detects extraction vs crawling failures, generates markdown reports for agent-assisted fixes.
+
+**Benefits:**
+- Catch breakage early (monthly cron jobs)
+- Agent fixes in 10 min vs 45 min manual
+- Scales to 100+ spiders (270 hrs/year saved)
+- See [docs/health.md](docs/health.md)
+
+### Core API Endpoints
+
+**Single Article Scraping** (the killer feature):
+```bash
+POST /api/scrape
+{
+  "url": "https://nytimes.com/2026/03/02/article",
+  "spider": "nytimes"  # Uses saved CSS selectors from DB
+}
+# Returns: title, content, author, date in ~2 seconds
+```
+
+**Use cases:**
+- Extract single article without full crawl
+- RSS feed integration (scrape on publish)
+- Real-time monitoring
+- AI agents testing spider configs
+- Manual URL paste → instant extraction
+
+**Other endpoints:**
+- `POST /api/crawl` - Trigger full crawl programmatically
+- `GET /api/results/{spider}` - Get crawl results
+- `GET /api/spiders` - List available spiders
+- `GET /api/crawls/{id}/status` - Check crawl progress
+
+**Technical:**
+- FastAPI framework (async, fast, modern)
+- API key authentication
+- Rate limiting (prevent abuse)
+- Basic error handling
+
+**Why first:** Enables AI agents (OpenClaw, Claude Code, etc.) to integrate immediately. Single-article API validates core value prop before building marketplace infrastructure.
+
+## Phase 1B: Spider Library (Q2 2026 - Month 2-3)
+
+**Goal:** Make spiders shareable and reusable - multiply API value.
 
 ### Spider Marketplace
 **Problem:** Every developer/AI agent rebuilds scrapers for the same sites (NYT, BBC, Amazon, etc.)
@@ -43,9 +92,10 @@ ScrapAI is infrastructure for reliable, reusable web scraping. Like npm for Java
 - Production-tested configs
 - Community maintenance
 
-**For AI agents (Claude Code, OpenClaw, etc.):**
+**For AI agents (OpenClaw, Claude Code, etc.):**
 - Skip Phase 1-4 spider building
 - Instant data access - load config, start scraping
+- API + 100 spiders = scrape 100 sites programmatically
 - No wasted compute on selector discovery
 
 **Initial collection:** 50+ spiders for top news sites, e-commerce, job boards
@@ -56,11 +106,11 @@ ScrapAI is infrastructure for reliable, reusable web scraping. Like npm for Java
 - Example URLs and expected output
 - License selection (MIT, Apache, CC0)
 
-**Why first:** Network effect - more spiders = more users = more contributors
+**Why after API:** API creates demand, library multiplies value. Early adopters use API with their spiders, then library makes API 10x more useful.
 
-## Phase 2: Production Infrastructure (Q3 2026)
+## Phase 2: Quality & Advanced API (Q3 2026)
 
-**Goal:** Make it reliable and programmable.
+**Goal:** Make it reliable and production-ready.
 
 ### Data Quality & Validation
 **Problem:** Scraped data might be incomplete or wrong
@@ -74,17 +124,16 @@ ScrapAI is infrastructure for reliable, reusable web scraping. Like npm for Java
 
 **Why:** Catch breakage early, maintain data integrity
 
-### REST API for Programmatic Access
-**Problem:** CLI-only limits integration
+### Advanced API Features
+**Beyond Phase 1A basics:**
+- **Webhooks** - Real-time notifications (crawl complete, spider failed)
+- **WebSockets** - Live crawl progress updates
+- **Batch operations** - Scrape multiple URLs in one request
+- **OpenAPI/Swagger docs** - Interactive API documentation
+- **Client libraries** - Python, JavaScript SDKs
+- **Advanced auth** - OAuth, team management, usage analytics
 
-**Features:**
-- RESTful API: run spiders, get results, manage configs
-- Webhook notifications (crawl complete, spider failed)
-- API keys and rate limiting
-- OpenAPI/Swagger docs
-- Python/JS client libraries
-
-**Why:** Infrastructure for AI agents, integrations, automation
+**Why:** Phase 1A validates core API, Phase 2 adds production features based on real usage
 
 ## Contributing
 
@@ -92,7 +141,7 @@ ScrapAI is infrastructure for reliable, reusable web scraping. Like npm for Java
 
 - **Discussions:** [GitHub Discussions](https://github.com/discourselab/scrapai-cli/discussions)
 - **Feature requests:** [GitHub Issues](https://github.com/discourselab/scrapai-cli/issues)
-- **Spider contributions:** Coming in Phase 1 (Spider Marketplace)
+- **Spider contributions:** Coming in Phase 1B (Spider Marketplace)
 
 **Priority is driven by:**
 1. Community feedback (what you actually need)
@@ -101,9 +150,10 @@ ScrapAI is infrastructure for reliable, reusable web scraping. Like npm for Java
 
 ## Versioning
 
-- **Current:** v0.x (pre-1.0 alpha/beta)
-- **v1.0 target:** Phase 1 complete (Spider Library + solid core)
-- **v2.0 target:** Phase 2 complete (Data Quality + REST API)
+- **Current:** v0.1.0 (pre-1.0 alpha/beta)
+- **v0.5.0 target:** Phase 1A complete (Minimal REST API)
+- **v1.0.0 target:** Phase 1B complete (Spider Library + Marketplace)
+- **v2.0.0 target:** Phase 2 complete (Quality/Validation + Advanced API)
 
 Breaking changes expected until v1.0. We'll provide migration guides.
 

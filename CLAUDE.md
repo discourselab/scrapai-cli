@@ -285,6 +285,14 @@ Production crawls can take hours or days depending on site size. You MUST NOT ru
 ### Show
 - `./scrapai show <name> --project <name> [--limit N] [--url pattern] [--text "query"] [--title "query"]`
 
+### Health Check
+- `./scrapai health --project <name>` — test all spiders in project, generate report for broken ones
+- Default: 5 items per spider, min 50 char content to pass
+- Reports saved to: `DATA_DIR/<project>/health/<YYYYMMDD>/report.md`
+- Exit code: 0 if all pass, 1 if any fail (useful for CI/cron)
+
+**Use case:** Monthly automated testing to detect broken spiders. Agent reads report and fixes.
+
 ### Export
 
 **Only when user explicitly requests — never export proactively.**
