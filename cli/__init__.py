@@ -6,20 +6,20 @@ import os
 
 # Add parent directory to path to import __version__
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from __version__ import __version__
+from __version__ import __version__  # noqa: E402
 
-from .spiders import spiders
-from .queue import queue
-from .show import show
-from .export import export
-from .crawl import crawl, crawl_all
-from .db import db
-from .inspect_cmd import inspect_cmd
-from .analyze import analyze
-from .setup_cmd import setup, verify
-from .extract_urls import extract_urls
-from .projects import projects
-from .health import health
+from .spiders import spiders  # noqa: E402
+from .queue import queue  # noqa: E402
+from .show import show  # noqa: E402
+from .export import export  # noqa: E402
+from .crawl import crawl, crawl_all  # noqa: E402
+from .db import db  # noqa: E402
+from .inspect_cmd import inspect_cmd  # noqa: E402
+from .analyze import analyze  # noqa: E402
+from .setup_cmd import setup, verify  # noqa: E402
+from .extract_urls import extract_urls  # noqa: E402
+from .projects import projects  # noqa: E402
+from .health import health  # noqa: E402
 
 
 @click.group()
