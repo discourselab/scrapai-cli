@@ -140,7 +140,7 @@ Our contribution is the orchestration: the CLI, the database-first spider manage
 
 **Queue and batch processing.** Bulk-add hundreds of URLs into a database-backed queue with priorities, status tracking, and retry on failure. The agent processes them in parallel batches of 5, each through the full build-test-deploy workflow.
 
-**Automated health checks.** `./scrapai health --project news` tests all spiders with 5 sample items, detects extraction vs crawling failures, and generates a markdown report for the agent to fix. Run monthly via cron to catch breakage early. When a site redesigns, the agent re-analyzes, updates selectors, and verifies the fix in 5-10 minutes vs 45 minutes manual.
+**AI-assisted health checks.** `./scrapai health --project news` tests all spiders with 5 sample items, detects extraction vs crawling failures, and generates a markdown report for the agent to fix. Run monthly via cron to catch breakage early. When a site redesigns, the agent re-analyzes, updates selectors, and verifies the fix in 5-10 minutes vs 45 minutes manual.
 
 ## Quick Start
 

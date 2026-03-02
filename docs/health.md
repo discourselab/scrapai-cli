@@ -13,7 +13,7 @@ Websites redesign constantly. The `health` command tests all spiders in a projec
 
 ## The Solution
 
-**Automated health checks + agent-assisted fixes:**
+**AI-assisted health checks:**
 
 ```bash
 # Monthly cron job
