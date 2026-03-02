@@ -84,6 +84,85 @@ Max depth: 3 levels.
 ]}
 ```
 
+## Iterate: Listing-to-Detail Workflows
+
+For sites where data spans two pages — e.g., a ranking table (listing) links to individual detail pages — use `iterate` to loop over rows, extract per-row fields, and follow links to detail pages with that data passed along.
+
+**Use iterate when:**
+- Rankings/directories where rank lives on the listing page but details live on linked pages
+- Search results where you need data from both the result snippet and the full page
+- Any listing → detail pattern where you need fields from both pages
+
+### Structure
+
+```json
+{
+  "callbacks": {
+    "parse_listing": {
+      "iterate": {
+        "selector": "table tr:has(td.rank)",
+        "follow": {
+          "url": {"css": "td.name a::attr(href)"},
+          "callback": "parse_detail"
+        }
+      },
+      "extract": {
+        "rank": {"css": "td.rank::text", "processors": [{"type": "strip"}, {"type": "cast", "to": "int"}]},
+        "name": {"css": "td.name a::text"}
+      }
+    },
+    "parse_detail": {
+      "extract": {
+        "website": {"css": "a.website::attr(href)"},
+        "description": {"css": "div.about::text"}
+      }
+    }
+  }
+}
+```
+
+### How it works
+
+1. `parse_listing` loops over each row matching `selector`
+2. For each row, `extract` fields are pulled from the **row element** (not full page)
+3. The `follow.url` selector extracts the link from the row
+4. A request is made to that URL with `callback: "parse_detail"`
+5. Extracted row fields are passed via Scrapy `meta` as `listing_data`
+6. `parse_detail` receives the response, merges `listing_data` into its item, then extracts its own fields
+
+The final item contains fields from **both** pages (listing + detail) at the top level.
+
+### Optional: url_context
+
+Extract fields from the **page URL** using regex (useful when URL contains data like country codes):
+
+```json
+{
+  "iterate": {
+    "selector": "table tr",
+    "url_context": {
+      "country_code": {"regex": "/(\\w{2})/"},
+      "state": {"regex": "/\\w{2}/([\\w-]+)\\.htm"}
+    },
+    "follow": {
+      "url": {"css": "td a::attr(href)"},
+      "callback": "parse_detail"
+    }
+  }
+}
+```
+
+`url_context` fields are extracted once per page and included in every row's `listing_data`.
+
+### Key details
+
+- `extract` in iterate mode uses the **row** as scope (not full response)
+- `url_context` regex must have exactly **one capture group**
+- `follow.callback` must reference a defined callback (or `parse_article`)
+- Rows without a matching URL are silently skipped
+- Items are only counted when the detail callback yields (not the iterate callback)
+- `extract` is optional in iterate callbacks (you can follow without extracting row fields)
+
 ## Templates
 
 Complete working examples in `templates/`:
