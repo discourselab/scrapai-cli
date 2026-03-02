@@ -19,6 +19,7 @@ from .analyze import analyze
 from .setup_cmd import setup, verify
 from .extract_urls import extract_urls
 from .projects import projects
+from .health import health
 
 
 @click.group()
@@ -41,3 +42,4 @@ cli.add_command(setup)
 cli.add_command(verify)
 cli.add_command(extract_urls, "extract-urls")
 cli.add_command(projects)
+cli.add_command(health)

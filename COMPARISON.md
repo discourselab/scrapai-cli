@@ -84,36 +84,34 @@ Scrapling has a unique advantage here: its adaptive parser can relocate elements
 
 | | Scrapling | crawl4ai | ScrapAI |
 |---|---|---|---|
-| **Browser engine** | Patchright (patched Playwright) | Patchright (patched Playwright) | nodriver (CF bypass) + Playwright (JS) + Scrapy (crawling) |
-| **Fingerprint library** | BrowserForge (realistic headers) | fake-useragent | Static Chrome UA |
-| **JS stealth scripts** | 6 scripts (most comprehensive) | 7 property overrides + stealth plugin | 3 navigator overrides |
-| **Browser flags** | 55 stealth args | 20+ flags | Minimal (nodriver handles it) |
-
-Scrapling has the most comprehensive stealth layer: 55 browser flags, BrowserForge fingerprints, and 6 stealth scripts. More thorough than anything else we've seen.
+| **Browser engine** | Patchright (patched Playwright) | Patchright (patched Playwright) | [CloakBrowser](https://github.com/CloakHQ/CloakBrowser) (16 C++ patches) |
+| **reCAPTCHA v3 score** | Not documented | Not documented | **0.9 (verified)** |
+| **Detection bypass** | Cloudflare, most sites | Cloudflare + Capsolver | **Cloudflare Turnstile, FingerprintJS, BrowserScan, DataDome (30/30 tests)** |
 
 ### Cloudflare Challenges
 
 | | Scrapling | crawl4ai | ScrapAI |
 |---|---|---|---|
-| **Non-interactive** ("Just a moment...") | Waits for title change | Stealth handles it | Browser auto-solves |
-| **Interactive** (click checkbox) | Auto-clicks with offset | Relies on stealth | Auto-clicks with human behavior simulation |
-| **CAPTCHA solving** | Auto-click only | Capsolver integration | Auto-click only |
-
-All three handle basic Cloudflare. crawl4ai has an edge with Capsolver for hard CAPTCHAs. The real difference is what happens *after* the challenge is solved.
+| **Non-interactive** ("Just a moment...") | Waits for title change | Stealth handles it | **Auto-solved (CloakBrowser 0.9 score)** |
+| **Turnstile (managed)** | Auto-clicks with offset | Relies on stealth | **Auto-solved or single click** |
+| **Turnstile (non-interactive)** | Depends on stealth | Depends on stealth | **Auto-passed (no interaction)** |
+| **reCAPTCHA v3** | Not documented | Not documented | **0.9 score (human-level, verified)** |
+| **CAPTCHA solving** | Auto-click only | Capsolver integration | **Auto-solved via stealth (no service needed)** |
 
 ### Speed on Cloudflare-Protected Sites
 
 This is where architecture matters more than stealth.
 
-| | Scrapling (StealthySession) | crawl4ai | ScrapAI (hybrid mode) |
+| | Scrapling (StealthySession) | crawl4ai | ScrapAI (CloakBrowser hybrid) |
 |---|---|---|---|
-| **CF solution** | Solved once per session | Per request (unless stealth bypasses) | Solved once, cookies cached ~10 min |
-| **Subsequent requests** | Browser per request (~5-10s) | Browser per request (~5-10s) | HTTP with cached cookies (~0.1-0.5s) |
-| **Concurrency** | Limited by browser tabs | Limited by browser tabs | 16+ concurrent HTTP requests |
-| **100 pages** | ~8-16 min | ~8-16 min | ~1 min |
-| **1,000 pages** | ~1.5-3 hours | ~1.5-3 hours | ~8 min |
+| **CF solution** | Solved once per session | Per request (unless stealth bypasses) | **CloakBrowser solves once, cookies cached ~10 min** |
+| **Subsequent requests** | Browser per request (~5-10s) | Browser per request (~5-10s) | **HTTP with cached cookies (~0.1-0.5s)** |
+| **Browser lifecycle** | Stays open for session | Stays open for session | **Shuts down after cookie extraction, reopens every ~10 min** |
+| **Concurrency** | Limited by browser tabs | Limited by browser tabs | **16+ concurrent HTTP requests** |
+| **100 pages** | ~8-16 min | ~8-16 min | **~1 min** |
+| **1,000 pages** | ~1.5-3 hours | ~1.5-3 hours | **~8 min** |
 
-Scrapling's `StealthySession` does persist CF cookies within a session; it doesn't re-solve the challenge for every request. But every subsequent request still goes through the browser (~5-10s each), because the browser stays open and routes all traffic through it. ScrapAI extracts the CF cookies from the browser session, then switches to plain HTTP. The browser shuts down and only comes back every ~10 minutes to refresh. The speed difference comes from browser vs HTTP for subsequent requests, not cookie caching per se.
+Scrapling's `StealthySession` persists cookies but keeps the browser open for all requests (~5-10s each). ScrapAI solves once, caches cookies, shuts down browser, then uses fast HTTP (~0.1-0.5s per page).
 
 ---
 
@@ -253,8 +251,8 @@ crawl4ai has the largest community by far. Scrapling is newer but growing fast. 
 | **One-off scrape, full control** | Scrapling or crawl4ai | Developer tools for developers |
 | **Exploring an unfamiliar site** | crawl4ai | Returns everything in one call |
 | **Hard CAPTCHAs** | crawl4ai | Capsolver integration |
-| **Site changes layout often** | Scrapling or ScrapAI | Scrapling: adaptive parser (automatic, fuzzy matching). ScrapAI: agent re-analyzes and updates config (no developer needed) |
-| **Maximum stealth** | Scrapling | Most comprehensive evasion |
+| **Site changes layout often** | Scrapling or ScrapAI | Scrapling: adaptive parser. ScrapAI: agent auto-fixes |
+| **Highest reCAPTCHA score** | ScrapAI | CloakBrowser (0.9 vs config-level tools) |
 | **Non-technical team** | ScrapAI | Plain English, no code |
 | **Managing 50+ scrapers** | ScrapAI | Database + agent + queue |
 | **Cloudflare site, thousands of pages** | ScrapAI | Cookie caching = 10x+ faster |
@@ -270,7 +268,7 @@ crawl4ai has the largest community by far. Scrapling is newer but growing fast. 
 
 **crawl4ai** is the best exploration and research tool. Point it at a site, get back HTML, markdown, media, links, screenshots, metadata, everything in one call. Largest community, Capsolver for CAPTCHAs, Docker deployment with monitoring. The "I don't know what I'm looking for yet" tool.
 
-**ScrapAI** is built for managing scrapers at scale. An AI agent builds them, a database stores them, Scrapy runs them. Cookie-cached Cloudflare bypass, smart proxy escalation, queue system, Airflow scheduling. We built it because we needed to scrape hundreds of sites for a knowledge graph and couldn't staff a team to write individual scrapers. The trade-off: you depend on AI agent quality and pay token costs instead of developer hours.
+**ScrapAI** is built for managing scrapers at scale. An AI agent builds them, a database stores them, Scrapy runs them. CloakBrowser (0.9 reCAPTCHA), cookie-cached Cloudflare bypass, smart proxy escalation, queue system, automated health checks. We built it because we needed to scrape hundreds of sites and couldn't staff a team to write individual scrapers. Trade-off: you depend on AI agent quality and pay token costs instead of developer hours.
 
 They're different tools for different problems. At small scale, pick whichever fits how you think. At large scale, the question shifts from "which library has better selectors" to "how do I manage hundreds of scrapers without a dedicated team."
 
