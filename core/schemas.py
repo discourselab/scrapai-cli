@@ -201,14 +201,87 @@ class FieldExtractSchema(BaseModel):
         return self
 
 
+class UrlContextFieldSchema(BaseModel):
+    """Schema for extracting fields from the page URL via regex."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    regex: str = Field(..., description="Regex pattern with one capture group")
+
+    @field_validator("regex")
+    @classmethod
+    def validate_regex(cls, v):
+        """Validate regex compiles and has exactly one capture group."""
+        try:
+            compiled = re.compile(v)
+        except re.error as e:
+            raise ValueError(f"Invalid regex pattern: {e}")
+        if compiled.groups != 1:
+            raise ValueError(
+                f"Regex must have exactly one capture group, found {compiled.groups}"
+            )
+        return v
+
+
+class IterateFollowSchema(BaseModel):
+    """Schema for iterate follow configuration (URL selector + target callback)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: FieldExtractSchema = Field(
+        ..., description="Selector for the follow URL (css/xpath)"
+    )
+    callback: str = Field(..., description="Target callback name for followed URLs")
+
+    @field_validator("callback")
+    @classmethod
+    def validate_callback_name(cls, v):
+        """Validate callback is a valid Python identifier."""
+        if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", v):
+            raise ValueError(
+                f"Invalid callback name: {v}. Must be a valid Python identifier."
+            )
+        return v
+
+
+class IterateSchema(BaseModel):
+    """Schema for iterate configuration (loop over listing rows)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    selector: str = Field(
+        ..., min_length=1, description="CSS selector for row elements"
+    )
+    follow: IterateFollowSchema = Field(
+        ..., description="Follow configuration (URL + callback)"
+    )
+    url_context: Optional[Dict[str, UrlContextFieldSchema]] = Field(
+        default=None, description="Fields to extract from the page URL via regex"
+    )
+
+
 class CallbackSchema(BaseModel):
     """Schema for callback extraction configuration."""
 
     model_config = ConfigDict(extra="forbid")
 
-    extract: Dict[str, FieldExtractSchema] = Field(
-        ..., min_length=1, description="Field extraction rules"
+    extract: Optional[Dict[str, FieldExtractSchema]] = Field(
+        default=None, description="Field extraction rules"
     )
+    iterate: Optional[IterateSchema] = Field(
+        default=None, description="Iterate over listing rows and follow detail pages"
+    )
+
+    @model_validator(mode="after")
+    def validate_has_extract_or_iterate(self):
+        """Require at least one of extract or iterate."""
+        has_extract = self.extract and len(self.extract) > 0
+        has_iterate = self.iterate is not None
+        if not has_extract and not has_iterate:
+            raise ValueError(
+                "Callback must have at least one of 'extract' (non-empty) or 'iterate'"
+            )
+        return self
 
 
 class SpiderConfigSchema(BaseModel):
@@ -372,6 +445,27 @@ class SpiderConfigSchema(BaseModel):
                     f"Rule {idx} references undefined callback: '{rule.callback}'. "
                     f"Defined callbacks: {', '.join(sorted(c for c in defined_callbacks if c))}"
                 )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_iterate_follow_callbacks(self):
+        """Cross-validate that iterate.follow.callback references a defined callback."""
+        if not self.callbacks:
+            return self
+
+        defined_callbacks = set(self.callbacks.keys())
+        defined_callbacks.add("parse_article")
+
+        for cb_name, cb_config in self.callbacks.items():
+            if cb_config.iterate and cb_config.iterate.follow:
+                target = cb_config.iterate.follow.callback
+                if target not in defined_callbacks:
+                    raise ValueError(
+                        f"Callback '{cb_name}' iterate.follow.callback references "
+                        f"undefined callback: '{target}'. "
+                        f"Defined callbacks: {', '.join(sorted(defined_callbacks))}"
+                    )
 
         return self
 

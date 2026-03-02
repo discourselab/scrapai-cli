@@ -431,8 +431,8 @@ class TestSpiderWithCallbacks:
         # Both callbacks should be registered
         assert hasattr(spider, "parse_product")
         assert hasattr(spider, "parse_review")
-        assert spider.parse_product.__name__ == "dynamic_callback"
-        assert spider.parse_review.__name__ == "dynamic_callback"
+        assert spider.parse_product.__name__ == "standard_callback"
+        assert spider.parse_review.__name__ == "standard_callback"
 
     @pytest.mark.integration
     async def test_callback_extracts_custom_fields(

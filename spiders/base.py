@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -206,22 +207,128 @@ class BaseDBSpiderMixin:
 
         return items
 
+    def _get_callback(self, callback_name):
+        """Look up a registered callback method by name.
+
+        Args:
+            callback_name: Name of the callback (must be registered via setattr)
+
+        Returns:
+            The callback method
+
+        Raises:
+            AttributeError: If callback is not registered
+        """
+        callback = getattr(self, callback_name, None)
+        if callback is None:
+            raise AttributeError(
+                f"Callback '{callback_name}' not registered on spider. "
+                "Ensure it is defined in the callbacks config."
+            )
+        return callback
+
+    def _extract_url_context(self, url, url_context_config):
+        """Extract fields from a URL using regex patterns.
+
+        Args:
+            url: The URL string to extract from
+            url_context_config: Dict of {field_name: {"regex": pattern}}
+
+        Returns:
+            Dict of extracted field values
+        """
+        context = {}
+        for field_name, field_config in url_context_config.items():
+            pattern = field_config.get("regex", "")
+            match = re.search(pattern, url)
+            if match:
+                context[field_name] = match.group(1)
+            else:
+                context[field_name] = None
+        return context
+
     def _make_callback(self, callback_name, callback_config):
         """Generate a dynamic callback method for custom field extraction.
 
         Args:
             callback_name: Name of the callback (e.g., 'parse_product')
-            callback_config: Dict with 'extract' key containing field definitions
+            callback_config: Dict with 'extract' key containing field definitions,
+                           or 'iterate' key for listing→detail page workflows
 
         Returns:
             Async generator function for Scrapy callback
         """
+        iterate_config = callback_config.get("iterate")
 
-        async def dynamic_callback(response):
+        if iterate_config:
+            return self._make_iterate_callback(callback_name, callback_config)
+        else:
+            return self._make_standard_callback(callback_name, callback_config)
+
+    def _make_iterate_callback(self, callback_name, callback_config):
+        """Generate a callback that iterates over listing rows and follows detail pages."""
+
+        async def iterate_callback(response):
+            from core.processors import apply_processors
+
+            iterate_config = callback_config["iterate"]
+            row_selector = iterate_config["selector"]
+            follow_config = iterate_config["follow"]
+            url_context_config = iterate_config.get("url_context")
+            extract_config = callback_config.get("extract") or {}
+
+            # Extract url_context once per page
+            url_context = {}
+            if url_context_config:
+                url_context = self._extract_url_context(
+                    response.url, url_context_config
+                )
+
+            rows = response.css(row_selector)
+            logger.info(
+                f"Iterate {callback_name}: found {len(rows)} rows on {response.url}"
+            )
+
+            for row in rows:
+                # Extract per-row fields
+                row_data = {}
+                for field_name, field_config in extract_config.items():
+                    if field_config.get("type") == "nested_list":
+                        value = self._extract_nested_list(row, field_config)
+                    else:
+                        value = self._extract_field(row, field_config)
+
+                    processors = field_config.get("processors", [])
+                    if processors:
+                        value = apply_processors(value, processors)
+
+                    row_data[field_name] = value
+
+                # Extract follow URL from row
+                follow_url = self._extract_field(row, follow_config["url"])
+                if not follow_url:
+                    logger.debug(f"Iterate {callback_name}: skipping row without URL")
+                    continue
+
+                # Combine row_data + url_context into listing_data
+                listing_data = {**row_data, **url_context}
+
+                yield response.follow(
+                    follow_url,
+                    callback=self._get_callback(follow_config["callback"]),
+                    meta={"listing_data": listing_data},
+                )
+
+        return iterate_callback
+
+    def _make_standard_callback(self, callback_name, callback_config):
+        """Generate a standard callback that extracts fields from a single page."""
+
+        async def standard_callback(response):
             """Generated callback that extracts custom fields and applies processors."""
             from core.processors import apply_processors
 
-            extract_config = callback_config.get("extract", {})
+            extract_config = callback_config.get("extract") or {}
             if not extract_config:
                 logger.warning(
                     f"Callback {callback_name} has no extraction config, skipping"
@@ -236,6 +343,13 @@ class BaseDBSpiderMixin:
                 "source": "custom_callback",
                 "_callback": callback_name,  # Mark as callback item for pipeline
             }
+
+            # Merge listing_data from iterate parent (if any)
+            try:
+                listing_data = response.meta.get("listing_data", {})
+            except AttributeError:
+                listing_data = {}
+            item.update(listing_data)
 
             # Extract all custom fields
             for field_name, field_config in extract_config.items():
@@ -262,4 +376,4 @@ class BaseDBSpiderMixin:
             # Increment counter
             self._items_scraped += 1
 
-        return dynamic_callback
+        return standard_callback
