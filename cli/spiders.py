@@ -116,6 +116,26 @@ def import_spider(file, project, skip_validation):
                 )
                 return
 
+        # Validate spider name matches domain (to keep files organized)
+        if allowed_domains:
+            primary_domain = allowed_domains[0]
+            expected_name = primary_domain.replace(".", "_")
+            if spider_name != expected_name:
+                click.echo(
+                    f"❌ Spider name mismatch: '{spider_name}' does not match domain '{primary_domain}'"
+                )
+                click.echo(f"   Expected spider name: '{expected_name}'")
+                click.echo("\n   Why this matters:")
+                click.echo(
+                    f"   - Analysis files: data/{project}/{expected_name}/analysis/"
+                )
+                click.echo(f"   - Crawl files: data/{project}/{spider_name}/crawls/")
+                click.echo("   - Files will be scattered if names don't match!")
+                click.echo(
+                    f"\n   Fix: Change spider name to '{expected_name}' in the JSON config."
+                )
+                return
+
         # Check for existing spider
         existing = db.query(Spider).filter(Spider.name == spider_name).first()
         if existing:

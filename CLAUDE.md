@@ -99,6 +99,32 @@ These are non-negotiable. Violating these will cause failures:
 
 ---
 
+## Spider Naming Convention
+
+**CRITICAL: Spider name MUST match the domain-based folder name.**
+
+When you run `./scrapai inspect https://example.com/`, files are saved to:
+```
+data/<project>/example_com/analysis/
+```
+
+The spider name MUST be `example_com` (domain with dots replaced by underscores).
+
+**Why this matters:**
+- Analysis files: `data/<project>/example_com/analysis/`
+- Crawl files: `data/<project>/example_com/crawls/`
+- If spider name is different (e.g., `example_site`), crawls save to wrong folder
+
+**Examples:**
+- `imn.org` → spider name: `imn_org`
+- `bbc.co.uk` → spider name: `bbc_co_uk`
+- `nytimes.com` → spider name: `nytimes_com`
+- `web.archive.org/web/20240101/example.com` → spider name: `example_com` (not `web_archive_org`)
+
+**For multi-domain spiders:** Use the primary/main domain as the spider name.
+
+---
+
 ## Workflow: Phase 1-4
 
 **Only mark queue complete when ALL phases pass. If any fail: `./scrapai queue fail <id> -m "reason"`.**
@@ -192,13 +218,15 @@ See "Named Callbacks & Custom Fields" section below for syntax and examples.
 
 **Goal:** Create test and final spider JSON files with all rules and settings.
 
-Include `source_url` when processing from queue:
+**CRITICAL: Spider name MUST match domain-based folder.** See "Spider Naming Convention" section above.
+
+Example config structure (include `source_url` when processing from queue):
 ```json
 {
-  "name": "spider_name",
-  "source_url": "https://original-queue-url.com",
-  "allowed_domains": [...],
-  "start_urls": [...]
+  "name": "example_com",  // MUST match domain: example.com → example_com
+  "source_url": "https://example.com",
+  "allowed_domains": ["example.com"],
+  "start_urls": ["https://example.com/articles"]
 }
 ```
 **Do NOT import yet.** Importing happens in Phase 4.
