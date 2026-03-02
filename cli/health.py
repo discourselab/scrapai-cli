@@ -2,7 +2,6 @@
 
 import click
 import subprocess
-import json
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -135,7 +134,7 @@ def _test_spider(
         ]
 
         # Run command
-        proc = subprocess.run(
+        _ = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
@@ -218,7 +217,9 @@ def _print_result(result: Dict):
     spider = result["spider"]
 
     if result["status"] == "passed":
-        click.echo(f"{status_icon} {spider:20} {result['items_count']} items, extraction OK")
+        click.echo(
+            f"{status_icon} {spider:20} {result['items_count']} items, extraction OK"
+        )
     else:
         problem = result["problem"].upper() if result["problem"] else "ERROR"
         click.echo(
@@ -301,16 +302,18 @@ def _format_failed_spider(result: Dict) -> List[str]:
 
     # Add fix instructions
     if result["problem"] == "extraction":
+        url = result["sample_item"]["url"] if result["sample_item"] else "N/A"
         lines.extend(
             [
                 "- **Fix needed:** Update CSS selectors for content extraction",
-                f"- **Test URL:** {result['sample_item']['url'] if result['sample_item'] else 'N/A'}",
+                f"- **Test URL:** {url}",
             ]
         )
     elif result["problem"] == "crawling":
         lines.extend(
             [
-                "- **Fix needed:** Update crawling rules (URL patterns, start URLs, or allowed domains)",
+                "- **Fix needed:** Update crawling rules "
+                "(URL patterns, start URLs, or allowed domains)",
                 "- **Action:** Re-analyze site structure and update spider config",
             ]
         )
