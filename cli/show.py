@@ -84,10 +84,12 @@ def show(spider_name, project, limit, url, text, title):
             # Get field definitions from spider config
             extract_config = callbacks_config[callback_name].get("extract", {})
 
-            # Show only fields defined in spider config (in definition order)
-            # Check both database columns (for standard fields) and metadata_json (for custom fields)
+            # Collect all fields to display
+            fields_to_show = []
+
+            # Fields defined in spider config (in definition order)
+            shown_keys = set()
             for field_name in extract_config.keys():
-                # Standard fields are stored in database columns
                 if field_name == "title":
                     field_value = item.title
                 elif field_name == "content":
@@ -99,9 +101,18 @@ def show(spider_name, project, limit, url, text, title):
                         item.published_date.isoformat() if item.published_date else None
                     )
                 else:
-                    # Custom fields are stored in metadata_json
                     field_value = item.metadata_json.get(field_name)
+                shown_keys.add(field_name)
+                fields_to_show.append((field_name, field_value))
 
+            # Extra metadata_json fields not in extract config
+            # (e.g., listing_data passed via iterate: rank, country_code, etc.)
+            if item.metadata_json and isinstance(item.metadata_json, dict):
+                for key, value in item.metadata_json.items():
+                    if key not in shown_keys and key != "_callback":
+                        fields_to_show.append((key, value))
+
+            for field_name, field_value in fields_to_show:
                 # Truncate long values for display
                 if isinstance(field_value, str) and len(field_value) > 100:
                     display_value = field_value[:100] + "..."

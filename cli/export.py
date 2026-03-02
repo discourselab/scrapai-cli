@@ -111,7 +111,7 @@ def export(spider_name, project, fmt, output, limit, url, text, title):
             extract_config = callbacks_config[callback_name].get("extract", {})
             row["callback"] = callback_name
 
-            # Export exactly the fields defined in spider config
+            # Export fields defined in spider config
             # Check both database columns (for standard fields) and metadata_json (for custom fields)
             for field_name in extract_config.keys():
                 # Standard fields are stored in database columns
@@ -128,6 +128,14 @@ def export(spider_name, project, fmt, output, limit, url, text, title):
                 else:
                     # Custom fields are stored in metadata_json
                     row[field_name] = item.metadata_json.get(field_name)
+
+            # Include extra metadata_json fields not in extract config
+            # (e.g., listing_data passed via iterate: rank, country_code, etc.)
+            if item.metadata_json and isinstance(item.metadata_json, dict):
+                skip_keys = set(extract_config.keys()) | {"_callback"}
+                for key, value in item.metadata_json.items():
+                    if key not in skip_keys and key not in row:
+                        row[key] = value
         else:
             # Default to standard article fields (for generic extractors)
             row["title"] = item.title
