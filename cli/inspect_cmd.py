@@ -40,20 +40,50 @@ def inspect_cmd(
 
     Uses lightweight HTTP by default. Use --browser for JS-rendered or Cloudflare-protected sites.
     """
-    from utils.inspector import inspect_page
-
     logging.basicConfig(level=getattr(logging, log_level.upper(), logging.INFO))
     logger = logging.getLogger("inspector")
     logger.info(f"Starting inspection of {url}")
 
-    # Determine mode
     if browser:
-        mode = "browser"  # Use CloakBrowser
+        click.echo("🌐 Using CloakBrowser (headed mode, JS + Cloudflare bypass)")
+        _run_browser_inspect(url, project, output_dir, proxy_type, no_save_html)
+    else:
+        click.echo("⚡ Using lightweight HTTP fetch")
+        from utils.inspector import inspect_page
 
-        # Check for display requirements (headed mode needs display)
-        from utils.display_helper import needs_xvfb, has_xvfb
+        inspect_page(
+            url, output_dir, proxy_type, not no_save_html, mode="http", project=project
+        )
 
-        if needs_xvfb() and not has_xvfb():
+    logger.info("Inspection complete")
+
+
+def _run_browser_inspect(url, project, output_dir, proxy_type, no_save_html):
+    """Run browser inspection as subprocess (same pattern as crawl.py).
+
+    Wraps with xvfb-run on headless servers automatically.
+    """
+    import os
+    import subprocess
+
+    # Build subprocess command: python -m utils.inspector <url> --browser ...
+    cmd = [sys.executable, "-m", "utils.inspector", url, "--browser"]
+    cmd += ["--project", project]
+    if output_dir:
+        cmd += ["--output-dir", output_dir]
+    if proxy_type != "auto":
+        cmd += ["--proxy-type", proxy_type]
+    if no_save_html:
+        cmd += ["--no-save-html"]
+
+    # Auto-wrap with xvfb-run on headless servers (same as crawl.py)
+    from utils.display_helper import needs_xvfb, has_xvfb
+
+    if needs_xvfb():
+        if has_xvfb():
+            click.echo("🖥️  Headless server detected - using Xvfb for headed browser")
+            cmd = ["xvfb-run", "-a"] + cmd
+        else:
             click.echo(
                 "❌ ERROR: Browser mode requires a display but Xvfb is not installed"
             )
@@ -70,12 +100,7 @@ def inspect_cmd(
             click.echo("")
             sys.exit(1)
 
-        click.echo("🌐 Using CloakBrowser (headed mode, JS + Cloudflare bypass)")
-    else:
-        mode = "http"
-        click.echo("⚡ Using lightweight HTTP fetch")
-
-    inspect_page(
-        url, output_dir, proxy_type, not no_save_html, mode=mode, project=project
-    )
-    logger.info("Inspection complete")
+    # Run the inspector subprocess
+    result = subprocess.run(cmd, cwd=os.path.dirname(os.path.dirname(__file__)))
+    if result.returncode != 0:
+        sys.exit(result.returncode)

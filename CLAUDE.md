@@ -293,7 +293,7 @@ Production crawls can take hours or days depending on site size. You MUST NOT ru
 - **Output filenames:** Date-based (one file per day) - multiple runs same day append to same file
 
 **Optional flags:**
-- `--browser` — Enable JS rendering + Cloudflare bypass (visible browser by default, Xvfb auto-used on servers)
+- `--browser` — Enable JS rendering + Cloudflare bypass (Xvfb auto-handled on headless servers, NEVER use `xvfb-run` manually)
 - `--save-html` — Include raw HTML in output (default: OFF for smaller files)
 - `--reset-deltafetch` — Clear URL cache to re-crawl everything (also clears checkpoint)
 - `--scrapy-args "..."` — Pass any Scrapy setting (e.g., `-s CONCURRENT_REQUESTS=32 -s LOG_LEVEL=DEBUG`)
