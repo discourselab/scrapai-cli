@@ -179,7 +179,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Inspect a page to help with creating a scraper"
     )
-    parser.add_argument("--url", type=str, required=True, help="URL to inspect")
+    parser.add_argument("url", type=str, help="URL to inspect")
     parser.add_argument(
         "--output-dir", type=str, default=None, help="Directory to save analysis"
     )
@@ -192,10 +192,22 @@ def main():
     parser.add_argument(
         "--no-save-html", action="store_true", help="Do not save the full HTML"
     )
+    parser.add_argument(
+        "--browser", action="store_true", help="Use CloakBrowser for JS + Cloudflare"
+    )
+    parser.add_argument("--project", type=str, default="default", help="Project name")
 
     args = parser.parse_args()
 
-    inspect_page(args.url, args.output_dir, args.proxy_type, not args.no_save_html)
+    mode = "browser" if args.browser else "http"
+    inspect_page(
+        args.url,
+        args.output_dir,
+        args.proxy_type,
+        not args.no_save_html,
+        mode=mode,
+        project=args.project,
+    )
 
 
 if __name__ == "__main__":

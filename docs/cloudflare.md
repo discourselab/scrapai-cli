@@ -30,7 +30,7 @@ Use `--browser` for JavaScript-rendered sites and Cloudflare-protected sites. Sc
 
 **Performance:** 8min for 1000 pages vs 2+ hours with browser-only mode.
 
-**Headless by default:** Runs in true headless mode (no Xvfb needed on Linux servers).
+**Headed by default** for maximum stealth. On headless servers, Xvfb is auto-handled by the CLI (never use `xvfb-run` manually).
 
 ---
 
@@ -49,7 +49,7 @@ Use `--browser` for JavaScript-rendered sites and Cloudflare-protected sites. Sc
 **Source-level C++ patches (not runtime JavaScript injection):**
 - **0.9 reCAPTCHA v3 score** (human-level)
 - **Passes 30/30 bot detection tests** (FingerprintJS, BrowserScan, Cloudflare Turnstile, DataDome)
-- **Works in headless mode** (no visible browser or Xvfb needed)
+- **Headed mode by default** (best stealth, Xvfb auto-handled on servers)
 - **Survives Chrome updates** (patches compiled into binary)
 
 Other tools use JavaScript injection or config tweaks that break on updates and get detected.
@@ -80,7 +80,7 @@ Fine-tune browser behavior in spider settings:
 {
   "CLOUDFLARE_ENABLED": true,
   "CLOUDFLARE_STRATEGY": "hybrid",           // "hybrid" (default) or "browser_only"
-  "CLOUDFLARE_HEADLESS": true,               // true (default) or false (debugging)
+  "CLOUDFLARE_HEADLESS": false,              // false (default, best stealth) or true (no GUI)
   "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 600 // seconds (10 min default)
 }
 ```
@@ -102,7 +102,7 @@ Only use if hybrid mode fails. **Slow** - keeps browser open for every request.
 |---------|---------|-------------|
 | `CLOUDFLARE_ENABLED` | false | Enable browser mode |
 | `CLOUDFLARE_STRATEGY` | "hybrid" | "hybrid" (fast) or "browser_only" (slow) |
-| `CLOUDFLARE_HEADLESS` | true | Headless mode (no GUI) |
+| `CLOUDFLARE_HEADLESS` | false | Headless mode (true = no GUI, worse stealth) |
 | `CLOUDFLARE_COOKIE_REFRESH_THRESHOLD` | 600 | Seconds before cookie refresh |
 | `CF_MAX_RETRIES` | 5 | Max verification attempts |
 | `CF_RETRY_INTERVAL` | 1 | Seconds between retries |
@@ -121,7 +121,7 @@ Only use if hybrid mode fails. **Slow** - keeps browser open for every request.
 
 **Solutions:**
 1. Check browser actually opens (test with `--browser` flag on inspector first)
-2. Verify display available or Xvfb installed (only needed if `CLOUDFLARE_HEADLESS=false`)
+2. On headless servers, verify Xvfb is installed (`sudo apt-get install xvfb`) — CLI auto-wraps with `xvfb-run`
 3. Check system resources (CPU, memory)
 4. Test with different `CLOUDFLARE_STRATEGY` (try browser_only)
 
