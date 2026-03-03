@@ -363,6 +363,8 @@ Contributions welcome. Areas where help would be particularly valuable:
 - Anti-bot support beyond Cloudflare
 - Authentication and session management
 
+By submitting a pull request, you agree to our [Contributor License Agreement](CLA.md). Signing is handled automatically via CLA Assistant when you open your first PR.
+
 ## Responsible Use
 
 ScrapAI is a tool. What you scrape is your responsibility. Respect robots.txt, check each site's terms of service, and comply with applicable laws in your jurisdiction. Don't scrape personal data without a legal basis. We provide the software; you're responsible for how you use it.
