@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://github.com/discourselab/scrapai-cli/stargazers"><img src="https://img.shields.io/github/stars/discourselab/scrapai-cli" alt="GitHub stars"></a>
-  <a href="https://github.com/discourselab/scrapai-cli/blob/main/LICENSE"><img src="https://img.shields.io/github/license/discourselab/scrapai-cli" alt="License"></a>
+  <a href="https://github.com/discourselab/scrapai-cli/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License"></a>
   <img src="https://img.shields.io/badge/python-3.9+-green" alt="Python 3.9+">
 </p>
 
@@ -363,17 +363,13 @@ Contributions welcome. Areas where help would be particularly valuable:
 - Anti-bot support beyond Cloudflare
 - Authentication and session management
 
-By submitting a pull request, you agree to our [Contributor License Agreement](CLA.md). Signing is handled automatically via CLA Assistant when you open your first PR.
-
 ## Responsible Use
 
 ScrapAI is a tool. What you scrape is your responsibility. Respect robots.txt, check each site's terms of service, and comply with applicable laws in your jurisdiction. Don't scrape personal data without a legal basis. We provide the software; you're responsible for how you use it.
 
 ## License
 
-[AGPL-3.0](LICENSE)
-
-Commercial licenses available for organizations that cannot comply with AGPL v3. Contact info@discourselab.ai.
+[Apache-2.0](LICENSE)
 
 ---
 
