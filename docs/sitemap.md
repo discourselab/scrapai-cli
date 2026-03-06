@@ -74,6 +74,39 @@ Can use main sitemap URL or specific sub-sitemap URL. Sitemap spiders don't need
 
 If good → production. If bad → go back to Step 2.
 
+## Date Filtering with `SITEMAP_SINCE`
+
+Filter sitemap entries by their `<lastmod>` date to only crawl recent content. This saves time when you only need articles from a specific time period.
+
+**Relative dates:**
+```json
+{
+  "USE_SITEMAP": true,
+  "SITEMAP_SINCE": "2y",
+  "EXTRACTOR_ORDER": ["newspaper", "trafilatura"]
+}
+```
+
+Supported relative formats:
+- `"2y"` — last 2 years
+- `"6m"` — last 6 months
+- `"30d"` — last 30 days
+
+**Absolute dates:**
+```json
+{
+  "USE_SITEMAP": true,
+  "SITEMAP_SINCE": "2024-01-01",
+  "EXTRACTOR_ORDER": ["newspaper", "trafilatura"]
+}
+```
+
+**Behavior:**
+- Entries with `lastmod` before the cutoff date are skipped
+- Entries **without** `lastmod` are always included (safe default — better to crawl extra than miss content)
+- Log output shows how many entries were filtered vs scheduled
+- Works with all other settings (Cloudflare, DeltaFetch, custom selectors, etc.)
+
 ## Combining with Other Features
 
 **Sitemap + Cloudflare:**

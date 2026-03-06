@@ -96,10 +96,15 @@ class DatabasePipeline:
 
         # 2. Filter and Create Objects
         new_objects = []
+        seen_in_batch = set()
         for item in self.buffer:
             if item["url"] in existing_urls:
                 spider.logger.debug(f"Item already exists: {item['url']}")
                 continue
+            if item["url"] in seen_in_batch:
+                spider.logger.debug(f"Duplicate in batch, skipping: {item['url']}")
+                continue
+            seen_in_batch.add(item["url"])
 
             # Check if this is a callback-extracted item
             if "_callback" in item:
