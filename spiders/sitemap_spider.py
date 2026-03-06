@@ -2,7 +2,10 @@ from scrapy.spiders import SitemapSpider
 from core.db import get_db
 from core.models import Spider
 from .base import BaseDBSpiderMixin
+from dateutil import parser as dateutil_parser
+from datetime import datetime, timedelta
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -76,8 +79,74 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
         ):
             yield item
 
+    def _parse_since_date(self):
+        """Parse SITEMAP_SINCE setting into a datetime.
+
+        Supports:
+        - Relative: "2y" (2 years ago), "6m" (6 months ago), "30d" (30 days ago)
+        - Absolute: "2024-01-01", "2024-06-15T00:00:00"
+        """
+        since_str = self.custom_settings.get("SITEMAP_SINCE")
+        if not since_str:
+            return None
+
+        since_str = str(since_str).strip().lower()
+
+        # Try relative format: "2y", "6m", "30d"
+        match = re.match(r"^(\d+)([ymd])$", since_str)
+        if match:
+            amount, unit = int(match.group(1)), match.group(2)
+            now = datetime.now()
+            if unit == "y":
+                return now.replace(year=now.year - amount)
+            elif unit == "m":
+                month = now.month - amount
+                year = now.year
+                while month <= 0:
+                    month += 12
+                    year -= 1
+                return now.replace(year=year, month=month)
+            elif unit == "d":
+                return now - timedelta(days=amount)
+
+        # Try absolute date
+        try:
+            parsed = dateutil_parser.parse(since_str)
+            if parsed.tzinfo:
+                parsed = parsed.replace(tzinfo=None)
+            return parsed
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Cannot parse SITEMAP_SINCE '{since_str}': {e}")
+            return None
+
     def sitemap_filter(self, entries):
-        """Filter sitemap entries before processing."""
+        """Filter sitemap entries by lastmod date if SITEMAP_SINCE is set."""
+        since = self._parse_since_date()
+
+        total = 0
+        filtered = 0
+        no_lastmod = 0
+
         for entry in entries:
+            total += 1
+            if since and entry.get("lastmod"):
+                try:
+                    entry_date = dateutil_parser.parse(entry["lastmod"])
+                    if entry_date.tzinfo:
+                        entry_date = entry_date.replace(tzinfo=None)
+                    if entry_date < since:
+                        filtered += 1
+                        continue
+                except (ValueError, TypeError):
+                    pass  # Can't parse date, include the entry
+            elif since and not entry.get("lastmod"):
+                no_lastmod += 1
+
             logger.debug(f"Sitemap entry: {entry['loc']}")
             yield entry
+
+        if since:
+            logger.info(
+                f"Sitemap filter: {total} total, {filtered} filtered (before {since.date()}), "
+                f"{no_lastmod} without lastmod, {total - filtered} scheduled"
+            )

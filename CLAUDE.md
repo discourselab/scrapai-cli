@@ -415,6 +415,12 @@ Report back: status, spider name, queue item ID, summary.
 { "USE_SITEMAP": true, "EXTRACTOR_ORDER": ["newspaper", "trafilatura"] }
 ```
 
+**Sitemap with date filtering:**
+```json
+{ "USE_SITEMAP": true, "SITEMAP_SINCE": "2y", "EXTRACTOR_ORDER": ["newspaper", "trafilatura"] }
+```
+`SITEMAP_SINCE` supports relative (`"2y"`, `"6m"`, `"30d"`) and absolute (`"2024-01-01"`) dates. Entries without `lastmod` are always included.
+
 **Browser mode (JS + Cloudflare):** See [docs/cloudflare.md](docs/cloudflare.md).
 
 Use `--browser` flag for JS-rendered or Cloudflare-protected sites. **Hybrid mode automatic** (fast - browser once, then HTTP with cookies).
