@@ -193,10 +193,18 @@ def next_item(project):
 
 @queue.command("complete")
 @click.argument("id", type=int)
-def complete(id):
-    """Mark item as completed"""
+@click.option(
+    "--spider",
+    default=None,
+    help="Spider name (auto-detected from URL if not provided)",
+)
+@click.option("--force", is_flag=True, help="Skip verification checks")
+def complete(id, spider, force):
+    """Mark item as completed (verifies spider exists in DB and final_spider.json on disk)"""
+    from urllib.parse import urlparse
     from core.db import get_db
-    from core.models import CrawlQueue
+    from core.models import CrawlQueue, Spider
+    from core.config import DATA_DIR
 
     db = next(get_db())
     item = db.query(CrawlQueue).filter(CrawlQueue.id == id).first()
@@ -204,6 +212,48 @@ def complete(id):
     if not item:
         click.echo(f"❌ Queue item {id} not found")
         return
+
+    if not force:
+        # Derive spider name from URL if not provided
+        if spider:
+            spider_name = spider
+        else:
+            parsed = urlparse(item.website_url)
+            domain = parsed.netloc.lstrip("www.")
+            spider_name = domain.replace(".", "_").replace("-", "_")
+
+        # Check 1: spider exists in DB
+        db_spider = (
+            db.query(Spider)
+            .filter(Spider.name == spider_name, Spider.project == item.project_name)
+            .first()
+        )
+        if not db_spider:
+            click.echo(
+                f"❌ Cannot mark complete: spider '{spider_name}' not found in DB"
+            )
+            click.echo("   Use --spider <name> if spider has a different name")
+            click.echo("   Use --force to skip verification")
+            db.close()
+            return
+
+        # Check 2: final_spider.json exists on disk
+        final_json = (
+            Path(DATA_DIR)
+            / item.project_name
+            / spider_name
+            / "analysis"
+            / "final_spider.json"
+        )
+        if not final_json.exists():
+            click.echo("❌ Cannot mark complete: final_spider.json not found")
+            click.echo(f"   Expected: {final_json}")
+            click.echo("   Use --force to skip verification")
+            db.close()
+            return
+
+        click.echo(f"✓ Spider '{spider_name}' verified in DB")
+        click.echo("✓ final_spider.json exists")
 
     now = datetime.now(timezone.utc)
     item.status = "completed"
