@@ -9,7 +9,7 @@ import asyncio
 import logging
 import random
 import threading
-from typing import Optional
+from typing import List, Optional
 
 from cloakbrowser import launch_async
 
@@ -23,6 +23,9 @@ def random_delay(min_sec: float, max_sec: float) -> float:
 
 class CloudflareBrowserClient:
     """Persistent browser session with CloakBrowser for maximum stealth.
+
+    Supports proxy escalation: tries each proxy in chain until CF bypass succeeds.
+    Chain is typically: [None (direct), datacenter_url, residential_url]
 
     Advantages:
     - Source-level C++ patches (vs UC-style runtime patches)
@@ -43,6 +46,8 @@ class CloudflareBrowserClient:
         cf_max_retries: int = 5,
         cf_retry_interval: int = 1,
         post_cf_delay: int = 5,
+        proxy_url: Optional[str] = None,
+        proxy_chain: Optional[List[Optional[str]]] = None,
     ):
         """Initialize CloakBrowser client.
 
@@ -51,6 +56,9 @@ class CloudflareBrowserClient:
             cf_max_retries: Max retry attempts (kept for API compat, not needed)
             cf_retry_interval: Retry interval (kept for API compat, not needed)
             post_cf_delay: Seconds to wait after CF verification
+            proxy_url: Single proxy URL (legacy, wraps into proxy_chain)
+            proxy_chain: Ordered list of proxy URLs to try (None = direct connection).
+                         Escalates through chain until CF bypass succeeds.
         """
         self.browser = None
         self.context = None
@@ -65,17 +73,43 @@ class CloudflareBrowserClient:
         self.cf_max_retries = cf_max_retries
         self.cf_retry_interval = cf_retry_interval
 
+        # Proxy chain - build from proxy_chain or fallback to single proxy_url
+        if proxy_chain is not None:
+            self._proxy_chain = proxy_chain
+        elif proxy_url is not None:
+            self._proxy_chain = [proxy_url]
+        else:
+            self._proxy_chain = [None]
+
+        self._chain_index = 0  # Current position in proxy chain
+
         # Compatibility attrs for nodriver-style code
         self.driver = None  # Alias for browser
         self.tab = None  # Alias for page
 
+    @property
+    def proxy_url(self) -> Optional[str]:
+        """Current proxy URL being used."""
+        if self._chain_index < len(self._proxy_chain):
+            return self._proxy_chain[self._chain_index]
+        return None
+
     async def start(self):
-        """Start CloakBrowser instance."""
-        logger.info("Starting CloakBrowser for Cloudflare bypass")
+        """Start CloakBrowser instance with current proxy."""
+        proxy = self.proxy_url
+        if proxy:
+            logger.info(f"Starting CloakBrowser with proxy: {proxy}")
+        else:
+            logger.info("Starting CloakBrowser (direct connection)")
 
         try:
-            # Launch CloakBrowser with stealth patches
-            self.browser = await launch_async(headless=self.headless)
+            launch_kwargs = {"headless": self.headless}
+            if proxy:
+                launch_kwargs["proxy"] = proxy
+                launch_kwargs["geoip"] = (
+                    True  # Match timezone/locale to proxy IP for CF bypass
+                )
+            self.browser = await launch_async(**launch_kwargs)
             self.context = await self.browser.new_context()
             self.page = await self.context.new_page()
 
@@ -93,6 +127,26 @@ class CloudflareBrowserClient:
         except Exception as e:
             logger.error(f"Failed to start CloakBrowser: {e}")
             raise
+
+    async def _escalate(self) -> bool:
+        """Close browser and restart with next proxy in chain.
+
+        Returns:
+            True if escalated successfully, False if chain exhausted.
+        """
+        self._chain_index += 1
+        if self._chain_index >= len(self._proxy_chain):
+            return False
+
+        next_proxy = self._proxy_chain[self._chain_index]
+        proxy_label = next_proxy if next_proxy else "direct"
+        logger.warning(f"CF bypass failed - escalating to next proxy: {proxy_label}")
+
+        await self.close()
+        self.cf_verified = False
+        self.fetch_lock = None
+        await self.start()
+        return True
 
     async def verify_cloudflare(self, url: str) -> bool:
         """Navigate to URL and verify Cloudflare.
@@ -115,38 +169,39 @@ class CloudflareBrowserClient:
             # Navigate (CloakBrowser automatically bypasses Cloudflare)
             await self.page.goto(url, wait_until="domcontentloaded", timeout=120000)
 
-            # Wait for CF to redirect and page to stabilize
-            # CF challenge completes → redirects → new page loads
-            # Retry getting content until page stops navigating
-            logger.debug("Waiting for CF redirect to complete...")
-            max_retries = 6  # 6 retries = up to 30 seconds total wait
+            # Wait for CF challenge to resolve and redirect to actual page
+            # CF challenge completes → JS runs → redirects → real page loads
+            logger.debug("Waiting for CF challenge to resolve...")
+            max_retries = 6  # 6 retries × 5s = 30s per proxy level
             for attempt in range(max_retries):
                 await asyncio.sleep(5)  # Wait 5s between attempts
 
                 try:
-                    # Try to get content - if successful, page is stable
-                    await self.page.content()
+                    title = await self.page.title()
+                    if "just a moment" in title.lower():
+                        logger.debug(
+                            f"CF challenge still active after {(attempt + 1) * 5}s "
+                            f"(attempt {attempt + 1}/{max_retries}), waiting..."
+                        )
+                        continue
+
+                    # Title changed - CF challenge passed
                     logger.info(
-                        f"Page stable after {(attempt + 1) * 5}s - CF bypass successful"
+                        f"CF bypass successful after {(attempt + 1) * 5}s - title: {title!r}"
                     )
-                    break
+                    self.cf_verified = True
+                    return True
+
                 except Exception as e:
                     if "navigating" in str(e).lower():
-                        if attempt < max_retries - 1:
-                            logger.debug(
-                                f"Page still navigating (attempt {attempt + 1}/{max_retries}), waiting..."
-                            )
-                        else:
-                            logger.error(
-                                f"Page still navigating after {max_retries * 5}s - giving up"
-                            )
-                            return False
+                        logger.debug(
+                            f"Page still navigating (attempt {attempt + 1}/{max_retries})"
+                        )
                     else:
-                        # Different error, re-raise
                         raise
 
-            self.cf_verified = True
-            return True
+            logger.warning(f"CF challenge not resolved after {max_retries * 5}s")
+            return False
 
         except Exception as e:
             logger.error(f"Error during navigation: {e}")
@@ -155,7 +210,7 @@ class CloudflareBrowserClient:
     async def fetch(
         self, url: str, wait_selector: Optional[str] = None, wait_timeout: int = 10
     ) -> Optional[str]:
-        """Fetch a URL using CloakBrowser.
+        """Fetch a URL using CloakBrowser, escalating proxies if CF blocks.
 
         Args:
             url: URL to fetch
@@ -163,7 +218,7 @@ class CloudflareBrowserClient:
             wait_timeout: Max seconds to wait for selector
 
         Returns:
-            HTML content as string, or None if failed
+            HTML content as string, or None if all proxies exhausted
         """
         # Lazy lock creation
         if self.fetch_lock is None:
@@ -173,11 +228,16 @@ class CloudflareBrowserClient:
 
         # Use lock to ensure sequential fetching (reusing same page)
         async with self.fetch_lock:
-            # First request - verify CF
+            # First request - verify CF, escalating through proxy chain if needed
             if not self.cf_verified:
-                success = await self.verify_cloudflare(url)
-                if not success:
-                    return None
+                success = False
+                while not success:
+                    success = await self.verify_cloudflare(url)
+                    if not success:
+                        escalated = await self._escalate()
+                        if not escalated:
+                            logger.error("All proxies exhausted - CF bypass failed")
+                            return None
 
                 # Wait for content to be fully available after CF bypass
                 await asyncio.sleep(1)

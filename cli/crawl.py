@@ -118,8 +118,13 @@ def _run_spider(
     db_spider = db.query(Spider).filter(Spider.name == spider_name).first()
 
     if not db_spider:
+        db.close()
         click.echo(f"❌ Spider '{spider_name}' not found in database.")
         return
+
+    # Extract all needed info from db_spider before closing the connection
+    spider_settings = list(db_spider.settings) if db_spider.settings else []
+    db.close()
 
     click.echo(f"🚀 Running DB spider: {spider_name}")
 
@@ -162,8 +167,8 @@ def _run_spider(
     # Check if browser mode enabled (CLI flag or spider setting)
     cf_enabled = browser  # CLI flag takes precedence
     use_sitemap = False
-    if db_spider.settings:
-        for setting in db_spider.settings:
+    if spider_settings:
+        for setting in spider_settings:
             if setting.key in ["CLOUDFLARE_ENABLED", "BROWSER_ENABLED"] and str(
                 setting.value
             ).lower() in [
@@ -400,7 +405,7 @@ def _run_spider(
                     output_file,
                     s3_key=s3_key,
                     compress=True,
-                    delete_after_upload=False,  # Keep local copy
+                    delete_after_upload=True,
                 )
 
                 if success:

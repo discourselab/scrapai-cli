@@ -13,6 +13,7 @@ Strategies:
 
 import asyncio
 import logging
+import os
 import threading
 import time
 from typing import Dict, Optional
@@ -61,6 +62,10 @@ class CloudflareDownloadHandler:
     _shared_browser = None
     _browser_started = False
     _browser_startup_lock = threading.Lock()  # Protect browser startup (1 at a time)
+
+    # Expert-in-the-loop: residential proxy flagged for production crawl approval
+    _residential_available = False
+    _residential_url = None
 
     # Persistent event loop for all async browser operations
     # All asyncio.Lock and browser calls run on this single loop,
@@ -463,11 +468,57 @@ class CloudflareDownloadHandler:
                     f"Starting shared browser for CF verification ({headless_mode} mode)"
                 )
 
+                # Build proxy escalation chain based on crawl type
+                # Test crawls: auto-escalate silently (direct → dc → residential)
+                # Production crawls: stop at datacenter; residential needs approval
+                is_test_crawl = self.settings.getint("CLOSESPIDER_ITEMCOUNT", 0) > 0
+                proxy_type = self.settings.get("PROXY_TYPE", "auto")
+
+                dc_user = os.getenv("DATACENTER_PROXY_USERNAME")
+                dc_pass = os.getenv("DATACENTER_PROXY_PASSWORD")
+                dc_host = os.getenv("DATACENTER_PROXY_HOST")
+                dc_port = os.getenv("DATACENTER_PROXY_PORT")
+                dc_url = (
+                    f"http://{dc_user}:{dc_pass}@{dc_host}:{dc_port}"
+                    if all([dc_user, dc_pass, dc_host, dc_port])
+                    else None
+                )
+
+                res_user = os.getenv("RESIDENTIAL_PROXY_USERNAME")
+                res_pass = os.getenv("RESIDENTIAL_PROXY_PASSWORD")
+                res_host = os.getenv("RESIDENTIAL_PROXY_HOST")
+                res_port = os.getenv("RESIDENTIAL_PROXY_PORT")
+                res_url = (
+                    f"http://{res_user}:{res_pass}@{res_host}:{res_port}"
+                    if all([res_user, res_pass, res_host, res_port])
+                    else None
+                )
+
+                # Build chain: start with direct, add proxies based on mode
+                proxy_chain = [None]
+                if proxy_type == "residential":
+                    # Explicit residential flag - use full chain
+                    if dc_url:
+                        proxy_chain.append(dc_url)
+                    if res_url:
+                        proxy_chain.append(res_url)
+                elif proxy_type in ("datacenter", "auto"):
+                    if dc_url:
+                        proxy_chain.append(dc_url)
+                    if res_url and is_test_crawl:
+                        # Test crawl: auto-escalate to residential silently
+                        proxy_chain.append(res_url)
+                    elif res_url and not is_test_crawl:
+                        # Production crawl: log expert-in-the-loop message if DC fails
+                        CloudflareDownloadHandler._residential_available = True
+                        CloudflareDownloadHandler._residential_url = res_url
+
                 CloudflareDownloadHandler._shared_browser = CloudflareBrowserClient(
                     headless=cf_headless,
                     cf_max_retries=cf_max_retries,
                     cf_retry_interval=cf_retry_interval,
                     post_cf_delay=cf_post_delay,
+                    proxy_chain=proxy_chain,
                 )
 
                 await CloudflareDownloadHandler._shared_browser.start()
@@ -483,6 +534,28 @@ class CloudflareDownloadHandler:
         html = await CloudflareDownloadHandler._shared_browser.fetch(
             url, wait_selector=wait_selector, wait_timeout=wait_timeout
         )
+
+        # If all proxies exhausted in production crawl, show expert-in-the-loop message
+        if html is None and CloudflareDownloadHandler._residential_available:
+            spider_name = getattr(spider, "name", "unknown")
+            logger.warning("")
+            logger.warning("=" * 80)
+            logger.warning(
+                "⚠️  EXPERT-IN-THE-LOOP: Browser CF bypass failed (datacenter proxy blocked)"
+            )
+            logger.warning("")
+            logger.warning(
+                "🏠 Residential proxy is available but requires explicit approval"
+            )
+            logger.warning("")
+            logger.warning("To retry with residential proxy, run:")
+            logger.warning(
+                f"  ./scrapai crawl {spider_name} --project <project> --proxy-type residential"
+            )
+            logger.warning("")
+            logger.warning("=" * 80)
+            logger.warning("")
+            CloudflareDownloadHandler._residential_available = False  # Show once
 
         logger.debug(f"Browser fetch: {url} -> {len(html) if html else 0} bytes")
         return html
