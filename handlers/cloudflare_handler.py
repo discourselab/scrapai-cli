@@ -89,6 +89,7 @@ class CloudflareDownloadHandler:
             settings: Scrapy settings
             crawler: Scrapy crawler instance
         """
+        self.settings = settings
         self.crawler = crawler
         self.loop = None
 

@@ -343,7 +343,8 @@ Use when user explicitly requests queue operations. See [docs/queue.md](docs/que
 ./scrapai queue bulk <file> --project <name> [--priority N]
 ./scrapai queue list --project <name> [--status pending|processing|completed|failed] [--count] [--all] [--limit N]
 ./scrapai queue next --project <name>
-./scrapai queue complete|fail|retry|remove <id>
+./scrapai queue complete <id> [--spider <name>]  # verifies spider in DB + final_spider.json on disk
+./scrapai queue fail|retry|remove <id>
 ./scrapai queue cleanup --completed|--failed|--all --force --project <name>
 ```
 

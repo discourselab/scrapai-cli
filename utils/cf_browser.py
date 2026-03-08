@@ -178,7 +178,19 @@ class CloudflareBrowserClient:
 
                 try:
                     title = await self.page.title()
-                    if "just a moment" in title.lower():
+                    cf_blocked = any(
+                        p in title.lower()
+                        for p in [
+                            "just a moment",
+                            "attention required",
+                            "access denied",
+                            "please wait",
+                            "one more step",
+                            "checking your browser",
+                            "enable javascript and cookies",
+                        ]
+                    )
+                    if cf_blocked:
                         logger.debug(
                             f"CF challenge still active after {(attempt + 1) * 5}s "
                             f"(attempt {attempt + 1}/{max_retries}), waiting..."
