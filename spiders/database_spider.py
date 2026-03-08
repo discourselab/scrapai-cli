@@ -91,12 +91,19 @@ class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
 
         # If there are any callbacks defined, use the first one for start URLs
         for rule in self.rules:
-            if rule.callback:
-                logger.info(f"Start URL using callback: {rule.callback}")
-                callback_method = getattr(self, rule.callback)
-                async for item in callback_method(response):
-                    yield item
-                return
+            cb = rule.callback
+            if not cb:
+                continue
+            # cb may be a string or a bound method (after _compile_rules)
+            cb_name = cb if isinstance(cb, str) else getattr(cb, "__name__", "")
+            # Guard against infinite recursion from reserved callback names
+            if cb_name in ("parse_start_url", "parse", "start_requests"):
+                continue
+            logger.info(f"Start URL using callback: {cb_name}")
+            callback_method = getattr(self, cb_name) if isinstance(cb, str) else cb
+            async for item in callback_method(response):
+                yield item
+            return
 
         # No callbacks defined, use default article extraction
         logger.info("Start URL using default article extraction")
