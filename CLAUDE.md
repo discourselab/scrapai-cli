@@ -453,6 +453,28 @@ Advanced (if hybrid fails - rare):
 }
 ```
 
+**curl_cffi (TLS fingerprint impersonation):**
+
+Use when a site blocks Scrapy/Twisted at the TLS level (e.g. returns 403/empty despite normal headers). Impersonates Chrome's TLS handshake — no browser needed, fast.
+
+```json
+{
+  "CURL_CFFI_ENABLED": true,
+  "EXTRACTOR_ORDER": ["newspaper", "trafilatura"]
+}
+```
+
+Optional settings:
+```json
+{
+  "CURL_CFFI_ENABLED": true,
+  "CURL_CFFI_IMPERSONATE": "chrome",  // default: "chrome"
+  "CURL_CFFI_TIMEOUT": 30             // default: 30 seconds
+}
+```
+
+**When to use:** Site blocks standard HTTP but doesn't need JS rendering. Try this before reaching for `CLOUDFLARE_ENABLED` (lighter, faster, no browser).
+
 **DeltaFetch (incremental crawling):** See [docs/deltafetch.md](docs/deltafetch.md).
 
 **Enabled by default** - subsequent crawls automatically skip already-seen URLs. To disable:
