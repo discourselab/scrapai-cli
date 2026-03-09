@@ -55,7 +55,11 @@ class CurlCffiDownloadHandler:
         # Build headers from request
         # Scrapy headers have list values — flatten to strings for curl_cffi
         headers = {
-            k: v[0] if isinstance(v, list) and len(v) == 1 else (", ".join(v) if isinstance(v, list) else v)
+            k: (
+                v[0]
+                if isinstance(v, list) and len(v) == 1
+                else (", ".join(v) if isinstance(v, list) else v)
+            )
             for k, v in request.headers.to_unicode_dict().items()
         }
 
@@ -86,8 +90,10 @@ class CurlCffiDownloadHandler:
                 # Decompress gzip in handler — Scrapy middlewares expect text responses
                 raw = gzip.decompress(response.content)
                 resp_headers = {
-                    k: v for k, v in response.headers.items()
-                    if k.lower() not in ("content-encoding", "transfer-encoding", "content-length")
+                    k: v
+                    for k, v in response.headers.items()
+                    if k.lower()
+                    not in ("content-encoding", "transfer-encoding", "content-length")
                 }
                 logger.debug(
                     f"curl_cffi fetch (gz): {request.url} -> {response.status_code} "
@@ -105,7 +111,8 @@ class CurlCffiDownloadHandler:
                 body = response.text.encode("utf-8")
                 # Strip content-encoding — already decoded by curl_cffi
                 resp_headers = {
-                    k: v for k, v in response.headers.items()
+                    k: v
+                    for k, v in response.headers.items()
                     if k.lower() not in ("content-encoding", "transfer-encoding")
                 }
                 logger.debug(
