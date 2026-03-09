@@ -33,9 +33,17 @@ class BaseDBSpiderMixin:
             self.custom_settings[s.key] = val
 
     def _setup_cloudflare_handlers(self):
-        """Configure Cloudflare download handlers if enabled."""
+        """Configure Cloudflare or curl_cffi download handlers if enabled."""
         cf_enabled = self.custom_settings.get("CLOUDFLARE_ENABLED", False)
-        if cf_enabled:
+        curl_cffi_enabled = self.custom_settings.get("CURL_CFFI_ENABLED", False)
+
+        if curl_cffi_enabled:
+            logger.info(f"curl_cffi TLS impersonation enabled for {self.spider_name}")
+            self.custom_settings["DOWNLOAD_HANDLERS"] = {
+                "http": "handlers.curl_cffi_handler.CurlCffiDownloadHandler",
+                "https": "handlers.curl_cffi_handler.CurlCffiDownloadHandler",
+            }
+        elif cf_enabled:
             logger.info(f"Cloudflare bypass mode enabled for {self.spider_name}")
             self.custom_settings["DOWNLOAD_HANDLERS"] = {
                 "http": "handlers.cloudflare_handler.CloudflareDownloadHandler",
@@ -44,10 +52,24 @@ class BaseDBSpiderMixin:
 
     @classmethod
     def _apply_cf_to_crawler(cls, spider, crawler):
-        """Apply Cloudflare handlers to crawler settings after spider init."""
+        """Apply Cloudflare or curl_cffi handlers to crawler settings after spider init."""
         if hasattr(spider, "custom_settings"):
             cf_enabled = spider.custom_settings.get("CLOUDFLARE_ENABLED", False)
-            if cf_enabled:
+            curl_cffi_enabled = spider.custom_settings.get("CURL_CFFI_ENABLED", False)
+
+            if curl_cffi_enabled:
+                logger.info(
+                    "[from_crawler] Applying curl_cffi handlers to crawler settings"
+                )
+                crawler.settings.set(
+                    "DOWNLOAD_HANDLERS",
+                    {
+                        "http": "handlers.curl_cffi_handler.CurlCffiDownloadHandler",
+                        "https": "handlers.curl_cffi_handler.CurlCffiDownloadHandler",
+                    },
+                    priority="spider",
+                )
+            elif cf_enabled:
                 logger.info(
                     "[from_crawler] Applying Cloudflare handlers to crawler settings"
                 )
