@@ -17,3 +17,4 @@ cloakbrowser>=0.1.0
 aiohttp
 click>=8.0.0
 boto3>=1.34.0
+curl_cffi>=0.14.0
