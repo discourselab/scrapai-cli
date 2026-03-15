@@ -5,17 +5,38 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any, Dict, List
+from urllib.parse import urlparse
 
 from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
 
+def _normalize_api_base(api_base: str) -> str:
+    """Normalize API base URL to ensure it has /v1 suffix for OpenAI-compatible APIs."""
+    api_base = api_base.rstrip('/')
+    
+    # Skip normalization for localhost/custom endpoints
+    parsed = urlparse(api_base)
+    
+    # Check if already ends with /v1
+    if api_base.endswith('/v1'):
+        return api_base
+    
+    # For known providers, append /v1
+    known_providers = ['openrouter.ai', 'api.openai.com', 'api.anthropic.com']
+    if any(provider in parsed.netloc for provider in known_providers):
+        return f"{api_base}/v1"
+    
+    return api_base
+
+
 class LLMClient:
     def __init__(self, api_base: str, api_key: str, model: str, timeout: int = 30):
         self.model = model
         self._timeout = timeout
-        self._client = AsyncOpenAI(api_key=api_key, base_url=api_base)
+        normalized_base = _normalize_api_base(api_base)
+        self._client = AsyncOpenAI(api_key=api_key, base_url=normalized_base)
 
     async def complete(
         self, messages: List[Dict[str, Any]], structured_output: bool = True
@@ -69,6 +90,8 @@ def _extract_response_content(response: Any) -> str:
     message = getattr(choice, "message", None)
     if isinstance(message, str):
         return message
+
+    # Some models return reasoning in a separate field - make sure we get content only
     return getattr(message, "content", "")
 
 

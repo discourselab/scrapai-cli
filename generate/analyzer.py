@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from generate.llm_client import LLMClient
+from generate.prompt_guidance import AGENT_SYSTEM_INSTRUCTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,8 @@ def _build_messages(inspect_summary: Dict[str, Any], description: str) -> List[D
     summary_json = json.dumps(inspect_summary, indent=2)
 
     system = (
-        "You are a web scraping analyst. "
+        AGENT_SYSTEM_INSTRUCTIONS
+        + "You are a web scraping analyst. "
         "Return only valid JSON matching the provided schema. "
         "No markdown, no explanations."
     )
@@ -106,4 +108,3 @@ async def analyze_site(
             )
 
     raise RuntimeError("Analysis retries exhausted")
-

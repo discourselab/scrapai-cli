@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from core.schemas import SpiderConfigSchema
 from generate.llm_client import LLMClient
+from generate.prompt_guidance import AGENT_SYSTEM_INSTRUCTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,8 @@ def _build_messages(
     examples_json = json.dumps(examples, indent=2)
 
     system = (
-        "You are an expert web scraping engineer. "
+        AGENT_SYSTEM_INSTRUCTIONS
+        + "You are an expert web scraping engineer. "
         "Return only valid JSON matching the provided schema. "
         "No markdown, no explanations, no code fences."
     )
