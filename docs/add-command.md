@@ -13,18 +13,6 @@ Generate and import a spider config from a single URL and description using any 
   --llm-model gpt-4o
 ```
 
-### With fallbacks
-
-```bash
-./scrapai add https://wise.com \
-  --project finance \
-  --description "Extract the USD to INR exchange rate" \
-  --llm-api https://api.openai.com/v1 \
-  --llm-key $PRIMARY_KEY \
-  --llm-model gpt-4o \
-  --llm-fallback-api https://api.openai.com/v1 --llm-fallback-key $FALLBACK_KEY --llm-fallback-model gpt-4o-mini
-```
-
 ### Dry run
 
 ```bash
@@ -45,7 +33,6 @@ Generate and import a spider config from a single URL and description using any 
 - `--llm-key`: LLM API key (required unless set in env)
 - `--llm-model`: Model name (required unless set in env)
 - `--llm-timeout`: Per-call timeout in seconds (default: 30)
-- `--llm-fallback-api/--llm-fallback-key/--llm-fallback-model`: Repeatable fallback groups (up to 3)
 - `--dry-run`: Skip DB write and test crawl; prints JSON to stdout
 - `--output`: Write JSON to file
 - `--backup/--no-backup`: Backup existing spider before overwrite (default: true)

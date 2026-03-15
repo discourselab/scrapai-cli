@@ -3,7 +3,7 @@ from pathlib import Path
 
 import click
 
-from generate.pipeline import resolve_llm_configs, run_add_pipeline
+from generate.pipeline import resolve_llm_config, run_add_pipeline
 
 
 @click.command()
@@ -23,21 +23,6 @@ from generate.pipeline import resolve_llm_configs, run_add_pipeline
     default=None,
     help="Per-call LLM timeout in seconds (default: 30)",
 )
-@click.option(
-    "--llm-fallback-api",
-    multiple=True,
-    help="Fallback LLM API base URL (repeatable)",
-)
-@click.option(
-    "--llm-fallback-key",
-    multiple=True,
-    help="Fallback LLM API key (repeatable)",
-)
-@click.option(
-    "--llm-fallback-model",
-    multiple=True,
-    help="Fallback LLM model name (repeatable)",
-)
 @click.option("--dry-run", is_flag=True, help="Skip DB write and test crawl")
 @click.option("--output", default=None, help="Write JSON to file")
 @click.option(
@@ -53,24 +38,13 @@ def add(
     llm_key,
     llm_model,
     llm_timeout,
-    llm_fallback_api,
-    llm_fallback_key,
-    llm_fallback_model,
     dry_run,
     output,
     backup,
 ):
     """Generate and import a spider config using an LLM."""
     try:
-        primary, fallbacks = resolve_llm_configs(
-            llm_api,
-            llm_key,
-            llm_model,
-            llm_timeout,
-            llm_fallback_api,
-            llm_fallback_key,
-            llm_fallback_model,
-        )
+        primary = resolve_llm_config(llm_api, llm_key, llm_model, llm_timeout)
     except ValueError as exc:
         click.echo(f"❌ {exc}")
         raise SystemExit(1)
@@ -82,8 +56,7 @@ def add(
             url=url,
             project=project,
             description=description,
-            primary=primary,
-            fallbacks=fallbacks,
+            llm=primary,
             dry_run=dry_run,
             output_path=output_path,
             backup=backup,
@@ -95,4 +68,3 @@ def add(
         if result.error:
             click.echo(result.error)
         raise SystemExit(1)
-

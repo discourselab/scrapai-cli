@@ -9,7 +9,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin, urlparse
 
 import click
@@ -43,15 +43,12 @@ class PipelineResult:
     failures: Optional[List[Dict[str, str]]] = None
 
 
-def resolve_llm_configs(
+def resolve_llm_config(
     llm_api: Optional[str],
     llm_key: Optional[str],
     llm_model: Optional[str],
     llm_timeout: Optional[int],
-    fallback_api: Tuple[str, ...],
-    fallback_key: Tuple[str, ...],
-    fallback_model: Tuple[str, ...],
-) -> Tuple[LLMConfig, List[LLMConfig]]:
+) -> LLMConfig:
     api_base = llm_api or os.getenv("SCRAPAI_LLM_API") or "https://api.openai.com/v1"
     api_key = llm_key or os.getenv("SCRAPAI_LLM_KEY")
     model = llm_model or os.getenv("SCRAPAI_LLM_MODEL")
@@ -62,37 +59,7 @@ def resolve_llm_configs(
     if not model:
         raise ValueError("Missing LLM model (use --llm-model or SCRAPAI_LLM_MODEL)")
 
-    primary = LLMConfig(api_base=api_base, api_key=api_key, model=model, timeout=timeout)
-
-    fallbacks: List[LLMConfig] = []
-    if fallback_api or fallback_key or fallback_model:
-        if not (len(fallback_api) == len(fallback_key) == len(fallback_model)):
-            raise ValueError(
-                "Fallback flags must be provided in matching --api/--key/--model groups"
-            )
-        if len(fallback_api) > 3:
-            raise ValueError("Maximum of 3 fallback entries supported")
-        for i in range(len(fallback_api)):
-            fallbacks.append(
-                LLMConfig(
-                    api_base=fallback_api[i],
-                    api_key=fallback_key[i],
-                    model=fallback_model[i],
-                    timeout=timeout,
-                )
-            )
-        return primary, fallbacks
-
-    # Env fallbacks (if no CLI fallbacks provided)
-    for idx in range(1, 4):
-        api = os.getenv(f"SCRAPAI_LLM_FALLBACK_{idx}_API")
-        key = os.getenv(f"SCRAPAI_LLM_FALLBACK_{idx}_KEY")
-        model_name = os.getenv(f"SCRAPAI_LLM_FALLBACK_{idx}_MODEL")
-        if api and key and model_name:
-            fallbacks.append(
-                LLMConfig(api_base=api, api_key=key, model=model_name, timeout=timeout)
-            )
-    return primary, fallbacks
+    return LLMConfig(api_base=api_base, api_key=api_key, model=model, timeout=timeout)
 
 
 def _sanitize_text(text: str, secrets: List[str]) -> str:
@@ -347,14 +314,12 @@ async def run_add_pipeline(
     url: str,
     project: str,
     description: str,
-    primary: LLMConfig,
-    fallbacks: List[LLMConfig],
+    llm: LLMConfig,
     dry_run: bool,
     output_path: Optional[Path],
     backup: bool,
 ) -> PipelineResult:
-    failures: List[Dict[str, str]] = []
-    secrets = [primary.api_key] + [fb.api_key for fb in fallbacks]
+    secrets = [llm.api_key]
 
     domain, spider_name = _derive_domain_and_name(url)
     spider_analysis_dir = Path(DATA_DIR) / project / spider_name / "analysis"
@@ -365,83 +330,67 @@ async def run_add_pipeline(
 
     examples = _load_examples()
 
-    configs = [primary] + fallbacks
     backup_path = Path.cwd() / f"{spider_name}.backup.json"
     had_existing = False
-    backup_done = False
-
     if not dry_run:
         had_existing = _spider_exists(spider_name, project)
 
-    for cfg in configs:
-        client = LLMClient(
-            api_base=cfg.api_base,
-            api_key=cfg.api_key,
-            model=cfg.model,
-            timeout=cfg.timeout,
+    client = LLMClient(
+        api_base=llm.api_base,
+        api_key=llm.api_key,
+        model=llm.model,
+        timeout=llm.timeout,
+    )
+
+    try:
+        click.echo(f"[2/4] Analyzing page structure with {llm.model} ...")
+        analysis = await analyze_site(client, inspect_summary, description)
+
+        click.echo("[3/4] Generating spider config ...")
+        config = await generate_config(
+            client=client,
+            inspect_summary=inspect_summary,
+            analysis=analysis,
+            description=description,
+            examples=examples,
+            name=spider_name,
+            source_url=url,
+            allowed_domain=domain,
         )
 
-        try:
-            click.echo(f"[2/4] Analyzing page structure with {cfg.model} ...")
-            analysis = await analyze_site(client, inspect_summary, description)
-
-            click.echo("[3/4] Generating spider config ...")
-            config = await generate_config(
-                client=client,
-                inspect_summary=inspect_summary,
-                analysis=analysis,
-                description=description,
-                examples=examples,
-                name=spider_name,
-                source_url=url,
-                allowed_domain=domain,
-            )
-
-            if dry_run:
-                _write_output_files(
-                    spider_analysis_dir, output_path, config, always_write=True
-                )
-                click.echo(json.dumps(config, indent=2))
-                return PipelineResult(success=True, spider_name=spider_name, config=config)
-
-            # DB write + test crawl
-            if backup and had_existing and not backup_done:
-                _maybe_backup_existing(spider_name, project, backup_path)
-                backup_done = True
-
-            _import_spider_config(config, project)
-
-            click.echo("[4/4] Validating with test crawl (limit=3) ...")
-            items_count = await asyncio.to_thread(
-                run_test_crawl, spider_name, project, 3
-            )
-            if items_count < 1:
-                raise RuntimeError("Test crawl returned 0 items")
-
+        if dry_run:
             _write_output_files(
                 spider_analysis_dir, output_path, config, always_write=True
             )
-            click.echo(f"✅ Spider '{spider_name}' generated and imported.")
+            click.echo(json.dumps(config, indent=2))
             return PipelineResult(success=True, spider_name=spider_name, config=config)
 
-        except Exception as exc:
-            message = _sanitize_text(str(exc), secrets)
-            failures.append({"model": cfg.model, "error": message})
-            logger.debug("Model %s failed: %s", cfg.model, message)
-            continue
+        if backup and had_existing:
+            _maybe_backup_existing(spider_name, project, backup_path)
 
-    # All models failed
-    if not dry_run:
-        _restore_or_cleanup(spider_name, project, backup_path, had_existing)
+        _import_spider_config(config, project)
 
-    summary_lines = [f"{f['model']}: {f['error']}" for f in failures]
-    summary = "All models failed.\n" + "\n".join(summary_lines)
-    return PipelineResult(
-        success=False,
-        spider_name=spider_name,
-        error=summary,
-        failures=failures,
-    )
+        click.echo("[4/4] Validating with test crawl (limit=3) ...")
+        items_count = await asyncio.to_thread(run_test_crawl, spider_name, project, 3)
+        if items_count < 1:
+            raise RuntimeError("Test crawl returned 0 items")
+
+        _write_output_files(
+            spider_analysis_dir, output_path, config, always_write=True
+        )
+        click.echo(f"✅ Spider '{spider_name}' generated and imported.")
+        return PipelineResult(success=True, spider_name=spider_name, config=config)
+
+    except Exception as exc:
+        message = _sanitize_text(str(exc), secrets)
+        logger.debug("LLM run failed: %s", message)
+        if not dry_run:
+            _restore_or_cleanup(spider_name, project, backup_path, had_existing)
+        return PipelineResult(
+            success=False,
+            spider_name=spider_name,
+            error=f"LLM attempt failed: {message}",
+        )
 
 
 def _write_output_files(

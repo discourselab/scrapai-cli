@@ -518,21 +518,6 @@ def bulk(file, project, priority):
     default=None,
     help="Per-call LLM timeout in seconds (default: 30)",
 )
-@click.option(
-    "--llm-fallback-api",
-    multiple=True,
-    help="Fallback LLM API base URL (repeatable)",
-)
-@click.option(
-    "--llm-fallback-key",
-    multiple=True,
-    help="Fallback LLM API key (repeatable)",
-)
-@click.option(
-    "--llm-fallback-model",
-    multiple=True,
-    help="Fallback LLM model name (repeatable)",
-)
 @click.option("--dry-run", is_flag=True, help="Skip DB write and test crawl")
 def add_with_generate(
     file,
@@ -545,15 +530,12 @@ def add_with_generate(
     llm_key,
     llm_model,
     llm_timeout,
-    llm_fallback_api,
-    llm_fallback_key,
-    llm_fallback_model,
     dry_run,
 ):
     """Generate spiders from a CSV file (LLM-driven)."""
     import asyncio
 
-    from generate.pipeline import resolve_llm_configs, run_add_pipeline
+    from generate.pipeline import resolve_llm_config, run_add_pipeline
 
     if concurrency < 1:
         click.echo("❌ --concurrency must be at least 1")
@@ -582,15 +564,7 @@ def add_with_generate(
         return
 
     try:
-        primary, fallbacks = resolve_llm_configs(
-            llm_api,
-            llm_key,
-            llm_model,
-            llm_timeout,
-            llm_fallback_api,
-            llm_fallback_key,
-            llm_fallback_model,
-        )
+        primary = resolve_llm_config(llm_api, llm_key, llm_model, llm_timeout)
     except ValueError as exc:
         click.echo(f"❌ {exc}")
         return
@@ -615,8 +589,7 @@ def add_with_generate(
                     url=url,
                     project=project,
                     description=desc,
-                    primary=primary,
-                    fallbacks=fallbacks,
+                    llm=primary,
                     dry_run=dry_run,
                     output_path=None,
                     backup=True,
