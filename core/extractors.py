@@ -155,32 +155,18 @@ class CustomExtractor(BaseExtractor):
 
             # Extract standard fields
             title = self._extract_text(soup, self.selectors.get("title"))
-            logger.debug(
-                f"Extracted title: '{title}' using selector '{self.selectors.get('title')}'"
-            )
             if not title and title_hint:
                 title = title_hint.strip()
                 logger.debug(f"Using title hint: '{title}'")
 
             author = self._extract_text(soup, self.selectors.get("author"))
-            logger.debug(
-                f"Extracted author: '{author}' using selector '{self.selectors.get('author')}'"
-            )
 
             content = self._extract_text(soup, self.selectors.get("content"))
-            content_len = len(content) if content else 0
-            logger.debug(
-                f"Extracted content: {content_len} chars using selector '{self.selectors.get('content')}'"
-            )
-            if content and content_len < 200:
-                logger.debug(f"Content preview: '{content[:200]}'")
 
             date_str = self._extract_text(soup, self.selectors.get("date"))
-            logger.debug(
-                f"Extracted date: '{date_str}' using selector '{self.selectors.get('date')}'"
-            )
 
             # Validation: at minimum need title and content
+            content_len = len(content) if content else 0
             if not title or not content:
                 logger.warning(
                     f"CustomExtractor validation failed: title='{title}', content_len={content_len}"
@@ -221,7 +207,7 @@ class CustomExtractor(BaseExtractor):
             )
 
         except Exception as e:
-            logger.error(f"CustomExtractor failed for {url}: {e}")
+            logger.debug(f"CustomExtractor failed for {url}: {e}")
             return None
 
     def _extract_text(
@@ -305,7 +291,7 @@ class SmartExtractor:
         for strategy in self.strategies:
             if strategy == "custom":
                 if self.custom_selectors:
-                    logger.info(f"Trying custom extractor for {url}")
+                    logger.debug(f"Trying custom extractor for {url}")
                     try:
                         result = await asyncio.to_thread(
                             CustomExtractor(self.custom_selectors).extract,
@@ -315,7 +301,7 @@ class SmartExtractor:
                             include_html,
                         )
                         if result:
-                            logger.info(f"Successfully extracted {url} using custom")
+                            logger.debug(f"Successfully extracted {url} using custom")
                             return result
                         else:
                             logger.debug(
@@ -329,7 +315,7 @@ class SmartExtractor:
                     )
 
             elif strategy == "newspaper":
-                logger.info(f"Trying newspaper extractor for {url}")
+                logger.debug(f"Trying newspaper extractor for {url}")
                 try:
                     result = await asyncio.to_thread(
                         NewspaperExtractor().extract,
@@ -339,7 +325,7 @@ class SmartExtractor:
                         include_html,
                     )
                     if result:
-                        logger.info(f"Successfully extracted {url} using newspaper")
+                        logger.debug(f"Successfully extracted {url} using newspaper")
                         return result
                     else:
                         logger.debug(
@@ -349,7 +335,7 @@ class SmartExtractor:
                     logger.debug(f"Newspaper extractor failed for {url}: {e}")
 
             elif strategy == "trafilatura":
-                logger.info(f"Trying trafilatura extractor for {url}")
+                logger.debug(f"Trying trafilatura extractor for {url}")
                 try:
                     result = await asyncio.to_thread(
                         TrafilaturaExtractor().extract,
@@ -359,7 +345,7 @@ class SmartExtractor:
                         include_html,
                     )
                     if result:
-                        logger.info(f"Successfully extracted {url} using trafilatura")
+                        logger.debug(f"Successfully extracted {url} using trafilatura")
                         return result
                     else:
                         logger.debug(
@@ -369,7 +355,7 @@ class SmartExtractor:
                     logger.debug(f"Trafilatura extractor failed for {url}: {e}")
 
             elif strategy == "playwright":
-                logger.info(f"Trying playwright extractor for {url}")
+                logger.debug(f"Trying playwright extractor for {url}")
                 try:
                     result = await self._extract_with_playwright_async(
                         url,
@@ -382,7 +368,6 @@ class SmartExtractor:
                         scroll_delay,
                     )
                     if result:
-                        logger.info(f"Successfully extracted {url} using playwright")
                         return result
                     else:
                         logger.debug(
@@ -420,31 +405,20 @@ class SmartExtractor:
             scroll_delay: Delay between scrolls in seconds
         """
         try:
-            logger.info(f"Starting Playwright fetch for {url}")
-            if wait_for_selector:
-                logger.info(f"Will wait for selector: {wait_for_selector}")
-            if additional_delay > 0:
-                logger.info(f"Will wait additional {additional_delay} seconds")
-            if enable_scroll:
-                logger.info(
-                    f"Will perform infinite scroll: {max_scrolls} scrolls with {scroll_delay}s delay"
-                )
+            logger.debug(f"Starting Playwright fetch for {url}")
 
             from utils.cf_browser import CloudflareBrowserClient
 
-            async with CloudflareBrowserClient(headless=False) as browser:
-                logger.info("CloudflareBrowserClient started")
+            async with CloudflareBrowserClient(headless=True) as browser:
 
                 # Navigate to URL
                 await browser.page.goto(url, wait_until="networkidle", timeout=60000)
-                logger.info(f"Navigated to {url}")
 
                 # Wait for selector if specified
                 if wait_for_selector:
                     await browser.page.wait_for_selector(
                         wait_for_selector, timeout=30000
                     )
-                    logger.info(f"Selector found: {wait_for_selector}")
 
                 # Additional delay if specified
                 if additional_delay > 0:
@@ -457,11 +431,8 @@ class SmartExtractor:
                             "window.scrollTo(0, document.body.scrollHeight)"
                         )
                         await asyncio.sleep(scroll_delay)
-                        logger.info(f"Scroll {i+1}/{max_scrolls}")
 
-                logger.info("Browser navigated")
                 html = await browser.page.content()
-                logger.info(f"Got HTML from browser: {len(html)} bytes")
                 if html:
                     # Try Trafilatura on rendered HTML
                     return await asyncio.to_thread(
@@ -474,8 +445,5 @@ class SmartExtractor:
                 else:
                     logger.warning("Browser navigation failed")
         except Exception as e:
-            logger.error(f"Playwright fetch failed: {e}")
-            import traceback
-
-            logger.error(traceback.format_exc())
+            logger.debug(f"Playwright fetch failed: {e}")
         return None
