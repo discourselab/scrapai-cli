@@ -290,6 +290,9 @@ Found a vulnerability? See [SECURITY.md](SECURITY.md). Do not use public GitHub 
 ./scrapai inspect <url> --project <name>                 # Lightweight HTTP (default)
 ./scrapai inspect <url> --project <name> --browser       # CloakBrowser (JS + Cloudflare bypass)
 
+# LLM-driven spider generation
+./scrapai add <url> --project <name> --description "Extract article titles and links"  # Generate spider using LLM
+
 # Database
 ./scrapai db migrate                                     # Run migrations
 ./scrapai db stats                                       # Show database statistics

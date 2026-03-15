@@ -7,7 +7,7 @@ Generate and import a spider config from a single URL and description using any 
 ```bash
 ./scrapai add <url> \
   --project <name> \
-  --description "Extract the USD to INR exchange rate" \
+  --description "Extract article titles and links" \
   --llm-api https://api.openai.com/v1 \
   --llm-key $MY_LLM_KEY \
   --llm-model gpt-4o
@@ -36,8 +36,17 @@ Generate and import a spider config from a single URL and description using any 
 - `--dry-run`: Skip DB write and test crawl; prints JSON to stdout
 - `--output`: Write JSON to file
 - `--backup/--no-backup`: Backup existing spider before overwrite (default: true)
+- `--skip-test-crawl`: Skip Phase 4 test crawl (use with `--dry-run`)
 
 The generated config is also written to `data/<project>/<spider>/analysis/final_spider.json`.
+
+## Environment Variables
+
+```bash
+export SCRAPAI_LLM_API=https://openrouter.ai/api/v1
+export SCRAPAI_LLM_KEY=your-api-key
+export SCRAPAI_LLM_MODEL=anthropic/claude-sonnet-4-6
+```
 
 ## Dry-Run Caveat
 

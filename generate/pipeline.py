@@ -9,7 +9,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
 import click
@@ -70,19 +70,21 @@ def _sanitize_text(text: str, secrets: List[str]) -> str:
     return sanitized
 
 
-def _derive_domain_and_name(url: str) -> Tuple[str, str]:
+def _derive_domain_and_name(url: str, project: Optional[str] = None) -> Tuple[str, str]:
     parsed = urlparse(url)
     domain = parsed.netloc
     if domain.endswith("web.archive.org"):
-        match = re.search(
-            r"/web/(\d{8})\d*/(?:https?://)?(?:www\.)?([^/]+)", url
-        )
+        match = re.search(r"/web/(\d{8})\d*/(?:https?://)?(?:www\.)?([^/]+)", url)
         if match:
             domain = match.group(2)
     domain = domain.replace("www.", "")
     if ":" in domain:
         domain = domain.split(":", 1)[0]
-    spider_name = domain.replace(".", "_")
+    base_name = domain.replace(".", "_")
+    if project:
+        spider_name = f"{base_name}_{project}"
+    else:
+        spider_name = base_name
     return domain, spider_name
 
 
@@ -91,9 +93,7 @@ def _resolve_inspect_output_dir(url: str, project: str) -> Path:
     domain = parsed.netloc.replace("www.", "")
 
     if domain == "web.archive.org":
-        match = re.search(
-            r"/web/(\d{8})\d*/(?:https?://)?(?:www\.)?([^/]+)", url
-        )
+        match = re.search(r"/web/(\d{8})\d*/(?:https?://)?(?:www\.)?([^/]+)", url)
         if match:
             timestamp = match.group(1)
             original_domain = match.group(2).replace(".", "_").replace(":", "_")
@@ -119,7 +119,7 @@ def _detect_js_signals(html: str, soup: BeautifulSoup) -> List[str]:
         signals.append("cloudflare_check")
     if "__next_data__" in lower or "data-reactroot" in lower:
         signals.append("react_app")
-    if "window.__nuxt__" in lower or "id=\"__nuxt\"" in lower:
+    if "window.__nuxt__" in lower or 'id="__nuxt"' in lower:
         signals.append("nuxt_app")
     if "ng-version" in lower or "ng-app" in lower:
         signals.append("angular_app")
@@ -267,7 +267,12 @@ def _load_examples() -> List[Dict[str, Any]]:
 async def _inspect_site(url: str, project: str) -> Dict[str, Any]:
     output_dir = _resolve_inspect_output_dir(url, project)
     await inspect_page_async(
-        url, output_dir=str(output_dir), proxy_type="auto", save_html=True, mode="http", project=project
+        url,
+        output_dir=str(output_dir),
+        proxy_type="auto",
+        save_html=True,
+        mode="http",
+        project=project,
     )
 
     html_path = output_dir / "page.html"
@@ -318,10 +323,11 @@ async def run_add_pipeline(
     dry_run: bool,
     output_path: Optional[Path],
     backup: bool,
+    skip_test_crawl: bool = False,
 ) -> PipelineResult:
     secrets = [llm.api_key]
 
-    domain, spider_name = _derive_domain_and_name(url)
+    domain, spider_name = _derive_domain_and_name(url, project)
     spider_analysis_dir = Path(DATA_DIR) / project / spider_name / "analysis"
     spider_analysis_dir.mkdir(parents=True, exist_ok=True)
 
@@ -358,11 +364,15 @@ async def run_add_pipeline(
             allowed_domain=domain,
         )
 
-        if dry_run:
+        if dry_run or skip_test_crawl:
             _write_output_files(
                 spider_analysis_dir, output_path, config, always_write=True
             )
-            click.echo(json.dumps(config, indent=2))
+            if dry_run:
+                click.echo(json.dumps(config, indent=2))
+            if skip_test_crawl:
+                click.echo("⚠️  Test crawl skipped (--skip-test-crawl)")
+            click.echo(f"✅ Spider '{spider_name}' generated and imported.")
             return PipelineResult(success=True, spider_name=spider_name, config=config)
 
         if backup and had_existing:
@@ -375,9 +385,7 @@ async def run_add_pipeline(
         if items_count < 1:
             raise RuntimeError("Test crawl returned 0 items")
 
-        _write_output_files(
-            spider_analysis_dir, output_path, config, always_write=True
-        )
+        _write_output_files(spider_analysis_dir, output_path, config, always_write=True)
         click.echo(f"✅ Spider '{spider_name}' generated and imported.")
         return PipelineResult(success=True, spider_name=spider_name, config=config)
 

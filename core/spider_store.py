@@ -150,8 +150,8 @@ def _validate_name_matches_source(spider_name: str, source_url: str) -> None:
 
     parsed_url = urlparse(source_url)
     domain = parsed_url.netloc.replace("www.", "")
-    expected_name = domain.replace(".", "_")
-    if spider_name != expected_name:
+    base_name = domain.replace(".", "_")
+    if spider_name != base_name and not spider_name.startswith(f"{base_name}_"):
         raise ValueError(
-            f"Spider name '{spider_name}' does not match source URL domain '{expected_name}'."
+            f"Spider name '{spider_name}' must be '{base_name}' or '{base_name}_<project>'."
         )
