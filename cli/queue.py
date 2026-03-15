@@ -489,3 +489,168 @@ def bulk(file, project, priority):
     click.echo(f"   Skipped (duplicates/invalid): {skipped}")
     click.echo(f"   Project: {project}")
     click.echo(f"   Format: {file_path.suffix.upper()}")
+
+
+@queue.command("add-with-generate")
+@click.argument("file")
+@click.option("--project", required=True, help="Project name (required)")
+@click.option("--url-column", default="url", help="CSV column for URLs")
+@click.option(
+    "--description-column", default="description", help="CSV column for descriptions"
+)
+@click.option(
+    "--concurrency",
+    type=int,
+    default=5,
+    help="Number of concurrent generations (default: 5)",
+)
+@click.option(
+    "--failed-output",
+    default=None,
+    help="CSV path for failed rows (default: failed_spiders.csv next to input)",
+)
+@click.option("--llm-api", default=None, help="LLM API base URL")
+@click.option("--llm-key", default=None, help="LLM API key")
+@click.option("--llm-model", default=None, help="LLM model name")
+@click.option(
+    "--llm-timeout",
+    type=int,
+    default=None,
+    help="Per-call LLM timeout in seconds (default: 30)",
+)
+@click.option(
+    "--llm-fallback-api",
+    multiple=True,
+    help="Fallback LLM API base URL (repeatable)",
+)
+@click.option(
+    "--llm-fallback-key",
+    multiple=True,
+    help="Fallback LLM API key (repeatable)",
+)
+@click.option(
+    "--llm-fallback-model",
+    multiple=True,
+    help="Fallback LLM model name (repeatable)",
+)
+@click.option("--dry-run", is_flag=True, help="Skip DB write and test crawl")
+def add_with_generate(
+    file,
+    project,
+    url_column,
+    description_column,
+    concurrency,
+    failed_output,
+    llm_api,
+    llm_key,
+    llm_model,
+    llm_timeout,
+    llm_fallback_api,
+    llm_fallback_key,
+    llm_fallback_model,
+    dry_run,
+):
+    """Generate spiders from a CSV file (LLM-driven)."""
+    import asyncio
+
+    from generate.pipeline import resolve_llm_configs, run_add_pipeline
+
+    if concurrency < 1:
+        click.echo("❌ --concurrency must be at least 1")
+        return
+
+    file_path = Path(file)
+    if not file_path.exists():
+        click.echo(f"❌ File not found: {file}")
+        return
+
+    try:
+        with open(file, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+    except Exception as e:
+        click.echo(f"❌ Error reading CSV: {e}")
+        return
+
+    if not rows:
+        click.echo("❌ CSV file is empty")
+        return
+
+    if url_column not in rows[0] or description_column not in rows[0]:
+        click.echo("❌ CSV missing required columns")
+        click.echo(f"   Required: {url_column}, {description_column}")
+        return
+
+    try:
+        primary, fallbacks = resolve_llm_configs(
+            llm_api,
+            llm_key,
+            llm_model,
+            llm_timeout,
+            llm_fallback_api,
+            llm_fallback_key,
+            llm_fallback_model,
+        )
+    except ValueError as exc:
+        click.echo(f"❌ {exc}")
+        return
+
+    if failed_output:
+        failed_path = Path(failed_output)
+    else:
+        failed_path = file_path.parent / "failed_spiders.csv"
+
+    async def run_batch():
+        sem = asyncio.Semaphore(concurrency)
+        results = []
+
+        async def handle_row(row):
+            url = (row.get(url_column) or "").strip()
+            desc = (row.get(description_column) or "").strip()
+            if not url or not desc:
+                return {"status": "skipped", "row": row, "error": "missing url/description"}
+
+            async with sem:
+                result = await run_add_pipeline(
+                    url=url,
+                    project=project,
+                    description=desc,
+                    primary=primary,
+                    fallbacks=fallbacks,
+                    dry_run=dry_run,
+                    output_path=None,
+                    backup=True,
+                )
+                if result.success:
+                    return {"status": "succeeded", "row": row}
+                error_text = (result.error or "unknown error").replace("\n", " | ")
+                return {"status": "failed", "row": row, "error": error_text}
+
+        tasks = [handle_row(r) for r in rows]
+        for coro in asyncio.as_completed(tasks):
+            results.append(await coro)
+        return results
+
+    results = asyncio.run(run_batch())
+
+    succeeded = sum(1 for r in results if r["status"] == "succeeded")
+    failed = [r for r in results if r["status"] == "failed"]
+    skipped = [r for r in results if r["status"] == "skipped"]
+
+    click.echo("\nSummary")
+    click.echo(f"  Succeeded: {succeeded}")
+    click.echo(f"  Failed:    {len(failed)}")
+    click.echo(f"  Skipped:   {len(skipped)}")
+
+    failed_rows = failed + skipped
+    if failed_rows:
+        fieldnames = list(rows[0].keys()) + ["error"]
+        failed_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(failed_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for item in failed_rows:
+                row = dict(item["row"])
+                row["error"] = item.get("error", "unknown error")
+                writer.writerow(row)
+        click.echo(f"Failed rows written to: {failed_path}")

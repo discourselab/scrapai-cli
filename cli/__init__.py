@@ -20,6 +20,7 @@ from .setup_cmd import setup, verify  # noqa: E402
 from .extract_urls import extract_urls  # noqa: E402
 from .projects import projects  # noqa: E402
 from .health import health  # noqa: E402
+from .add import add  # noqa: E402
 
 
 @click.group()
@@ -43,3 +44,4 @@ cli.add_command(verify)
 cli.add_command(extract_urls, "extract-urls")
 cli.add_command(projects)
 cli.add_command(health)
+cli.add_command(add)

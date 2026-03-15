@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://github.com/discourselab/scrapai-cli/stargazers"><img src="https://img.shields.io/github/stars/discourselab/scrapai-cli" alt="GitHub stars"></a>
   <a href="https://github.com/discourselab/scrapai-cli/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License"></a>
-  <img src="https://img.shields.io/badge/python-3.9+-green" alt="Python 3.9+">
+  <img src="https://img.shields.io/badge/python-3.10+-green" alt="Python 3.10+">
 </p>
 
 <p align="center">A CLI where you describe what you want to scrape in plain English, an AI agent builds the scraper, and <a href="https://scrapy.org/">Scrapy</a> runs it.</p>
@@ -144,7 +144,7 @@ Our contribution is the orchestration: the CLI, the database-first spider manage
 
 ## Quick Start
 
-**Requirements:** Python 3.9+, Git
+**Requirements:** Python 3.10+, Git
 
 **Supported platforms:** Linux, macOS, Windows (WSL or Docker for Cloudflare bypass)
 
