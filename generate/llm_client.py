@@ -30,9 +30,7 @@ class LLMClient:
 
         try:
             response = await self._client.chat.completions.create(**kwargs)
-            if not response.choices:
-                raise ValueError("LLM response had no choices")
-            content = response.choices[0].message.content or ""
+            content = _extract_response_content(response)
             if not structured_output:
                 content = _extract_json_from_text(content)
             return content
@@ -43,6 +41,35 @@ class LLMClient:
                 )
                 return await self.complete(messages, structured_output=False)
             raise
+
+
+def _extract_response_content(response: Any) -> str:
+    if isinstance(response, str):
+        return response
+
+    choice = None
+    if isinstance(response, dict):
+        choices = response.get("choices") or []
+        if choices:
+            choice = choices[0]
+    else:
+        choices = getattr(response, "choices", None)
+        if choices:
+            choice = choices[0]
+
+    if not choice:
+        raise ValueError("LLM response had no choices")
+
+    if isinstance(choice, dict):
+        msg = choice.get("message") or {}
+        if isinstance(msg, dict):
+            return msg.get("content", "")
+        return str(msg)
+
+    message = getattr(choice, "message", None)
+    if isinstance(message, str):
+        return message
+    return getattr(message, "content", "")
 
 
 def _response_format_unsupported(exc: Exception) -> bool:
@@ -70,4 +97,3 @@ def _extract_json_from_text(text: str) -> str:
     decoder = json.JSONDecoder()
     obj, _ = decoder.raw_decode(cleaned[start:])
     return json.dumps(obj)
-
