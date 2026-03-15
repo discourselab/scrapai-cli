@@ -146,10 +146,19 @@ def _deserialize_setting_value(value: str, type_name: Optional[str]) -> Any:
 
 
 def _validate_name_matches_source(spider_name: str, source_url: str) -> None:
+    import re
     from urllib.parse import urlparse
 
     parsed_url = urlparse(source_url)
     domain = parsed_url.netloc.replace("www.", "")
+
+    if domain == "web.archive.org":
+        match = re.search(
+            r"/web/(\d{8})\d*/(?:https?://)?(?:www\.)?([^/]+)", source_url
+        )
+        if match:
+            domain = match.group(2)
+
     base_name = domain.replace(".", "_")
     if spider_name != base_name and not spider_name.startswith(f"{base_name}_"):
         raise ValueError(

@@ -266,6 +266,12 @@ def _load_examples() -> List[Dict[str, Any]]:
 
 async def _inspect_site(url: str, project: str) -> Dict[str, Any]:
     output_dir = _resolve_inspect_output_dir(url, project)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    html_path = output_dir / "page.html"
+    if html_path.exists():
+        html_path.unlink()
+
     await inspect_page_async(
         url,
         output_dir=str(output_dir),
@@ -275,9 +281,7 @@ async def _inspect_site(url: str, project: str) -> Dict[str, Any]:
         project=project,
     )
 
-    html_path = output_dir / "page.html"
     if not html_path.exists():
-        # Fallback to browser mode if HTTP fetch failed
         await inspect_page_async(
             url,
             output_dir=str(output_dir),
@@ -364,14 +368,24 @@ async def run_add_pipeline(
             allowed_domain=domain,
         )
 
-        if dry_run or skip_test_crawl:
+        if dry_run:
             _write_output_files(
                 spider_analysis_dir, output_path, config, always_write=True
             )
-            if dry_run:
-                click.echo(json.dumps(config, indent=2))
-            if skip_test_crawl:
-                click.echo("⚠️  Test crawl skipped (--skip-test-crawl)")
+            click.echo(json.dumps(config, indent=2))
+            click.echo("✅ Dry run complete. No DB changes made.")
+            return PipelineResult(success=True, spider_name=spider_name, config=config)
+
+        if backup and had_existing:
+            _maybe_backup_existing(spider_name, project, backup_path)
+
+        _import_spider_config(config, project)
+
+        if skip_test_crawl:
+            _write_output_files(
+                spider_analysis_dir, output_path, config, always_write=True
+            )
+            click.echo("⚠️  Test crawl skipped (--skip-test-crawl)")
             click.echo(f"✅ Spider '{spider_name}' generated and imported.")
             return PipelineResult(success=True, spider_name=spider_name, config=config)
 
