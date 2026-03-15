@@ -124,11 +124,12 @@ def crawl_all(
     Args:
         project: Project name.
         limit: Limit items per spider.
-        concurrency: Concurrency setting.
+        concurrency: Concurrency setting (number of parallel crawls).
 
     Returns:
         List of CrawlResult for each spider.
     """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     from core.db import get_db
     from core.models import Spider
 
@@ -141,11 +142,36 @@ def crawl_all(
     db.close()
 
     results = []
-    for s in spiders:
-        result = crawl(
-            spider=s.name, project=project, limit=limit, concurrency=concurrency
-        )
+
+    def _crawl_spider(spider_name: str) -> CrawlResult:
+        return crawl(spider=spider_name, project=project, limit=limit)
+
+    if len(spiders) == 1:
+        result = _crawl_spider(spiders[0].name)
         results.append(result)
+    else:
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            futures = {executor.submit(_crawl_spider, s.name): s.name for s in spiders}
+            for future in as_completed(futures):
+                spider_name = futures[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                except Exception as e:
+                    from datetime import datetime
+
+                    results.append(
+                        CrawlResult(
+                            spider=spider_name,
+                            project=project,
+                            item_count=0,
+                            duration_ms=0,
+                            success=False,
+                            error=str(e),
+                            started_at=datetime.now(),
+                            finished_at=datetime.now(),
+                        )
+                    )
 
     return results
 

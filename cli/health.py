@@ -54,9 +54,9 @@ def health(
         ./scrapai health --project news --report custom-report.md
         ./scrapai health --project news --limit 10
     """
-    click.echo(f"\n{'='*60}")
+    click.echo(f"\n{'=' * 60}")
     click.echo(f"Spider Health Check - Project: {project}")
-    click.echo(f"{'='*60}\n")
+    click.echo(f"{'=' * 60}\n")
 
     # Get all spiders in project
     db = next(get_db())
@@ -85,9 +85,9 @@ def health(
         passed = sum(1 for r in results if r["status"] == "passed")
         failed = len(results) - passed
 
-        click.echo(f"\n{'='*60}")
+        click.echo(f"\n{'=' * 60}")
         click.echo("Summary")
-        click.echo(f"{'='*60}")
+        click.echo(f"{'=' * 60}")
         click.echo(f"Total:  {len(results)}")
         click.echo(f"Passed: {passed} ✅")
         click.echo(f"Failed: {failed} ❌")
@@ -150,9 +150,10 @@ def _test_spider(
         try:
             items = (
                 db.query(ScrapedItem)
+                .join(Spider, ScrapedItem.spider_id == Spider.id)
                 .filter(
-                    ScrapedItem.spider_name == spider_name,
-                    ScrapedItem.project == project,
+                    Spider.name == spider_name,
+                    Spider.project == project,
                 )
                 .order_by(ScrapedItem.scraped_at.desc())
                 .limit(limit)

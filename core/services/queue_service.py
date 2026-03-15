@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from core.services.spiders_service import SpiderInfo
 from scrapai.exceptions import ProjectNotFoundError
 
 
@@ -31,8 +32,8 @@ class BatchResult(BaseModel):
     total: int
     succeeded: int
     failed: int
-    succeeded_items: list[dict]
-    failed_items: list[dict]
+    succeeded_items: list[SpiderInfo]
+    failed_items: list["FailedQueueItem"]
 
 
 class FailedQueueItem(BaseModel):
@@ -323,13 +324,85 @@ def queue_process(
             item.updated_at = datetime.now(timezone.utc)
             db.commit()
 
-            succeeded_items.append(
-                {
-                    "url": item.website_url,
-                    "description": item.custom_instruction,
-                    "spider_name": r.get("spider_name"),
-                }
-            )
+            spider_name = r.get("spider_name")
+            if spider_name:
+                from core.services.spiders_service import SpiderInfo
+                from core.db import get_db
+                from core.models import Spider
+                from sqlalchemy import func
+
+                db2 = next(get_db())
+                try:
+                    spider = (
+                        db2.query(Spider).filter(Spider.name == spider_name).first()
+                    )
+                    if spider:
+                        from core.models import ScrapedItem
+
+                        last_item = (
+                            db2.query(ScrapedItem)
+                            .filter(ScrapedItem.spider_id == spider.id)
+                            .order_by(ScrapedItem.scraped_at.desc())
+                            .first()
+                        )
+                        item_count = (
+                            (
+                                db2.query(func.count(ScrapedItem.id))
+                                .filter(ScrapedItem.spider_id == spider.id)
+                                .scalar()
+                            )
+                            if last_item
+                            else None
+                        )
+
+                        config = {
+                            "name": spider.name,
+                            "allowed_domains": spider.allowed_domains,
+                            "start_urls": spider.start_urls,
+                            "source_url": spider.source_url,
+                            "active": spider.active,
+                        }
+                        succeeded_items.append(
+                            SpiderInfo(
+                                name=spider.name,
+                                project=spider.project or "default",
+                                start_urls=spider.start_urls or [],
+                                config=config,
+                                created_at=spider.created_at,
+                                last_crawled_at=last_item.scraped_at
+                                if last_item
+                                else None,
+                                last_crawl_item_count=item_count,
+                            )
+                        )
+                    else:
+                        succeeded_items.append(
+                            SpiderInfo(
+                                name=spider_name,
+                                project="default",
+                                start_urls=[item.website_url],
+                                config={},
+                                created_at=None,
+                                last_crawled_at=None,
+                                last_crawl_item_count=None,
+                            )
+                        )
+                finally:
+                    db2.close()
+            else:
+                from core.services.spiders_service import SpiderInfo
+
+                succeeded_items.append(
+                    SpiderInfo(
+                        name=item.website_url,
+                        project=item.project_name,
+                        start_urls=[item.website_url],
+                        config={},
+                        created_at=None,
+                        last_crawled_at=None,
+                        last_crawl_item_count=None,
+                    )
+                )
         else:
             item.status = "failed"
             item.error_message = r.get("error", "Unknown error")
@@ -349,5 +422,5 @@ def queue_process(
         succeeded=len(succeeded_items),
         failed=len(failed_items),
         succeeded_items=succeeded_items,
-        failed_items=[f.model_dump() for f in failed_items],
+        failed_items=failed_items,
     )

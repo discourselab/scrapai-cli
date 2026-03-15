@@ -119,7 +119,7 @@ def _test_spider(
 ) -> SpiderHealthResult:
     """Internal function to test a spider."""
     from core.db import get_db
-    from core.models import ScrapedItem
+    from core.models import ScrapedItem, Spider
 
     start_time = datetime.now()
 
@@ -142,7 +142,8 @@ def _test_spider(
         try:
             items = (
                 db.query(ScrapedItem)
-                .filter(ScrapedItem.spider_name == spider_name)
+                .join(Spider, ScrapedItem.spider_id == Spider.id)
+                .filter(Spider.name == spider_name, Spider.project == project)
                 .order_by(ScrapedItem.scraped_at.desc())
                 .limit(limit)
                 .all()

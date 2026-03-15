@@ -6,8 +6,6 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from scrapai.exceptions import ScrapAIConfigError
-
 
 class SetupResult(BaseModel):
     """Result of setup operation."""

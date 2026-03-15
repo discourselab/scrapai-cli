@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from core.services.models import ProjectInfo
 from scrapai.exceptions import QueryNotAllowedError
 
 
@@ -14,7 +15,7 @@ class DbStats(BaseModel):
     total_spiders: int
     total_items: int
     db_size_bytes: int
-    projects: list[dict]
+    projects: list[ProjectInfo]
 
 
 def db_stats() -> DbStats:
@@ -57,7 +58,7 @@ def db_stats() -> DbStats:
         .all()
     )
 
-    projects = [{"name": p[0], "spider_count": p[1]} for p in spider_projects]
+    projects = [ProjectInfo(name=p[0], spider_count=p[1]) for p in spider_projects]
 
     return DbStats(
         total_spiders=spider_count,

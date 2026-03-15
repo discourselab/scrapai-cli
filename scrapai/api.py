@@ -25,6 +25,8 @@ from core.services import (
     verify as _verify,
     SetupResult,
     VerifyResult,
+    list_projects as _list_projects,
+    inspect_url as _inspect_url,
     list_spiders,
     get_spider,
     import_spider,
@@ -53,6 +55,8 @@ from core.services import (
     db_stats,
     db_query,
     DbStats,
+    ProjectInfo,
+    InspectionResult,
 )
 from scrapai.exceptions import (
     SpiderNotFoundError,
@@ -89,41 +93,13 @@ def verify() -> VerifyResult:
     return _verify()
 
 
-def list_projects() -> list[dict]:
+def list_projects() -> list[ProjectInfo]:
     """List all projects in the database.
 
     Returns:
-        List of project info dicts with name, spider_count.
+        List of ProjectInfo objects.
     """
-    from core.db import get_db
-    from core.models import Spider, CrawlQueue
-    from sqlalchemy import func, distinct
-
-    db = next(get_db())
-
-    spider_projects = (
-        db.query(distinct(Spider.project)).filter(Spider.project.isnot(None)).all()
-    )
-    queue_projects = (
-        db.query(distinct(CrawlQueue.project_name))
-        .filter(CrawlQueue.project_name.isnot(None))
-        .all()
-    )
-
-    all_projects = set()
-    for (proj,) in spider_projects:
-        all_projects.add(proj)
-    for (proj,) in queue_projects:
-        all_projects.add(proj)
-
-    result = []
-    for proj in sorted(all_projects):
-        spider_count = (
-            db.query(func.count(Spider.id)).filter(Spider.project == proj).scalar()
-        ) or 0
-        result.append({"name": proj, "spider_count": spider_count})
-
-    return result
+    return _list_projects()
 
 
 def generate_spider(
@@ -241,7 +217,7 @@ def repair_spider(
 def inspect_url(
     url: str,
     browser: bool = False,
-) -> dict:
+) -> InspectionResult:
     """Inspect a URL to get page info.
 
     Mirrors ./scrapai inspect <url>.
@@ -251,39 +227,9 @@ def inspect_url(
         browser: Use browser mode for JS-rendered sites.
 
     Returns:
-        InspectionResult dict with page details.
+        InspectionResult with page details.
     """
-    from utils.inspector import inspect_page
-    from core.config import get_data_dir
-    from datetime import datetime
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    project = "inspect"
-    output_dir = get_data_dir(project) / "inspections" / timestamp
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    if browser:
-        raise NotImplementedError("Browser inspection not supported in library API yet")
-
-    inspect_page(url, str(output_dir), "auto", True, mode="http", project=project)
-
-    html_file = output_dir / "page.html"
-    selectors_file = output_dir / "selectors.json"
-
-    result = {
-        "url": url,
-        "output_dir": str(output_dir),
-    }
-
-    if html_file.exists():
-        result["html_snapshot"] = html_file.read_text()[:5000]
-
-    if selectors_file.exists():
-        import json
-
-        result["detected_selectors"] = json.loads(selectors_file.read_text())
-
-    return result
+    return _inspect_url(url, browser=browser)
 
 
 __all__ = [
@@ -323,6 +269,8 @@ __all__ = [
     "DbStats",
     "SetupResult",
     "VerifyResult",
+    "ProjectInfo",
+    "InspectionResult",
     "SpiderNotFoundError",
     "ProjectNotFoundError",
     "GenerationFailedError",
