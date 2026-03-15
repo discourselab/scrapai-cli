@@ -326,72 +326,22 @@ def queue_process(
 
             spider_name = r.get("spider_name")
             if spider_name:
-                from core.services.spiders_service import SpiderInfo
-                from core.db import get_db
-                from core.models import Spider
-                from sqlalchemy import func
-
-                db2 = next(get_db())
                 try:
-                    spider = (
-                        db2.query(Spider).filter(Spider.name == spider_name).first()
+                    spider_info = get_spider(spider_name, item.project_name)
+                    succeeded_items.append(spider_info)
+                except SpiderNotFoundError:
+                    succeeded_items.append(
+                        SpiderInfo(
+                            name=spider_name,
+                            project=item.project_name,
+                            start_urls=[item.website_url],
+                            config={},
+                            created_at=None,
+                            last_crawled_at=None,
+                            last_crawl_item_count=None,
+                        )
                     )
-                    if spider:
-                        from core.models import ScrapedItem
-
-                        last_item = (
-                            db2.query(ScrapedItem)
-                            .filter(ScrapedItem.spider_id == spider.id)
-                            .order_by(ScrapedItem.scraped_at.desc())
-                            .first()
-                        )
-                        item_count = (
-                            (
-                                db2.query(func.count(ScrapedItem.id))
-                                .filter(ScrapedItem.spider_id == spider.id)
-                                .scalar()
-                            )
-                            if last_item
-                            else None
-                        )
-
-                        config = {
-                            "name": spider.name,
-                            "allowed_domains": spider.allowed_domains,
-                            "start_urls": spider.start_urls,
-                            "source_url": spider.source_url,
-                            "active": spider.active,
-                        }
-                        succeeded_items.append(
-                            SpiderInfo(
-                                name=spider.name,
-                                project=spider.project or "default",
-                                start_urls=spider.start_urls or [],
-                                config=config,
-                                created_at=spider.created_at,
-                                last_crawled_at=last_item.scraped_at
-                                if last_item
-                                else None,
-                                last_crawl_item_count=item_count,
-                            )
-                        )
-                    else:
-                        succeeded_items.append(
-                            SpiderInfo(
-                                name=spider_name,
-                                project="default",
-                                start_urls=[item.website_url],
-                                config={},
-                                created_at=None,
-                                last_crawled_at=None,
-                                last_crawl_item_count=None,
-                            )
-                        )
-                finally:
-                    db2.close()
             else:
-                from core.services.spiders_service import SpiderInfo
-
                 succeeded_items.append(
                     SpiderInfo(
                         name=item.website_url,
