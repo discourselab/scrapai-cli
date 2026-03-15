@@ -18,7 +18,20 @@ def run_test_crawl(spider_name: str, project: str, limit: int = 3) -> int:
     from core.db import get_db
     from core.models import Spider, ScrapedItem
 
-    start_time = datetime.now(timezone.utc)
+    db = next(get_db())
+    try:
+        spider = (
+            db.query(Spider)
+            .filter(Spider.name == spider_name, Spider.project == project)
+            .first()
+        )
+        if not spider:
+            return 0
+        initial_count = (
+            db.query(ScrapedItem).filter(ScrapedItem.spider_id == spider.id).count()
+        )
+    finally:
+        db.close()
 
     _run_spider(
         project_name=project,
@@ -29,7 +42,7 @@ def run_test_crawl(spider_name: str, project: str, limit: int = 3) -> int:
         proxy_type="auto",
         browser=False,
         scrapy_args=None,
-        reset_deltafetch=False,
+        reset_deltafetch=True,
         save_html=False,
     )
 
@@ -43,14 +56,7 @@ def run_test_crawl(spider_name: str, project: str, limit: int = 3) -> int:
         if not spider:
             return 0
 
-        count = (
-            db.query(ScrapedItem)
-            .filter(
-                ScrapedItem.spider_id == spider.id,
-                ScrapedItem.scraped_at >= start_time,
-            )
-            .count()
-        )
-        return int(count)
+        count = db.query(ScrapedItem).filter(ScrapedItem.spider_id == spider.id).count()
+        return int(count - initial_count)
     finally:
         db.close()

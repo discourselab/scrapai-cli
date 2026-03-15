@@ -389,11 +389,6 @@ async def run_add_pipeline(
             click.echo(f"✅ Spider '{spider_name}' generated and imported.")
             return PipelineResult(success=True, spider_name=spider_name, config=config)
 
-        if backup and had_existing:
-            _maybe_backup_existing(spider_name, project, backup_path)
-
-        _import_spider_config(config, project)
-
         click.echo("[4/4] Validating with test crawl (limit=3) ...")
         items_count = await asyncio.to_thread(run_test_crawl, spider_name, project, 3)
         if items_count < 1:
