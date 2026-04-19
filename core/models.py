@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Text,
     JSON,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from .db import Base
@@ -20,9 +21,12 @@ def _utcnow():
 
 class Spider(Base):
     __tablename__ = "spiders"
+    __table_args__ = (
+        UniqueConstraint("name", "project", name="uq_spider_name_project"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, index=True, nullable=False)
     allowed_domains = Column(JSON, nullable=False)
     start_urls = Column(JSON, nullable=False)
     source_url = Column(String, nullable=True)
@@ -76,11 +80,12 @@ class SpiderSetting(Base):
 
 class ScrapedItem(Base):
     __tablename__ = "scraped_items"
+    __table_args__ = (UniqueConstraint("spider_id", "url", name="uq_item_spider_url"),)
 
     id = Column(Integer, primary_key=True, index=True)
     spider_id = Column(Integer, ForeignKey("spiders.id"), nullable=False)
 
-    url = Column(String, unique=True, index=True, nullable=False)
+    url = Column(String, index=True, nullable=False)
     title = Column(String, nullable=True)
     content = Column(Text, nullable=True)
     published_date = Column(DateTime, nullable=True)

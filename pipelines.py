@@ -66,11 +66,17 @@ class DatabasePipeline:
         if not self.buffer:
             return
 
-        # 1. Deduplication (Batch Query)
+        # 1. Deduplication (Batch Query) — scoped per-spider so the same URL
+        #    can legitimately exist across spiders / projects
         urls = [i["url"] for i in self.buffer]
+        spider_id = self.buffer[0]["spider_id"]
         try:
             existing_items = (
-                self.db.query(ScrapedItem.url).filter(ScrapedItem.url.in_(urls)).all()
+                self.db.query(ScrapedItem.url)
+                .filter(
+                    ScrapedItem.spider_id == spider_id, ScrapedItem.url.in_(urls)
+                )
+                .all()
             )
             existing_urls = {r[0] for r in existing_items}
         except Exception as e:
