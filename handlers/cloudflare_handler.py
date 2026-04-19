@@ -143,49 +143,55 @@ class CloudflareDownloadHandler:
             "CloudflareDownloadHandler: Handler opened (browser will start on first request)"
         )
 
-    async def close(self):
-        """Called when spider closes - close browser and stop event loop."""
-        if (
-            CloudflareDownloadHandler._browser_started
-            and CloudflareDownloadHandler._shared_browser
-        ):
-            try:
-                logger.info("CloudflareDownloadHandler: Closing shared browser...")
+    async def close(self, spider=None):
+        """Close browser, drop this spider's cookies, and stop the event loop.
 
-                # Close browser on persistent event loop (where it was started)
+        Each cleanup step is in its own try/finally so a failure earlier in
+        the sequence (e.g. browser hang) still releases the event loop and
+        the daemon thread that hosts it. Otherwise we'd leak a Chromium
+        subprocess on every spider that crashed during shutdown.
+        """
+        try:
+            if (
+                CloudflareDownloadHandler._browser_started
+                and CloudflareDownloadHandler._shared_browser
+            ):
+                logger.info("CloudflareDownloadHandler: Closing shared browser...")
                 if CloudflareDownloadHandler._shared_browser.browser:
                     try:
-                        # Run on persistent event loop to avoid cross-loop issues
-                        await asyncio.get_event_loop().run_in_executor(
+                        await asyncio.get_running_loop().run_in_executor(
                             None, lambda: self._run_async(self._stop_browser_async())
                         )
-                        logger.info(
-                            "CloudflareDownloadHandler: Browser stopped successfully"
-                        )
+                        logger.info("CloudflareDownloadHandler: Browser stopped")
                     except Exception as e:
                         logger.warning(f"Error during browser cleanup: {e}")
-
-                # Clean up state
                 CloudflareDownloadHandler._shared_browser = None
                 CloudflareDownloadHandler._browser_started = False
-                logger.info("CloudflareDownloadHandler: Closed shared browser")
-
-            except Exception as e:
-                logger.error(f"CloudflareDownloadHandler: Error closing browser: {e}")
-        else:
-            logger.info("CloudflareDownloadHandler: No browser to close")
-
-        # Stop the persistent event loop
-        if (
-            CloudflareDownloadHandler._event_loop
-            and not CloudflareDownloadHandler._event_loop.is_closed()
-        ):
-            CloudflareDownloadHandler._event_loop.call_soon_threadsafe(
-                CloudflareDownloadHandler._event_loop.stop
+            else:
+                logger.info("CloudflareDownloadHandler: No browser to close")
+        finally:
+            spider_name = getattr(spider, "name", None) or getattr(
+                spider, "spider_name", None
             )
-            CloudflareDownloadHandler._event_loop = None
-            CloudflareDownloadHandler._event_loop_thread = None
-            logger.info("CloudflareDownloadHandler: Stopped persistent event loop")
+            if spider_name:
+                with CloudflareDownloadHandler._cookie_cache_lock:
+                    if spider_name in CloudflareDownloadHandler._cookie_cache:
+                        del CloudflareDownloadHandler._cookie_cache[spider_name]
+                        logger.info(
+                            f"CloudflareDownloadHandler: Dropped cookie cache for "
+                            f"{spider_name}"
+                        )
+
+            if (
+                CloudflareDownloadHandler._event_loop
+                and not CloudflareDownloadHandler._event_loop.is_closed()
+            ):
+                CloudflareDownloadHandler._event_loop.call_soon_threadsafe(
+                    CloudflareDownloadHandler._event_loop.stop
+                )
+                CloudflareDownloadHandler._event_loop = None
+                CloudflareDownloadHandler._event_loop_thread = None
+                logger.info("CloudflareDownloadHandler: Stopped persistent event loop")
 
     async def _stop_browser_async(self):
         """Stop browser on the correct event loop to avoid 'different loop' errors."""
