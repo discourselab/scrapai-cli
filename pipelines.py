@@ -63,6 +63,7 @@ class DatabasePipeline:
 
     def _flush(self, spider):
         from core.models import ScrapedItem
+
         if not self.buffer:
             return
 
@@ -73,9 +74,7 @@ class DatabasePipeline:
         try:
             existing_items = (
                 self.db.query(ScrapedItem.url)
-                .filter(
-                    ScrapedItem.spider_id == spider_id, ScrapedItem.url.in_(urls)
-                )
+                .filter(ScrapedItem.spider_id == spider_id, ScrapedItem.url.in_(urls))
                 .all()
             )
             existing_urls = {r[0] for r in existing_items}
@@ -150,7 +149,7 @@ class DatabasePipeline:
             )
             new_objects.append(db_item)
 
-        # 3. Bulk Insert
+        # 3. Bulk Insert (with per-row fallback so one bad row doesn't drop the batch)
         if new_objects:
             try:
                 self.db.add_all(new_objects)
@@ -158,6 +157,25 @@ class DatabasePipeline:
                 spider.logger.info(f"Saved {len(new_objects)} items to DB (Batch)")
             except Exception as e:
                 self.db.rollback()
-                spider.logger.error(f"Error saving batch: {e}")
+                spider.logger.warning(
+                    f"Batch insert failed ({e}); falling back to per-row insert"
+                )
+                saved = 0
+                quarantined = 0
+                for obj in new_objects:
+                    try:
+                        self.db.add(obj)
+                        self.db.commit()
+                        saved += 1
+                    except Exception as row_err:
+                        self.db.rollback()
+                        quarantined += 1
+                        spider.logger.error(
+                            f"Quarantined item url={obj.url!r}: {row_err}"
+                        )
+                spider.logger.info(
+                    f"Saved {saved}/{len(new_objects)} items "
+                    f"({quarantined} quarantined)"
+                )
 
         self.buffer = []
