@@ -55,17 +55,17 @@ from core.db import get_db
 from core.models import Spider
 import sys
 
-db = next(get_db())
-names = sys.argv[1:]
-count = 0
-for name in names:
-    spider = db.query(Spider).filter(Spider.name == name, Spider.project == '$PROJECT').first()
-    if spider:
-        for s in spider.settings:
-            if s.key == 'CLOUDFLARE_ENABLED' and str(s.value).lower() in ('true', '1'):
-                count += 1
-                break
-print(count)
+with get_db() as db:
+    names = sys.argv[1:]
+    count = 0
+    for name in names:
+        spider = db.query(Spider).filter(Spider.name == name, Spider.project == '$PROJECT').first()
+        if spider:
+            for s in spider.settings:
+                if s.key == 'CLOUDFLARE_ENABLED' and str(s.value).lower() in ('true', '1'):
+                    count += 1
+                    break
+    print(count)
 " $SPIDERS)
 
 REGULAR_COUNT=$((SPIDER_COUNT - CF_COUNT))

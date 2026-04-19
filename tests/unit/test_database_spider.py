@@ -5,7 +5,7 @@ Integration tests cover the happy path, these cover error conditions.
 """
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 from spiders.database_spider import DatabaseSpider
 from core.models import Spider, SpiderRule
 
@@ -26,7 +26,9 @@ class TestDatabaseSpiderInit:
         # Mock database to return no spider
         mock_db = Mock()
         mock_db.query.return_value.filter.return_value.first.return_value = None
-        mock_get_db.return_value = iter([mock_db])
+        cm = MagicMock()
+        cm.__enter__.return_value = mock_db
+        mock_get_db.return_value = cm
 
         with pytest.raises(ValueError, match="not found in database"):
             DatabaseSpider(spider_name="nonexistent_spider")
@@ -42,7 +44,9 @@ class TestDatabaseSpiderInit:
 
         mock_db = Mock()
         mock_db.query.return_value.filter.return_value.first.return_value = mock_spider
-        mock_get_db.return_value = iter([mock_db])
+        cm = MagicMock()
+        cm.__enter__.return_value = mock_db
+        mock_get_db.return_value = cm
 
         with pytest.raises(ValueError, match="is inactive"):
             DatabaseSpider(spider_name="test_spider")
@@ -76,7 +80,9 @@ class TestRuleCompilation:
 
         mock_db = Mock()
         mock_db.query.return_value.filter.return_value.first.return_value = mock_spider
-        mock_get_db.return_value = iter([mock_db])
+        cm = MagicMock()
+        cm.__enter__.return_value = mock_db
+        mock_get_db.return_value = cm
 
         with patch.object(DatabaseSpider, "_load_settings_from_db"):
             with patch.object(DatabaseSpider, "_setup_cloudflare_handlers"):
@@ -110,7 +116,9 @@ class TestRuleCompilation:
 
         mock_db = Mock()
         mock_db.query.return_value.filter.return_value.first.return_value = mock_spider
-        mock_get_db.return_value = iter([mock_db])
+        cm = MagicMock()
+        cm.__enter__.return_value = mock_db
+        mock_get_db.return_value = cm
 
         with patch.object(DatabaseSpider, "_load_settings_from_db"):
             with patch.object(DatabaseSpider, "_setup_cloudflare_handlers"):
@@ -142,7 +150,9 @@ class TestCallbackRegistration:
 
         mock_db = Mock()
         mock_db.query.return_value.filter.return_value.first.return_value = mock_spider
-        mock_get_db.return_value = iter([mock_db])
+        cm = MagicMock()
+        cm.__enter__.return_value = mock_db
+        mock_get_db.return_value = cm
 
         with patch.object(DatabaseSpider, "_load_settings_from_db"):
             with patch.object(DatabaseSpider, "_setup_cloudflare_handlers"):
@@ -169,7 +179,9 @@ class TestCallbackRegistration:
 
         mock_db = Mock()
         mock_db.query.return_value.filter.return_value.first.return_value = mock_spider
-        mock_get_db.return_value = iter([mock_db])
+        cm = MagicMock()
+        cm.__enter__.return_value = mock_db
+        mock_get_db.return_value = cm
 
         with patch.object(DatabaseSpider, "_load_settings_from_db"):
             with patch.object(DatabaseSpider, "_setup_cloudflare_handlers"):

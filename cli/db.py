@@ -84,42 +84,41 @@ def stats():
     from sqlalchemy import text
 
     try:
-        db = next(get_db())
+        with get_db() as db:
+            # Get counts
+            spider_count = db.execute(text("SELECT COUNT(*) FROM spiders")).scalar()
+            item_count = db.execute(text("SELECT COUNT(*) FROM scraped_items")).scalar()
+            project_count = db.execute(
+                text(
+                    "SELECT COUNT(DISTINCT project) FROM spiders WHERE project IS NOT NULL"
+                )
+            ).scalar()
 
-        # Get counts
-        spider_count = db.execute(text("SELECT COUNT(*) FROM spiders")).scalar()
-        item_count = db.execute(text("SELECT COUNT(*) FROM scraped_items")).scalar()
-        project_count = db.execute(
-            text(
-                "SELECT COUNT(DISTINCT project) FROM spiders WHERE project IS NOT NULL"
-            )
-        ).scalar()
+            # Queue breakdown
+            queue_total = db.execute(text("SELECT COUNT(*) FROM crawl_queue")).scalar()
+            queue_pending = db.execute(
+                text("SELECT COUNT(*) FROM crawl_queue WHERE status = 'pending'")
+            ).scalar()
+            queue_processing = db.execute(
+                text("SELECT COUNT(*) FROM crawl_queue WHERE status = 'processing'")
+            ).scalar()
+            queue_completed = db.execute(
+                text("SELECT COUNT(*) FROM crawl_queue WHERE status = 'completed'")
+            ).scalar()
+            queue_failed = db.execute(
+                text("SELECT COUNT(*) FROM crawl_queue WHERE status = 'failed'")
+            ).scalar()
 
-        # Queue breakdown
-        queue_total = db.execute(text("SELECT COUNT(*) FROM crawl_queue")).scalar()
-        queue_pending = db.execute(
-            text("SELECT COUNT(*) FROM crawl_queue WHERE status = 'pending'")
-        ).scalar()
-        queue_processing = db.execute(
-            text("SELECT COUNT(*) FROM crawl_queue WHERE status = 'processing'")
-        ).scalar()
-        queue_completed = db.execute(
-            text("SELECT COUNT(*) FROM crawl_queue WHERE status = 'completed'")
-        ).scalar()
-        queue_failed = db.execute(
-            text("SELECT COUNT(*) FROM crawl_queue WHERE status = 'failed'")
-        ).scalar()
-
-        click.echo("📊 Database Statistics\n")
-        click.echo(f"   Spiders: {spider_count:,}")
-        click.echo(f"   Scraped Items: {item_count:,}")
-        click.echo(f"   Projects: {project_count:,}")
-        click.echo(f"\n   Queue Items: {queue_total:,}")
-        if queue_total > 0:
-            click.echo(f"      • Pending: {queue_pending:,}")
-            click.echo(f"      • Processing: {queue_processing:,}")
-            click.echo(f"      • Completed: {queue_completed:,}")
-            click.echo(f"      • Failed: {queue_failed:,}")
+            click.echo("📊 Database Statistics\n")
+            click.echo(f"   Spiders: {spider_count:,}")
+            click.echo(f"   Scraped Items: {item_count:,}")
+            click.echo(f"   Projects: {project_count:,}")
+            click.echo(f"\n   Queue Items: {queue_total:,}")
+            if queue_total > 0:
+                click.echo(f"      • Pending: {queue_pending:,}")
+                click.echo(f"      • Processing: {queue_processing:,}")
+                click.echo(f"      • Completed: {queue_completed:,}")
+                click.echo(f"      • Failed: {queue_failed:,}")
 
     except Exception as e:
         click.echo(f"❌ Failed to get statistics: {e}")
@@ -132,48 +131,49 @@ def tables():
     from sqlalchemy import text
 
     try:
-        db = next(get_db())
+        with get_db() as db:
+            # Get table names (works for both SQLite and PostgreSQL)
+            if is_postgresql():
+                result = db.execute(text("""
+                    SELECT table_name
+                    FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                    ORDER BY table_name
+                """))
+            else:  # SQLite
+                result = db.execute(text("""
+                    SELECT name as table_name
+                    FROM sqlite_master
+                    WHERE type='table'
+                    ORDER BY name
+                """))
 
-        # Get table names (works for both SQLite and PostgreSQL)
-        if is_postgresql():
-            result = db.execute(text("""
-                SELECT table_name
-                FROM information_schema.tables
-                WHERE table_schema = 'public'
-                ORDER BY table_name
-            """))
-        else:  # SQLite
-            result = db.execute(text("""
-                SELECT name as table_name
-                FROM sqlite_master
-                WHERE type='table'
-                ORDER BY name
-            """))
+            table_names = [row[0] for row in result]
 
-        table_names = [row[0] for row in result]
+            if not table_names:
+                click.echo("(no tables found)")
+                return
 
-        if not table_names:
-            click.echo("(no tables found)")
-            return
+            click.echo("📋 Database Tables\n")
 
-        click.echo("📋 Database Tables\n")
+            # Get row count for each table
+            max_name_len = max(len(name) for name in table_names)
 
-        # Get row count for each table
-        max_name_len = max(len(name) for name in table_names)
-
-        for table_name in table_names:
-            try:
-                # Validate table name before using in SQL
-                validate_table_name(table_name)
-                count = db.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar()
-                click.echo(f"   {table_name.ljust(max_name_len)}  {count:,} rows")
-            except ValueError:
-                # Invalid table name - skip it
-                click.echo(
-                    f"   {table_name.ljust(max_name_len)}  (skipped: not a ScrapAI table)"
-                )
-            except Exception as e:
-                click.echo(f"   {table_name.ljust(max_name_len)}  (error: {e})")
+            for table_name in table_names:
+                try:
+                    # Validate table name before using in SQL
+                    validate_table_name(table_name)
+                    count = db.execute(
+                        text(f"SELECT COUNT(*) FROM {table_name}")
+                    ).scalar()
+                    click.echo(f"   {table_name.ljust(max_name_len)}  {count:,} rows")
+                except ValueError:
+                    # Invalid table name - skip it
+                    click.echo(
+                        f"   {table_name.ljust(max_name_len)}  (skipped: not a ScrapAI table)"
+                    )
+                except Exception as e:
+                    click.echo(f"   {table_name.ljust(max_name_len)}  (error: {e})")
 
     except Exception as e:
         click.echo(f"❌ Failed to list tables: {e}")
@@ -196,70 +196,76 @@ def inspect(table):
         return
 
     try:
-        db = next(get_db())
         from sqlalchemy import text
 
-        click.echo(f"🔍 Table: {table}\n")
+        with get_db() as db:
+            click.echo(f"🔍 Table: {table}\n")
 
-        # Get schema (works for both SQLite and PostgreSQL)
-        # Note: table name already validated against whitelist above
-        if is_postgresql():
-            result = db.execute(text(f"""
-                SELECT
-                    column_name,
-                    data_type,
-                    character_maximum_length,
-                    is_nullable,
-                    column_default
-                FROM information_schema.columns
-                WHERE table_name = '{table}'
-                ORDER BY ordinal_position
-            """))
-
-            click.echo("Column                Type                 Nullable  Default")
-            click.echo("-" * 70)
-
-            for row in result:
-                col_name = row[0]
-                data_type = row[1]
-                max_len = row[2]
-                nullable = row[3]
-                default = row[4]
-
-                if max_len:
-                    type_str = f"{data_type}({max_len})"
-                else:
-                    type_str = data_type
-
-                null_str = "YES" if nullable == "YES" else "NO"
-                default_str = str(default) if default else ""
-
-                click.echo(f"{col_name:20}  {type_str:18}  {null_str:8}  {default_str}")
-
-        else:  # SQLite
+            # Get schema (works for both SQLite and PostgreSQL)
             # Note: table name already validated against whitelist above
-            result = db.execute(text(f"PRAGMA table_info({table})"))
-
-            click.echo("Column                Type                 Nullable  Default")
-            click.echo("-" * 70)
-
-            for row in result:
-                col_name = row[1]
-                data_type = row[2]
-                not_null = row[3]
-                default = row[4]
-
-                null_str = "NO" if not_null else "YES"
-                default_str = str(default) if default else ""
+            if is_postgresql():
+                result = db.execute(text(f"""
+                    SELECT
+                        column_name,
+                        data_type,
+                        character_maximum_length,
+                        is_nullable,
+                        column_default
+                    FROM information_schema.columns
+                    WHERE table_name = '{table}'
+                    ORDER BY ordinal_position
+                """))
 
                 click.echo(
-                    f"{col_name:20}  {data_type:18}  {null_str:8}  {default_str}"
+                    "Column                Type                 Nullable  Default"
                 )
+                click.echo("-" * 70)
 
-        # Show row count
-        # Note: table name already validated against whitelist above
-        count = db.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
-        click.echo(f"\nTotal rows: {count:,}")
+                for row in result:
+                    col_name = row[0]
+                    data_type = row[1]
+                    max_len = row[2]
+                    nullable = row[3]
+                    default = row[4]
+
+                    if max_len:
+                        type_str = f"{data_type}({max_len})"
+                    else:
+                        type_str = data_type
+
+                    null_str = "YES" if nullable == "YES" else "NO"
+                    default_str = str(default) if default else ""
+
+                    click.echo(
+                        f"{col_name:20}  {type_str:18}  {null_str:8}  {default_str}"
+                    )
+
+            else:  # SQLite
+                # Note: table name already validated against whitelist above
+                result = db.execute(text(f"PRAGMA table_info({table})"))
+
+                click.echo(
+                    "Column                Type                 Nullable  Default"
+                )
+                click.echo("-" * 70)
+
+                for row in result:
+                    col_name = row[1]
+                    data_type = row[2]
+                    not_null = row[3]
+                    default = row[4]
+
+                    null_str = "NO" if not_null else "YES"
+                    default_str = str(default) if default else ""
+
+                    click.echo(
+                        f"{col_name:20}  {data_type:18}  {null_str:8}  {default_str}"
+                    )
+
+            # Show row count
+            # Note: table name already validated against whitelist above
+            count = db.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
+            click.echo(f"\nTotal rows: {count:,}")
 
     except Exception as e:
         click.echo(f"❌ Failed to inspect table '{table}': {e}")
@@ -380,40 +386,41 @@ def query(sql, format, yes):
     is_write = not sql_upper.startswith("SELECT")
 
     try:
-        db = next(get_db())
         from sqlalchemy import text
 
-        if is_write:
-            # Preview affected rows before executing
-            count_sql = _build_count_query(sql)
-            if count_sql:
-                try:
-                    affected = db.execute(text(count_sql)).scalar()
-                except Exception:
+        with get_db() as db:
+            if is_write:
+                # Preview affected rows before executing
+                count_sql = _build_count_query(sql)
+                if count_sql:
+                    try:
+                        affected = db.execute(text(count_sql)).scalar()
+                    except Exception:
+                        affected = "unknown"
+                else:
                     affected = "unknown"
+
+                op = "UPDATE" if sql_upper.startswith("UPDATE") else "DELETE"
+
+                if not yes:
+                    click.echo(
+                        f"⚠️  This will {op} {affected} row(s). Continue? [y/N] ",
+                        nl=False,
+                    )
+                    confirm = click.getchar()
+                    click.echo()  # newline after input
+                    if confirm.lower() != "y":
+                        click.echo("Cancelled.")
+                        return
+
+                result = db.execute(text(sql))
+                db.commit()
+                click.echo(f"✅ {op} complete — {result.rowcount} row(s) affected")
+
             else:
-                affected = "unknown"
-
-            op = "UPDATE" if sql_upper.startswith("UPDATE") else "DELETE"
-
-            if not yes:
-                click.echo(
-                    f"⚠️  This will {op} {affected} row(s). Continue? [y/N] ", nl=False
-                )
-                confirm = click.getchar()
-                click.echo()  # newline after input
-                if confirm.lower() != "y":
-                    click.echo("Cancelled.")
-                    return
-
-            result = db.execute(text(sql))
-            db.commit()
-            click.echo(f"✅ {op} complete — {result.rowcount} row(s) affected")
-
-        else:
-            result = db.execute(text(sql))
-            rows = result.fetchall()
-            _format_results(rows, result, format, json_lib)
+                result = db.execute(text(sql))
+                rows = result.fetchall()
+                _format_results(rows, result, format, json_lib)
 
     except Exception as e:
         click.echo(f"❌ Query failed: {e}")

@@ -33,40 +33,44 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
 
     def _load_config(self):
         """Load spider configuration from database"""
-        db = next(get_db())
-        spider = db.query(Spider).filter(Spider.name == self.spider_name).first()
+        with get_db() as db:
+            spider = db.query(Spider).filter(Spider.name == self.spider_name).first()
 
-        if not spider:
-            raise ValueError(f"Spider '{self.spider_name}' not found in database")
-        if not spider.active:
-            raise ValueError(f"Spider '{self.spider_name}' is inactive")
+            if not spider:
+                raise ValueError(f"Spider '{self.spider_name}' not found in database")
+            if not spider.active:
+                raise ValueError(f"Spider '{self.spider_name}' is inactive")
 
-        self.spider_config = spider
-        self.allowed_domains = spider.allowed_domains
-        self.sitemap_urls = spider.start_urls
+            self.spider_config = spider
+            self.allowed_domains = spider.allowed_domains
+            self.sitemap_urls = spider.start_urls
 
-        logger.info(f"Sitemap spider configured with sitemap URLs: {self.sitemap_urls}")
-
-        # Load settings and CF handlers via mixin
-        self._load_settings_from_db(spider)
-        self._setup_cloudflare_handlers()
-
-        # Load and register callbacks
-        callbacks_config = getattr(spider, "callbacks_config", None) or {}
-        if callbacks_config:
             logger.info(
-                f"Loading {len(callbacks_config)} callbacks: {list(callbacks_config.keys())}"
+                f"Sitemap spider configured with sitemap URLs: {self.sitemap_urls}"
             )
-            for callback_name, callback_config in callbacks_config.items():
-                callback_method = self._make_callback(callback_name, callback_config)
-                setattr(self, callback_name, callback_method)
-                logger.info(f"Registered callback: {callback_name}")
-        else:
-            logger.info("No callbacks defined for this spider")
 
-        # Build sitemap_rules from DB rules when callbacks are defined
-        self.sitemap_rules = self._build_sitemap_rules(spider)
-        logger.info(f"Sitemap rules: {self.sitemap_rules}")
+            # Load settings and CF handlers via mixin
+            self._load_settings_from_db(spider)
+            self._setup_cloudflare_handlers()
+
+            # Load and register callbacks
+            callbacks_config = getattr(spider, "callbacks_config", None) or {}
+            if callbacks_config:
+                logger.info(
+                    f"Loading {len(callbacks_config)} callbacks: {list(callbacks_config.keys())}"
+                )
+                for callback_name, callback_config in callbacks_config.items():
+                    callback_method = self._make_callback(
+                        callback_name, callback_config
+                    )
+                    setattr(self, callback_name, callback_method)
+                    logger.info(f"Registered callback: {callback_name}")
+            else:
+                logger.info("No callbacks defined for this spider")
+
+            # Build sitemap_rules from DB rules when callbacks are defined
+            self.sitemap_rules = self._build_sitemap_rules(spider)
+            logger.info(f"Sitemap rules: {self.sitemap_rules}")
 
     def _build_sitemap_rules(self, spider):
         """Build sitemap_rules from DB rules when callbacks are defined.
@@ -76,28 +80,28 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
         """
         from core.models import SpiderRule
 
-        db = next(get_db())
-        rules = (
-            db.query(SpiderRule)
-            .filter(SpiderRule.spider_id == spider.id)
-            .order_by(SpiderRule.priority.desc())
-            .all()
-        )
+        with get_db() as db:
+            rules = (
+                db.query(SpiderRule)
+                .filter(SpiderRule.spider_id == spider.id)
+                .order_by(SpiderRule.priority.desc())
+                .all()
+            )
 
-        sitemap_rules = []
-        for rule in rules:
-            callback = rule.callback or "parse_article"
-            if rule.allow_patterns:
-                for pattern in rule.allow_patterns:
-                    sitemap_rules.append((pattern, callback))
-            elif rule.deny_patterns:
-                # Deny-only rules: match everything except denied patterns
-                # Scrapy SitemapSpider doesn't support deny, so we use a
-                # catch-all that the callback handles
-                continue
-            else:
-                # No allow/deny patterns — catch-all rule
-                sitemap_rules.append(("/", callback))
+            sitemap_rules = []
+            for rule in rules:
+                callback = rule.callback or "parse_article"
+                if rule.allow_patterns:
+                    for pattern in rule.allow_patterns:
+                        sitemap_rules.append((pattern, callback))
+                elif rule.deny_patterns:
+                    # Deny-only rules: match everything except denied patterns
+                    # Scrapy SitemapSpider doesn't support deny, so we use a
+                    # catch-all that the callback handles
+                    continue
+                else:
+                    # No allow/deny patterns — catch-all rule
+                    sitemap_rules.append(("/", callback))
 
         if not sitemap_rules:
             # No rules with callbacks — default to parse_article for all URLs

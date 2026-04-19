@@ -26,64 +26,66 @@ class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
 
     def _load_config(self):
         """Load spider configuration from database"""
-        db = next(get_db())
-        spider = db.query(Spider).filter(Spider.name == self.spider_name).first()
+        with get_db() as db:
+            spider = db.query(Spider).filter(Spider.name == self.spider_name).first()
 
-        if not spider:
-            raise ValueError(f"Spider '{self.spider_name}' not found in database")
-        if not spider.active:
-            raise ValueError(f"Spider '{self.spider_name}' is inactive")
+            if not spider:
+                raise ValueError(f"Spider '{self.spider_name}' not found in database")
+            if not spider.active:
+                raise ValueError(f"Spider '{self.spider_name}' is inactive")
 
-        self.spider_config = spider
-        self.allowed_domains = spider.allowed_domains
-        self.start_urls = spider.start_urls
+            self.spider_config = spider
+            self.allowed_domains = spider.allowed_domains
+            self.start_urls = spider.start_urls
 
-        # Load and register callbacks FIRST (before compiling rules)
-        callbacks_config = getattr(spider, "callbacks_config", None) or {}
-        if callbacks_config:
-            logger.info(
-                f"Loading {len(callbacks_config)} callbacks: {list(callbacks_config.keys())}"
-            )
-            for callback_name, callback_config in callbacks_config.items():
-                # Create dynamic method and register it on the spider instance
-                callback_method = self._make_callback(callback_name, callback_config)
-                setattr(self, callback_name, callback_method)
-                logger.info(f"Registered callback: {callback_name}")
-        else:
-            logger.info("No callbacks defined for this spider")
-
-        # Compile rules AFTER callbacks are registered
-        self.rules = []
-        db_rules = sorted(spider.rules, key=lambda r: r.priority, reverse=True)
-
-        for r in db_rules:
-            le_kwargs = {}
-            if r.allow_patterns:
-                le_kwargs["allow"] = r.allow_patterns
-            if r.deny_patterns:
-                le_kwargs["deny"] = r.deny_patterns
-            if r.restrict_xpaths:
-                le_kwargs["restrict_xpaths"] = r.restrict_xpaths
-            if r.restrict_css:
-                le_kwargs["restrict_css"] = r.restrict_css
-
-            callback = None
-            if r.callback:
-                if hasattr(self, r.callback):
-                    callback = r.callback
-                else:
-                    self.logger.warning(
-                        f"Callback '{r.callback}' not found on spider, ignoring rule"
+            # Load and register callbacks FIRST (before compiling rules)
+            callbacks_config = getattr(spider, "callbacks_config", None) or {}
+            if callbacks_config:
+                logger.info(
+                    f"Loading {len(callbacks_config)} callbacks: {list(callbacks_config.keys())}"
+                )
+                for callback_name, callback_config in callbacks_config.items():
+                    # Create dynamic method and register it on the spider instance
+                    callback_method = self._make_callback(
+                        callback_name, callback_config
                     )
-                    continue
+                    setattr(self, callback_name, callback_method)
+                    logger.info(f"Registered callback: {callback_name}")
+            else:
+                logger.info("No callbacks defined for this spider")
 
-            self.rules.append(
-                Rule(LinkExtractor(**le_kwargs), callback=callback, follow=r.follow)
-            )
+            # Compile rules AFTER callbacks are registered
+            self.rules = []
+            db_rules = sorted(spider.rules, key=lambda r: r.priority, reverse=True)
 
-        # Load settings and CF handlers via mixin
-        self._load_settings_from_db(spider)
-        self._setup_cloudflare_handlers()
+            for r in db_rules:
+                le_kwargs = {}
+                if r.allow_patterns:
+                    le_kwargs["allow"] = r.allow_patterns
+                if r.deny_patterns:
+                    le_kwargs["deny"] = r.deny_patterns
+                if r.restrict_xpaths:
+                    le_kwargs["restrict_xpaths"] = r.restrict_xpaths
+                if r.restrict_css:
+                    le_kwargs["restrict_css"] = r.restrict_css
+
+                callback = None
+                if r.callback:
+                    if hasattr(self, r.callback):
+                        callback = r.callback
+                    else:
+                        self.logger.warning(
+                            f"Callback '{r.callback}' not found on spider, ignoring rule"
+                        )
+                        continue
+
+                self.rules.append(
+                    Rule(LinkExtractor(**le_kwargs), callback=callback, follow=r.follow)
+                )
+
+            # Load settings and CF handlers via mixin
+            self._load_settings_from_db(spider)
+            self._setup_cloudflare_handlers()
 
     async def parse_start_url(self, response):
         """Process start URLs - use first available callback, otherwise parse_article."""
