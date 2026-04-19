@@ -300,7 +300,7 @@ class BaseDBSpiderMixin:
             import curl_cffi.requests as curl_requests
             import asyncio
 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
 
             all_items = []
             page = 1
@@ -506,12 +506,12 @@ class BaseDBSpiderMixin:
 
             return all_items
 
-        except ImportError:
-            logger.warning("curl_cffi not available for AJAX requests")
-            return []
         except Exception as e:
+            # Re-raise so the spider fails loudly instead of silently returning
+            # an empty list. Previously a bare except hid ImportError for
+            # curl_cffi and any genuine extraction bug looked like "no items".
             logger.error(f"AJAX extraction failed: {e}")
-            return []
+            raise
 
     def _get_callback(self, callback_name):
         """Look up a registered callback method by name.

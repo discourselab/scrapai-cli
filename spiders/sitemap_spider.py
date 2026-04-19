@@ -78,33 +78,22 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
         Each DB rule with allow_patterns and a callback becomes a sitemap rule.
         Falls back to [("/", "parse_article")] if no callback rules exist.
         """
-        from core.models import SpiderRule
+        rules = sorted(spider.rules, key=lambda r: r.priority, reverse=True)
 
-        with get_db() as db:
-            rules = (
-                db.query(SpiderRule)
-                .filter(SpiderRule.spider_id == spider.id)
-                .order_by(SpiderRule.priority.desc())
-                .all()
-            )
-
-            sitemap_rules = []
-            for rule in rules:
-                callback = rule.callback or "parse_article"
-                if rule.allow_patterns:
-                    for pattern in rule.allow_patterns:
-                        sitemap_rules.append((pattern, callback))
-                elif rule.deny_patterns:
-                    # Deny-only rules: match everything except denied patterns
-                    # Scrapy SitemapSpider doesn't support deny, so we use a
-                    # catch-all that the callback handles
-                    continue
-                else:
-                    # No allow/deny patterns — catch-all rule
-                    sitemap_rules.append(("/", callback))
+        sitemap_rules = []
+        for rule in rules:
+            callback = rule.callback or "parse_article"
+            if rule.allow_patterns:
+                for pattern in rule.allow_patterns:
+                    sitemap_rules.append((pattern, callback))
+            elif rule.deny_patterns:
+                # Scrapy SitemapSpider has no deny support — skip and let the
+                # callback handle filtering if needed.
+                continue
+            else:
+                sitemap_rules.append(("/", callback))
 
         if not sitemap_rules:
-            # No rules with callbacks — default to parse_article for all URLs
             sitemap_rules = [("/", "parse_article")]
 
         return sitemap_rules
