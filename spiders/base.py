@@ -270,6 +270,7 @@ class BaseDBSpiderMixin:
         # Resolve relative URL
         if ajax_url.startswith("/"):
             from urllib.parse import urljoin
+
             ajax_url = urljoin(response.url, ajax_url)
 
         # Get post ID if needed
@@ -278,6 +279,7 @@ class BaseDBSpiderMixin:
             raw_id = response.css(post_id_css).get()
             if raw_id and post_id_regex:
                 import re as re_module
+
                 match = re_module.search(post_id_regex, raw_id)
                 post_id = match.group(1) if match else raw_id
             else:
@@ -313,13 +315,16 @@ class BaseDBSpiderMixin:
                 request_url = ajax_url
                 if ajax_method == "GET" and request_data:
                     from urllib.parse import urlencode
+
                     request_url = f"{ajax_url}?{urlencode(request_data)}"
 
                 if ajax_method == "GET":
                     resp = await loop.run_in_executor(
                         None,
                         lambda url=request_url: curl_requests.get(
-                            url, impersonate="chrome", timeout=30,
+                            url,
+                            impersonate="chrome",
+                            timeout=30,
                         ),
                     )
                 else:
@@ -372,6 +377,7 @@ class BaseDBSpiderMixin:
                                 # Strip HTML tags if present
                                 if isinstance(value, str) and "<" in value:
                                     import re as re_mod
+
                                     value = re_mod.sub(r"<[^>]+>", "", value).strip()
                                 procs = field_config.get("processors", [])
                                 if procs:
@@ -380,7 +386,11 @@ class BaseDBSpiderMixin:
                         all_items.append(item)
 
                     # Check if we need to paginate
-                    if ajax_per_page and ajax_per_page > 0 and len(json_items) >= ajax_per_page:
+                    if (
+                        ajax_per_page
+                        and ajax_per_page > 0
+                        and len(json_items) >= ajax_per_page
+                    ):
                         page += 1
                         continue
                     else:
@@ -407,12 +417,17 @@ class BaseDBSpiderMixin:
                                 if isinstance(value, dict):
                                     value = value.get(key)
                                 elif isinstance(value, list) and key.isdigit():
-                                    value = value[int(key)] if int(key) < len(value) else None
+                                    value = (
+                                        value[int(key)]
+                                        if int(key) < len(value)
+                                        else None
+                                    )
                                 else:
                                     value = None
                                     break
                             if isinstance(value, str) and "<" in value:
                                 import re as re_mod
+
                                 value = re_mod.sub(r"<[^>]+>", "", value).strip()
                             procs = field_config.get("processors", [])
                             if procs:
@@ -487,9 +502,7 @@ class BaseDBSpiderMixin:
                     f"(from {len(by_id)} total) from {ajax_url}"
                 )
             else:
-                logger.info(
-                    f"AJAX extracted {len(all_items)} items from {ajax_url}"
-                )
+                logger.info(f"AJAX extracted {len(all_items)} items from {ajax_url}")
 
             return all_items
 
@@ -650,9 +663,7 @@ class BaseDBSpiderMixin:
                 if field_config.get("type") == "nested_list":
                     value = self._extract_nested_list(response, field_config)
                 elif field_config.get("type") == "ajax_nested_list":
-                    value = await self._extract_ajax_nested_list(
-                        response, field_config
-                    )
+                    value = await self._extract_ajax_nested_list(response, field_config)
                     # json_object returns a dict — merge flat into item
                     if isinstance(value, dict):
                         item.update(value)

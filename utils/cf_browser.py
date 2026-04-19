@@ -185,7 +185,9 @@ class CloudflareBrowserClient:
             except Exception as nav_err:
                 err_str = str(nav_err).lower()
                 if "response_code_failure" in err_str or "403" in err_str:
-                    logger.debug(f"Got HTTP error during navigation (expected for CF): {nav_err}")
+                    logger.debug(
+                        f"Got HTTP error during navigation (expected for CF): {nav_err}"
+                    )
                     await asyncio.sleep(2)
                 else:
                     raise
@@ -313,10 +315,7 @@ class CloudflareBrowserClient:
             return False
 
         # Verify CF challenge frame exists
-        cf_frames = [
-            f for f in self.page.frames
-            if "challenges.cloudflare" in f.url
-        ]
+        cf_frames = [f for f in self.page.frames if "challenges.cloudflare" in f.url]
         if not cf_frames:
             return False
 
@@ -324,8 +323,8 @@ class CloudflareBrowserClient:
         for selector in [
             'iframe[src*="challenges.cloudflare"]',
             'iframe[src*="turnstile"]',
-            '#challenge-stage iframe',
-            '#turnstile-wrapper iframe',
+            "#challenge-stage iframe",
+            "#turnstile-wrapper iframe",
         ]:
             locator = self.page.locator(selector)
             count = await locator.count()
@@ -334,7 +333,9 @@ class CloudflareBrowserClient:
                 if box and box["width"] > 0 and box["height"] > 0:
                     cx = box["x"] + box["width"] / 2
                     cy = box["y"] + box["height"] / 2
-                    logger.info(f"Turnstile iframe found at ({cx:.0f}, {cy:.0f}), clicking...")
+                    logger.info(
+                        f"Turnstile iframe found at ({cx:.0f}, {cy:.0f}), clicking..."
+                    )
                     await self.page.mouse.click(
                         cx + random_delay(-5, 5),
                         cy + random_delay(-3, 3),
@@ -344,9 +345,9 @@ class CloudflareBrowserClient:
 
         # Strategy 2: Find the challenge container and click within it
         for selector in [
-            '#challenge-stage',
-            '#turnstile-wrapper',
-            '.cf-turnstile',
+            "#challenge-stage",
+            "#turnstile-wrapper",
+            ".cf-turnstile",
             'div[class*="challenge"]',
         ]:
             locator = self.page.locator(selector)
@@ -357,7 +358,9 @@ class CloudflareBrowserClient:
                     # Click left-center area where checkbox typically is
                     cx = box["x"] + 30
                     cy = box["y"] + box["height"] / 2
-                    logger.info(f"Challenge container found, clicking at ({cx:.0f}, {cy:.0f})...")
+                    logger.info(
+                        f"Challenge container found, clicking at ({cx:.0f}, {cy:.0f})..."
+                    )
                     await self.page.mouse.click(
                         cx + random_delay(-3, 3),
                         cy + random_delay(-3, 3),
@@ -368,7 +371,9 @@ class CloudflareBrowserClient:
         # Strategy 3: Fall back to known coordinates
         # CF Turnstile checkbox is rendered at a consistent position on
         # the challenge page — typically around (230, 335) on a 1280x720 viewport
-        logger.info("No iframe/container found via selectors, clicking known Turnstile position...")
+        logger.info(
+            "No iframe/container found via selectors, clicking known Turnstile position..."
+        )
         await self.page.mouse.click(
             230 + random_delay(-10, 10),
             337 + random_delay(-5, 5),

@@ -18,7 +18,6 @@ import threading
 import time
 from typing import Dict, Optional
 
-import aiohttp
 from scrapy.http import HtmlResponse, Request
 from twisted.internet import threads
 from settings import USER_AGENT
@@ -409,9 +408,7 @@ class CloudflareDownloadHandler:
         try:
             import curl_cffi.requests as curl_requests
 
-            cookie_str = "; ".join(
-                [f"{k}={v}" for k, v in cached["cookies"].items()]
-            )
+            cookie_str = "; ".join([f"{k}={v}" for k, v in cached["cookies"].items()])
             headers = {
                 "User-Agent": cached["user_agent"],
                 "Cookie": cookie_str,

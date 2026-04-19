@@ -192,34 +192,46 @@ class FieldExtractSchema(BaseModel):
         default=None, description="CSS selector to extract post ID from page"
     )
     response_json_field: Optional[str] = Field(
-        default=None, description="Dot-path to HTML in JSON response (e.g., 'data.comment_list')"
+        default=None,
+        description="Dot-path to HTML in JSON response (e.g., 'data.comment_list')",
     )
     post_id_regex: Optional[str] = Field(
-        default=None, description="Regex to extract post ID from post_id_css value (must have 1 capture group)"
+        default=None,
+        description="Regex to extract post ID from post_id_css value (must have 1 capture group)",
     )
     ajax_method: Optional[str] = Field(
-        default=None, description="HTTP method for AJAX request: GET or POST (default: POST)"
+        default=None,
+        description="HTTP method for AJAX request: GET or POST (default: POST)",
     )
     response_type: Optional[str] = Field(
-        default=None, description="Response type: json_html (HTML inside JSON), json_array (JSON array), or json_object (single JSON object)"
+        default=None,
+        description=(
+            "Response type: json_html (HTML inside JSON), "
+            "json_array (JSON array), or json_object (single JSON object)"
+        ),
     )
     ajax_per_page: Optional[int] = Field(
-        default=None, description="Items per page for AJAX pagination (0 = no pagination)"
+        default=None,
+        description="Items per page for AJAX pagination (0 = no pagination)",
     )
     json_path: Optional[str] = Field(
-        default=None, description="Dot-path to extract value from JSON object (for json_array response_type)"
+        default=None,
+        description="Dot-path to extract value from JSON object (for json_array response_type)",
     )
     nest_replies: Optional[bool] = Field(
-        default=None, description="Nest reply items under parent items using comment_id/parent_id fields"
+        default=None,
+        description="Nest reply items under parent items using comment_id/parent_id fields",
     )
     comment_id_field: Optional[str] = Field(
         default=None, description="Field name for comment ID (default: comment_id)"
     )
     parent_id_field: Optional[str] = Field(
-        default=None, description="Field name for parent comment ID (default: parent_id)"
+        default=None,
+        description="Field name for parent comment ID (default: parent_id)",
     )
     replies_field: Optional[str] = Field(
-        default=None, description="Field name for nested replies array (default: replies)"
+        default=None,
+        description="Field name for nested replies array (default: replies)",
     )
 
     @model_validator(mode="after")
