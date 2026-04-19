@@ -71,6 +71,7 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
         Falls back to [("/", "parse_article")] if no callback rules exist.
         """
         from core.models import SpiderRule
+
         db = next(get_db())
         rules = (
             db.query(SpiderRule)
