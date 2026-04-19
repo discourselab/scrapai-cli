@@ -22,6 +22,10 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
             raise ValueError("spider_name argument is required")
 
         self.spider_name = spider_name
+        # Override the class-level Scrapy name so DeltaFetch cache, JSONL output
+        # paths, and pipeline source attribution use the actual spider name
+        # instead of "sitemap_database_spider" being shared by every sitemap crawl.
+        self.name = spider_name
         self._items_scraped = 0
         self._item_limit = None
         self._load_config()

@@ -8,7 +8,7 @@ from core.config import DATA_DIR
 
 @click.command()
 @click.argument("spider_name")
-@click.option("--project", default=None, help="Project name")
+@click.option("--project", required=True, help="Project name")
 @click.option(
     "--format",
     "-f",
@@ -29,16 +29,13 @@ def export(spider_name, project, fmt, output, limit, url, text, title):
 
     db = next(get_db())
 
-    query = db.query(Spider).filter(Spider.name == spider_name)
-    if project:
-        query = query.filter(Spider.project == project)
-        project_msg = f" in project '{project}'"
-    else:
-        project_msg = ""
-
-    spider = query.first()
+    spider = (
+        db.query(Spider)
+        .filter(Spider.name == spider_name, Spider.project == project)
+        .first()
+    )
     if not spider:
-        click.echo(f"❌ Spider '{spider_name}'{project_msg} not found in database.")
+        click.echo(f"❌ Spider '{spider_name}' not found in project '{project}'.")
         return
 
     query = db.query(ScrapedItem).filter(ScrapedItem.spider_id == spider.id)
