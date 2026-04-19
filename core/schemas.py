@@ -172,7 +172,7 @@ class FieldExtractSchema(BaseModel):
 
     # For nested list extraction
     type: Optional[str] = Field(
-        default=None, description="Field type (e.g., 'nested_list')"
+        default=None, description="Field type (e.g., 'nested_list', 'ajax_nested_list')"
     )
     selector: Optional[str] = Field(
         default=None, description="CSS selector for nested list items"
@@ -181,21 +181,68 @@ class FieldExtractSchema(BaseModel):
         default=None, description="Nested extraction config"
     )
 
+    # For ajax_nested_list extraction
+    ajax_url: Optional[str] = Field(
+        default=None, description="AJAX endpoint URL (relative or absolute)"
+    )
+    ajax_data: Optional[Dict[str, str]] = Field(
+        default=None, description="POST data for AJAX request"
+    )
+    post_id_css: Optional[str] = Field(
+        default=None, description="CSS selector to extract post ID from page"
+    )
+    response_json_field: Optional[str] = Field(
+        default=None, description="Dot-path to HTML in JSON response (e.g., 'data.comment_list')"
+    )
+    post_id_regex: Optional[str] = Field(
+        default=None, description="Regex to extract post ID from post_id_css value (must have 1 capture group)"
+    )
+    ajax_method: Optional[str] = Field(
+        default=None, description="HTTP method for AJAX request: GET or POST (default: POST)"
+    )
+    response_type: Optional[str] = Field(
+        default=None, description="Response type: json_html (HTML inside JSON), json_array (JSON array), or json_object (single JSON object)"
+    )
+    ajax_per_page: Optional[int] = Field(
+        default=None, description="Items per page for AJAX pagination (0 = no pagination)"
+    )
+    json_path: Optional[str] = Field(
+        default=None, description="Dot-path to extract value from JSON object (for json_array response_type)"
+    )
+    nest_replies: Optional[bool] = Field(
+        default=None, description="Nest reply items under parent items using comment_id/parent_id fields"
+    )
+    comment_id_field: Optional[str] = Field(
+        default=None, description="Field name for comment ID (default: comment_id)"
+    )
+    parent_id_field: Optional[str] = Field(
+        default=None, description="Field name for parent comment ID (default: parent_id)"
+    )
+    replies_field: Optional[str] = Field(
+        default=None, description="Field name for nested replies array (default: replies)"
+    )
+
     @model_validator(mode="after")
     def validate_selector_or_nested(self):
         """Validate that either a selector (css/xpath) or nested config is provided."""
         has_selector = self.css or self.xpath
         is_nested = self.type == "nested_list"
+        is_ajax = self.type == "ajax_nested_list"
 
-        if not has_selector and not is_nested:
+        if not has_selector and not is_nested and not is_ajax:
             raise ValueError(
                 "Field must have either 'css' or 'xpath' selector, "
-                "or be a nested_list with 'selector' and 'extract' fields"
+                "or be a nested_list/ajax_nested_list with 'selector' and 'extract' fields"
             )
 
         if is_nested and (not self.selector or not self.extract):
             raise ValueError(
                 "nested_list fields must have both 'selector' and 'extract' fields"
+            )
+
+        if is_ajax and (not self.ajax_url or not self.selector or not self.extract):
+            raise ValueError(
+                "ajax_nested_list fields must have 'ajax_url', 'selector', and 'extract' fields"
             )
 
         return self

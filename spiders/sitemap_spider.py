@@ -43,10 +43,6 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
 
         logger.info(f"Sitemap spider configured with sitemap URLs: {self.sitemap_urls}")
 
-        self.sitemap_rules = [
-            ("/", "parse_article"),
-        ]
-
         # Load settings and CF handlers via mixin
         self._load_settings_from_db(spider)
         self._setup_cloudflare_handlers()
@@ -58,12 +54,51 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
                 f"Loading {len(callbacks_config)} callbacks: {list(callbacks_config.keys())}"
             )
             for callback_name, callback_config in callbacks_config.items():
-                # Create dynamic method and register it on the spider instance
                 callback_method = self._make_callback(callback_name, callback_config)
                 setattr(self, callback_name, callback_method)
                 logger.info(f"Registered callback: {callback_name}")
         else:
             logger.info("No callbacks defined for this spider")
+
+        # Build sitemap_rules from DB rules when callbacks are defined
+        self.sitemap_rules = self._build_sitemap_rules(spider)
+        logger.info(f"Sitemap rules: {self.sitemap_rules}")
+
+    def _build_sitemap_rules(self, spider):
+        """Build sitemap_rules from DB rules when callbacks are defined.
+
+        Each DB rule with allow_patterns and a callback becomes a sitemap rule.
+        Falls back to [("/", "parse_article")] if no callback rules exist.
+        """
+        from core.models import SpiderRule
+        db = next(get_db())
+        rules = (
+            db.query(SpiderRule)
+            .filter(SpiderRule.spider_id == spider.id)
+            .order_by(SpiderRule.priority.desc())
+            .all()
+        )
+
+        sitemap_rules = []
+        for rule in rules:
+            callback = rule.callback or "parse_article"
+            if rule.allow_patterns:
+                for pattern in rule.allow_patterns:
+                    sitemap_rules.append((pattern, callback))
+            elif rule.deny_patterns:
+                # Deny-only rules: match everything except denied patterns
+                # Scrapy SitemapSpider doesn't support deny, so we use a
+                # catch-all that the callback handles
+                continue
+            else:
+                # No allow/deny patterns — catch-all rule
+                sitemap_rules.append(("/", callback))
+
+        if not sitemap_rules:
+            # No rules with callbacks — default to parse_article for all URLs
+            sitemap_rules = [("/", "parse_article")]
+
+        return sitemap_rules
 
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):

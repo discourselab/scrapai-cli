@@ -99,23 +99,43 @@ async def inspect_page_async(
         # Always headed mode (headless=False) for best stealth
         from utils.cf_browser import CloudflareBrowserClient
 
-        # Build full escalation chain: direct → datacenter → residential
-        # Inspector always auto-escalates silently - no user approval needed
-        proxy_chain = [None]  # Start with direct connection
-
+        # Build proxy chain based on proxy_type
         dc_user = os.getenv("DATACENTER_PROXY_USERNAME")
         dc_pass = os.getenv("DATACENTER_PROXY_PASSWORD")
         dc_host = os.getenv("DATACENTER_PROXY_HOST")
         dc_port = os.getenv("DATACENTER_PROXY_PORT")
-        if all([dc_user, dc_pass, dc_host, dc_port]):
-            proxy_chain.append(f"http://{dc_user}:{dc_pass}@{dc_host}:{dc_port}")
+        dc_url = (
+            f"http://{dc_user}:{dc_pass}@{dc_host}:{dc_port}"
+            if all([dc_user, dc_pass, dc_host, dc_port])
+            else None
+        )
 
         res_user = os.getenv("RESIDENTIAL_PROXY_USERNAME")
         res_pass = os.getenv("RESIDENTIAL_PROXY_PASSWORD")
         res_host = os.getenv("RESIDENTIAL_PROXY_HOST")
         res_port = os.getenv("RESIDENTIAL_PROXY_PORT")
-        if all([res_user, res_pass, res_host, res_port]):
-            proxy_chain.append(f"http://{res_user}:{res_pass}@{res_host}:{res_port}")
+        res_url = (
+            f"http://{res_user}:{res_pass}@{res_host}:{res_port}"
+            if all([res_user, res_pass, res_host, res_port])
+            else None
+        )
+
+        if proxy_type == "residential":
+            # Skip straight to residential/ISP proxy (e.g. for geo-blocked sites)
+            proxy_chain = [res_url] if res_url else [None]
+        elif proxy_type == "static":
+            # Skip straight to datacenter proxy
+            proxy_chain = [dc_url] if dc_url else [None]
+        elif proxy_type == "none":
+            # Direct only, no proxies
+            proxy_chain = [None]
+        else:
+            # Auto: full escalation chain direct → datacenter → residential
+            proxy_chain = [None]
+            if dc_url:
+                proxy_chain.append(dc_url)
+            if res_url:
+                proxy_chain.append(res_url)
 
         async with CloudflareBrowserClient(
             headless=False, proxy_chain=proxy_chain

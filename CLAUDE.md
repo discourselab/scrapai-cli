@@ -73,6 +73,9 @@ These are non-negotiable. Violating these will cause failures:
 
 **HTML processing commands:**
 - `./scrapai inspect <url>` — fetch and save HTML (default: lightweight HTTP, use `--browser` for JS-rendered or Cloudflare-protected sites)
+  - `--proxy-type residential` — skip straight to ISP proxy (for geo-blocked sites)
+  - `--proxy-type static` — use datacenter proxy only
+  - `--proxy-type none` — direct connection only
 - `./scrapai extract-urls --file <html>` — extract URLs from saved HTML
 - `./scrapai analyze <html>` — analyze HTML structure, test selectors, find fields
 
@@ -416,6 +419,15 @@ Report back: status, spider name, queue item ID, summary.
 { "USE_SITEMAP": true, "EXTRACTOR_ORDER": ["newspaper", "trafilatura"] }
 ```
 
+**Sitemap with callbacks:** Sitemap spiders support named callbacks. When rules with callbacks are defined, URLs are routed to the appropriate callback instead of `parse_article`.
+```json
+{
+  "USE_SITEMAP": true,
+  "rules": [{"allow": [".*"], "callback": "parse_post"}],
+  "callbacks": {"parse_post": {"extract": {...}}}
+}
+```
+
 **Sitemap with date filtering:**
 ```json
 { "USE_SITEMAP": true, "SITEMAP_SINCE": "2y", "EXTRACTOR_ORDER": ["newspaper", "trafilatura"] }
@@ -443,6 +455,17 @@ Use `--browser` flag for JS-rendered or Cloudflare-protected sites. **Hybrid mod
 **Note:** Both settings do the same thing (enable CloakBrowser), but use the appropriate one for clarity:
 - `CLOUDFLARE_ENABLED` - Site has Cloudflare protection
 - `BROWSER_ENABLED` - Site needs JS rendering (React, Angular, etc.)
+
+**Proxy type for CF bypass (geo-blocked sites):**
+
+Use `PROXY_TYPE` in spider settings to control which proxy the CF handler uses:
+```json
+{
+  "CLOUDFLARE_ENABLED": true,
+  "PROXY_TYPE": "residential"  // Skip straight to ISP proxy (for geo-blocked sites)
+}
+```
+Values: `"auto"` (default, escalates direct → dc → residential), `"residential"` (ISP only), `"datacenter"` (DC only).
 
 Advanced (if hybrid fails - rare):
 ```json
@@ -536,10 +559,105 @@ For non-article content (products, jobs, listings, forums), use **named callback
 - XPath: `{"xpath": "//h1/text()"}`
 - Lists: `{"css": "li::text", "get_all": true}`
 - Nested: `{"type": "nested_list", "selector": "div.item", "extract": {...}}`
+- AJAX: `{"type": "ajax_nested_list", ...}` — fetch data from AJAX endpoints (see below)
 
 **Processors (8 available):** See [docs/processors.md](docs/processors.md)
 - `strip`, `replace`, `regex`, `cast`, `join`, `default`, `lowercase`, `parse_datetime`
 - Chain: `[{"type": "strip"}, {"type": "regex", ...}, {"type": "cast", "to": "float"}]`
+- **Processors work inside `nested_list` and `ajax_nested_list` fields** — applied per-field within each nested item.
+
+**AJAX Nested List (`ajax_nested_list`):**
+
+For extracting data from AJAX endpoints (e.g., AJAX-loaded comments). Makes HTTP requests to fetch additional data not in the main page HTML.
+
+```json
+{
+  "comments": {
+    "type": "ajax_nested_list",
+    "ajax_url": "/wp-admin/admin-ajax.php",
+    "ajax_method": "POST",
+    "ajax_data": {
+      "action": "wpdLoadMoreComments",
+      "postId": "{post_id}"
+    },
+    "post_id_css": "body::attr(class)",
+    "post_id_regex": "postid-(\\d+)",
+    "response_json_field": "data.comment_list",
+    "selector": "div.wpd-comment",
+    "extract": {
+      "username": {"css": "div.wpd-comment-author a::text"},
+      "text": {"css": "div.wpd-comment-text p::text", "get_all": true}
+    }
+  }
+}
+```
+
+**Config options:**
+- `ajax_url` — endpoint URL (relative or absolute)
+- `ajax_method` — `GET` or `POST` (default: `POST`)
+- `ajax_data` — request parameters. Use `{post_id}` placeholder for dynamic post IDs
+- `post_id_css` — CSS selector to extract post ID from the page
+- `post_id_regex` — regex to extract ID from the selector value (e.g., `"postid-(\\d+)"`)
+- `response_json_field` — dot-path to HTML content in JSON response (e.g., `"data.comment_list"`)
+- `response_type` — `json_html` (default, HTML inside JSON) or `json_array` (JSON array of objects)
+- `ajax_per_page` — items per page for pagination (0 = no pagination)
+- `selector` / `extract` — same as `nested_list` for HTML responses
+- For `json_array` responses, use `json_path` in extract fields instead of CSS/XPath:
+  ```json
+  {"json_path": "author_name", "processors": [{"type": "strip"}]}
+  ```
+
+**Nesting replies (threaded comments):**
+
+When comments have parent-child relationships (e.g., WP REST API returns flat list with `parent` field):
+```json
+{
+  "nest_replies": true,
+  "comment_id_field": "comment_id",
+  "parent_id_field": "parent_id",
+  "replies_field": "replies"
+}
+```
+This builds a tree structure where replies are nested inside their parent comment's `replies` array.
+
+**Common patterns:**
+
+*wpDiscuz AJAX comments (POST):*
+```json
+{
+  "type": "ajax_nested_list",
+  "ajax_url": "/wp-admin/admin-ajax.php",
+  "ajax_data": {"action": "wpdLoadMoreComments", "offset": "0", "postId": "{post_id}"},
+  "post_id_css": "body::attr(class)",
+  "post_id_regex": "postid-(\\d+)",
+  "response_json_field": "data.comment_list",
+  "selector": "div.wpd-comment",
+  "extract": { ... }
+}
+```
+
+*WP REST API comments (GET, with nesting):*
+```json
+{
+  "type": "ajax_nested_list",
+  "ajax_url": "/wp-json/wp/v2/comments",
+  "ajax_method": "GET",
+  "ajax_data": {"post": "{post_id}", "order": "asc"},
+  "ajax_per_page": 100,
+  "post_id_css": "body::attr(class)",
+  "post_id_regex": "postid-(\\d+)",
+  "response_type": "json_array",
+  "nest_replies": true,
+  "selector": "unused",
+  "extract": {
+    "username": {"json_path": "author_name"},
+    "comment_text": {"json_path": "content.rendered"},
+    "comment_date": {"json_path": "date"},
+    "parent_id": {"json_path": "parent"},
+    "comment_id": {"json_path": "id"}
+  }
+}
+```
 
 **Reserved names (NEVER use):** `parse_article`, `parse_start_url`, `start_requests`, `from_crawler`, `closed`, `parse`
 

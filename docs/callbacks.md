@@ -163,6 +163,16 @@ Extract fields from the **page URL** using regex (useful when URL contains data 
 - Items are only counted when the detail callback yields (not the iterate callback)
 - `extract` is optional in iterate callbacks (you can follow without extracting row fields)
 
+## AJAX Nested List
+
+For extracting data from AJAX endpoints (e.g., comments loaded via AJAX). See CLAUDE.md for full documentation.
+
+Two response types:
+- `json_html` (default) — JSON response containing HTML, parsed with CSS selectors
+- `json_array` — JSON array of objects, extracted with `json_path`
+
+Supports pagination (`ajax_per_page`), dynamic post IDs (`post_id_css` + `post_id_regex`), and nested reply threading (`nest_replies`).
+
 ## Templates
 
 Complete working examples in `templates/`:
