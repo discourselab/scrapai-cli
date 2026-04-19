@@ -55,7 +55,12 @@ def temp_db(monkeypatch) -> Generator[Session, None, None]:
     SessionLocal = sessionmaker(bind=engine)
     session = SessionLocal()
 
-    # Patch get_db() where it's used (in spiders.database_spider module)
+    # Patch get_db() where it's used (in spiders.database_spider module).
+    # get_db is now a @contextmanager, so the mock must implement the context
+    # manager protocol via @contextmanager as well.
+    from contextlib import contextmanager
+
+    @contextmanager
     def mock_get_db():
         yield session
 

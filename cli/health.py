@@ -59,8 +59,7 @@ def health(
     click.echo(f"{'='*60}\n")
 
     # Get all spiders in project
-    db = next(get_db())
-    try:
+    with get_db() as db:
         spiders = (
             db.query(Spider)
             .filter(Spider.project == project, Spider.active == True)  # noqa: E712
@@ -99,9 +98,6 @@ def health(
 
         # Exit code: 0 if all passed, 1 if any failed
         sys.exit(0 if failed == 0 else 1)
-
-    finally:
-        db.close()
 
 
 def _test_spider(
@@ -146,8 +142,7 @@ def _test_spider(
         from core.db import get_db
         from core.models import ScrapedItem
 
-        db = next(get_db())
-        try:
+        with get_db() as db:
             items = (
                 db.query(ScrapedItem)
                 .filter(
@@ -195,9 +190,6 @@ def _test_spider(
                     )
                 else:
                     result["status"] = "passed"
-
-        finally:
-            db.close()
 
     except Exception as e:
         result["status"] = "failed"

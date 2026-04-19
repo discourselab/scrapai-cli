@@ -1,4 +1,5 @@
 import os
+from contextlib import contextmanager
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, scoped_session, DeclarativeBase
 from dotenv import load_dotenv
@@ -40,10 +41,20 @@ class Base(DeclarativeBase):
     pass
 
 
+@contextmanager
 def get_db():
+    """Yield a SQLAlchemy session, rolling back on exception and always closing.
+
+    Usage:
+        with get_db() as db:
+            db.query(...)
+    """
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 

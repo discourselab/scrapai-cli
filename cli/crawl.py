@@ -75,27 +75,29 @@ def crawl_all(project, limit):
     from core.db import get_db
     from core.models import Spider
 
-    db = next(get_db())
-    spiders = (
-        db.query(Spider)
-        .filter(Spider.project == project, Spider.active.is_(True))
-        .all()
-    )
+    with get_db() as db:
+        spiders = (
+            db.query(Spider)
+            .filter(Spider.project == project, Spider.active.is_(True))
+            .all()
+        )
 
-    if not spiders:
-        click.echo(f"❌ No active spiders found for project '{project}'")
-        return
+        if not spiders:
+            click.echo(f"❌ No active spiders found for project '{project}'")
+            return
+
+        # Materialize spider names before exiting the session so we can call
+        # _run_spider (which opens its own session) outside the with-block.
+        spider_names = [s.name for s in spiders]
 
     click.echo(f"🚀 Running all spiders for project: {project}")
-    click.echo(f"🕷️  Spiders: {', '.join(s.name for s in spiders)}")
+    click.echo(f"🕷️  Spiders: {', '.join(spider_names)}")
 
-    for s in spiders:
+    for name in spider_names:
         click.echo(f"\n{'='*50}")
-        click.echo(f"Running: {s.name}")
+        click.echo(f"Running: {name}")
         click.echo(f"{'='*50}")
-        _run_spider(
-            project, s.name, None, limit, None, "auto", False, None, False, False
-        )
+        _run_spider(project, name, None, limit, None, "auto", False, None, False, False)
 
 
 def _run_spider(
@@ -114,21 +116,22 @@ def _run_spider(
     from core.db import get_db
     from core.models import Spider
 
-    db = next(get_db())
-    db_spider = (
-        db.query(Spider)
-        .filter(Spider.name == spider_name, Spider.project == project_name)
-        .first()
-    )
+    with get_db() as db:
+        db_spider = (
+            db.query(Spider)
+            .filter(Spider.name == spider_name, Spider.project == project_name)
+            .first()
+        )
 
-    if not db_spider:
-        db.close()
-        click.echo(f"❌ Spider '{spider_name}' not found in project '{project_name}'.")
-        return
+        if not db_spider:
+            click.echo(
+                f"❌ Spider '{spider_name}' not found in project '{project_name}'."
+            )
+            return
 
-    # Extract all needed info from db_spider before closing the connection
-    spider_settings = list(db_spider.settings) if db_spider.settings else []
-    db.close()
+        # Extract all needed info from db_spider before exiting the session
+        # so the subprocess work below can run without a live DB connection.
+        spider_settings = list(db_spider.settings) if db_spider.settings else []
 
     click.echo(f"🚀 Running DB spider: {spider_name}")
 
