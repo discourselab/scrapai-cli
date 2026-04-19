@@ -163,23 +163,39 @@ def next_item(project):
             """),
                 {"processing_by": processing_by, "project_name": project},
             )
+            row = result.fetchone()
         else:
-            result = db.execute(
-                text("""
-                UPDATE crawl_queue
-                SET status = 'processing', processing_by = :processing_by,
-                    locked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                WHERE id = (
-                    SELECT id FROM crawl_queue
-                    WHERE status = 'pending' AND project_name = :project_name
-                    ORDER BY priority DESC, created_at ASC LIMIT 1
-                ) AND status = 'pending'
-                RETURNING id, website_url, custom_instruction, priority
-            """),
-                {"processing_by": processing_by, "project_name": project},
-            )
+            # SQLite has no FOR UPDATE SKIP LOCKED. Pick a candidate, then
+            # claim it with a status guard. If another worker beat us to that
+            # row the UPDATE matches 0 rows — retry with a fresh pick before
+            # declaring the queue empty.
+            row = None
+            for _ in range(3):
+                candidate_id = db.execute(
+                    text(
+                        "SELECT id FROM crawl_queue "
+                        "WHERE status = 'pending' AND project_name = :project_name "
+                        "ORDER BY priority DESC, created_at ASC LIMIT 1"
+                    ),
+                    {"project_name": project},
+                ).scalar()
+                if candidate_id is None:
+                    break
+                result = db.execute(
+                    text("""
+                    UPDATE crawl_queue
+                    SET status = 'processing', processing_by = :processing_by,
+                        locked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = :id AND status = 'pending'
+                    RETURNING id, website_url, custom_instruction, priority
+                """),
+                    {"processing_by": processing_by, "id": candidate_id},
+                )
+                row = result.fetchone()
+                if row:
+                    break
+                db.commit()  # release the failed write so the next attempt sees fresh state
 
-        row = result.fetchone()
         db.commit()
 
         if row:

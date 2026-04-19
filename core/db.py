@@ -21,6 +21,9 @@ def set_sqlite_pragma(dbapi_conn, connection_record):
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.execute("PRAGMA cache_size=-64000")
+        # Wait up to 5s for write locks instead of immediately failing with
+        # "database is locked" — needed for concurrent queue workers.
+        cursor.execute("PRAGMA busy_timeout=5000")
         cursor.close()
 
 
