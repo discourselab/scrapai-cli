@@ -62,7 +62,26 @@ If they fail → discover custom selectors (see [extractors.md](extractors.md))
 }
 ```
 
-Can use main sitemap URL or specific sub-sitemap URL. Sitemap spiders don't need rules.
+Can use main sitemap URL or specific sub-sitemap URL.
+
+**Sitemap with callbacks:** When rules with callbacks are defined, sitemap URLs are routed to the callback instead of `parse_article`. This enables custom field extraction (e.g., video metadata, comments) on sitemap-discovered pages.
+
+```json
+{
+  "name": "example_sitemap",
+  "start_urls": ["https://example.com/post-sitemap.xml"],
+  "settings": {"USE_SITEMAP": true},
+  "rules": [{"allow": [".*"], "callback": "parse_post"}],
+  "callbacks": {
+    "parse_post": {
+      "extract": {
+        "title": {"css": "h1::text"},
+        "video_url": {"css": "source::attr(src)"}
+      }
+    }
+  }
+}
+```
 
 ### Step 4: Test & Deploy
 

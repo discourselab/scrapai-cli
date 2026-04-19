@@ -405,21 +405,53 @@ class CloudflareDownloadHandler:
                 logger.info(f"[{spider_name}] Cookie cache invalidated")
 
     async def _fetch_with_http(self, url: str, cached: Dict) -> Optional[str]:
-        """Fetch URL with HTTP + cached cookies."""
+        """Fetch URL with HTTP + cached cookies using curl_cffi for TLS stealth."""
         try:
-            timeout = aiohttp.ClientTimeout(total=60)
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
+            import curl_cffi.requests as curl_requests
+
+            cookie_str = "; ".join(
+                [f"{k}={v}" for k, v in cached["cookies"].items()]
+            )
+            headers = {
+                "User-Agent": cached["user_agent"],
+                "Cookie": cookie_str,
+            }
+
+            # Get proxy from environment (use residential if available, else datacenter)
+            proxy = None
+            res_user = os.getenv("RESIDENTIAL_PROXY_USERNAME")
+            res_pass = os.getenv("RESIDENTIAL_PROXY_PASSWORD")
+            res_host = os.getenv("RESIDENTIAL_PROXY_HOST")
+            res_port = os.getenv("RESIDENTIAL_PROXY_PORT")
+            if all([res_user, res_pass, res_host, res_port]):
+                proxy = f"http://{res_user}:{res_pass}@{res_host}:{res_port}"
+            else:
+                dc_user = os.getenv("DATACENTER_PROXY_USERNAME")
+                dc_pass = os.getenv("DATACENTER_PROXY_PASSWORD")
+                dc_host = os.getenv("DATACENTER_PROXY_HOST")
+                dc_port = os.getenv("DATACENTER_PROXY_PORT")
+                if all([dc_user, dc_pass, dc_host, dc_port]):
+                    proxy = f"http://{dc_user}:{dc_pass}@{dc_host}:{dc_port}"
+
+            proxies = {"https": proxy, "http": proxy} if proxy else None
+
+            # Run curl_cffi in thread to avoid blocking the event loop
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: curl_requests.get(
                     url,
-                    cookies=cached["cookies"],
-                    headers={"User-Agent": cached["user_agent"]},
-                    timeout=timeout,
-                ) as response:
-                    html = await response.text()
-                    logger.debug(
-                        f"HTTP fetch: {url} -> {response.status} ({len(html)} bytes)"
-                    )
-                    return html
+                    headers=headers,
+                    proxies=proxies,
+                    impersonate="chrome",
+                    timeout=60,
+                ),
+            )
+
+            logger.debug(
+                f"HTTP fetch (curl_cffi): {url} -> {response.status_code} ({len(response.text)} bytes)"
+            )
+            return response.text
         except Exception as e:
             logger.error(f"HTTP fetch failed for {url}: {e}")
             return None
@@ -473,7 +505,10 @@ class CloudflareDownloadHandler:
                 # Test crawls: auto-escalate silently (direct → dc → residential)
                 # Production crawls: stop at datacenter; residential needs approval
                 is_test_crawl = self.settings.getint("CLOSESPIDER_ITEMCOUNT", 0) > 0
-                proxy_type = self.settings.get("PROXY_TYPE", "auto")
+                spider_settings = getattr(spider, "custom_settings", {})
+                proxy_type = spider_settings.get(
+                    "PROXY_TYPE", self.settings.get("PROXY_TYPE", "auto")
+                )
 
                 dc_user = os.getenv("DATACENTER_PROXY_USERNAME")
                 dc_pass = os.getenv("DATACENTER_PROXY_PASSWORD")
@@ -495,24 +530,21 @@ class CloudflareDownloadHandler:
                     else None
                 )
 
-                # Build chain: start with direct, add proxies based on mode
-                proxy_chain = [None]
+                # Build chain based on proxy_type
                 if proxy_type == "residential":
-                    # Explicit residential flag - use full chain
-                    if dc_url:
-                        proxy_chain.append(dc_url)
-                    if res_url:
-                        proxy_chain.append(res_url)
+                    # Skip straight to residential proxy (for geo-blocked / strict CF sites)
+                    proxy_chain = [res_url] if res_url else [None]
                 elif proxy_type in ("datacenter", "auto"):
+                    proxy_chain = [None]
                     if dc_url:
                         proxy_chain.append(dc_url)
                     if res_url and is_test_crawl:
-                        # Test crawl: auto-escalate to residential silently
                         proxy_chain.append(res_url)
                     elif res_url and not is_test_crawl:
-                        # Production crawl: log expert-in-the-loop message if DC fails
                         CloudflareDownloadHandler._residential_available = True
                         CloudflareDownloadHandler._residential_url = res_url
+                else:
+                    proxy_chain = [None]
 
                 CloudflareDownloadHandler._shared_browser = CloudflareBrowserClient(
                     headless=cf_headless,

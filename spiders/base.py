@@ -214,6 +214,8 @@ class BaseDBSpiderMixin:
             logger.warning("nested_list requires 'selector' and 'extract' keys")
             return []
 
+        from core.processors import apply_processors
+
         items = []
         for item_node in selector.css(item_selector):
             item = {}
@@ -224,10 +226,279 @@ class BaseDBSpiderMixin:
                         item_node, field_config, depth=depth + 1, max_depth=max_depth
                     )
                 else:
-                    item[field_name] = self._extract_field(item_node, field_config)
+                    value = self._extract_field(item_node, field_config)
+                    processors = field_config.get("processors", [])
+                    if processors:
+                        value = apply_processors(value, processors)
+                    item[field_name] = value
             items.append(item)
 
         return items
+
+    async def _extract_ajax_nested_list(self, response, config):
+        """Extract nested list from an AJAX endpoint.
+
+        Makes an HTTP POST request to an AJAX URL, parses the HTML response,
+        and extracts fields using the same selector system as nested_list.
+
+        Config format:
+        {
+            "type": "ajax_nested_list",
+            "ajax_url": "/wp-admin/admin-ajax.php",  (relative or absolute)
+            "ajax_data": {"action": "wpdLoadMoreComments", ...},
+            "post_id_css": "video-js::attr(data-parent-post-id)",  (selector to get post ID)
+            "response_json_field": "data.comment_list",  (dot-path to HTML in JSON response)
+            "selector": "div.wpd-comment",  (CSS selector for each item in response HTML)
+            "extract": { ... field configs ... }
+        }
+        """
+        import json as json_module
+        from scrapy import Selector
+        from core.processors import apply_processors
+
+        ajax_url = config.get("ajax_url", "")
+        ajax_data = dict(config.get("ajax_data", {}))
+        post_id_css = config.get("post_id_css")
+        response_json_field = config.get("response_json_field")
+        item_selector = config.get("selector")
+        extract_config = config.get("extract", {})
+
+        if not ajax_url or not item_selector or not extract_config:
+            logger.warning("ajax_nested_list requires ajax_url, selector, and extract")
+            return []
+
+        # Resolve relative URL
+        if ajax_url.startswith("/"):
+            from urllib.parse import urljoin
+            ajax_url = urljoin(response.url, ajax_url)
+
+        # Get post ID if needed
+        post_id_regex = config.get("post_id_regex")
+        if post_id_css:
+            raw_id = response.css(post_id_css).get()
+            if raw_id and post_id_regex:
+                import re as re_module
+                match = re_module.search(post_id_regex, raw_id)
+                post_id = match.group(1) if match else raw_id
+            else:
+                post_id = raw_id
+            if post_id:
+                # Replace {post_id} placeholder in ajax_url and ajax_data values
+                if "{post_id}" in ajax_url:
+                    ajax_url = ajax_url.replace("{post_id}", post_id)
+                for key, val in ajax_data.items():
+                    if isinstance(val, str) and "{post_id}" in val:
+                        ajax_data[key] = val.replace("{post_id}", post_id)
+
+        ajax_method = config.get("ajax_method", "POST").upper()
+        response_type = config.get("response_type", "json_html")
+        ajax_per_page = config.get("ajax_per_page", 0)
+
+        try:
+            import curl_cffi.requests as curl_requests
+            import asyncio
+
+            loop = asyncio.get_event_loop()
+
+            all_items = []
+            page = 1
+            while True:
+                # Build request params
+                request_data = dict(ajax_data)
+                if ajax_per_page and ajax_per_page > 0:
+                    request_data["per_page"] = str(ajax_per_page)
+                    request_data["page"] = str(page)
+
+                # Build the actual URL with query params for GET
+                request_url = ajax_url
+                if ajax_method == "GET" and request_data:
+                    from urllib.parse import urlencode
+                    request_url = f"{ajax_url}?{urlencode(request_data)}"
+
+                if ajax_method == "GET":
+                    resp = await loop.run_in_executor(
+                        None,
+                        lambda url=request_url: curl_requests.get(
+                            url, impersonate="chrome", timeout=30,
+                        ),
+                    )
+                else:
+                    resp = await loop.run_in_executor(
+                        None,
+                        lambda: curl_requests.post(
+                            ajax_url,
+                            data=request_data,
+                            impersonate="chrome",
+                            timeout=30,
+                        ),
+                    )
+
+                if resp.status_code != 200:
+                    if page > 1:
+                        break  # Pagination exhausted
+                    logger.warning(
+                        f"AJAX request failed: {resp.status_code} for {request_url}"
+                    )
+                    return all_items
+
+                # Handle response based on type
+                if response_type == "json_array":
+                    # Response is a JSON array of objects (e.g., WP REST API)
+                    try:
+                        json_data = json_module.loads(resp.text)
+                        # Navigate to nested array if response_json_field specified
+                        if response_json_field and isinstance(json_data, dict):
+                            for key in response_json_field.split("."):
+                                json_data = json_data[key]
+                        json_items = json_data
+                        if not isinstance(json_items, list) or len(json_items) == 0:
+                            break
+                    except (json_module.JSONDecodeError, KeyError, TypeError):
+                        break
+
+                    for json_obj in json_items:
+                        item = {}
+                        for field_name, field_config in extract_config.items():
+                            json_path = field_config.get("json_path")
+                            if json_path:
+                                # Navigate dot-path in JSON object
+                                value = json_obj
+                                for key in json_path.split("."):
+                                    if isinstance(value, dict):
+                                        value = value.get(key)
+                                    else:
+                                        value = None
+                                        break
+                                # Strip HTML tags if present
+                                if isinstance(value, str) and "<" in value:
+                                    import re as re_mod
+                                    value = re_mod.sub(r"<[^>]+>", "", value).strip()
+                                procs = field_config.get("processors", [])
+                                if procs:
+                                    value = apply_processors(value, procs)
+                                item[field_name] = value
+                        all_items.append(item)
+
+                    # Check if we need to paginate
+                    if ajax_per_page and ajax_per_page > 0 and len(json_items) >= ajax_per_page:
+                        page += 1
+                        continue
+                    else:
+                        break
+
+                elif response_type == "json_object":
+                    # Response is a single JSON object — extract fields and return as dict
+                    try:
+                        json_data = json_module.loads(resp.text)
+                        if response_json_field and isinstance(json_data, dict):
+                            for key in response_json_field.split("."):
+                                json_data = json_data[key]
+                        if not isinstance(json_data, dict):
+                            break
+                    except (json_module.JSONDecodeError, KeyError, TypeError):
+                        break
+
+                    item = {}
+                    for field_name, field_config in extract_config.items():
+                        json_path = field_config.get("json_path")
+                        if json_path:
+                            value = json_data
+                            for key in json_path.split("."):
+                                if isinstance(value, dict):
+                                    value = value.get(key)
+                                elif isinstance(value, list) and key.isdigit():
+                                    value = value[int(key)] if int(key) < len(value) else None
+                                else:
+                                    value = None
+                                    break
+                            if isinstance(value, str) and "<" in value:
+                                import re as re_mod
+                                value = re_mod.sub(r"<[^>]+>", "", value).strip()
+                            procs = field_config.get("processors", [])
+                            if procs:
+                                value = apply_processors(value, procs)
+                            item[field_name] = value
+                    # Return as dict, not list — caller stores directly as field value
+                    return item
+
+                else:
+                    # response_type == "json_html" (default)
+                    html_content = resp.text
+                    if response_json_field:
+                        try:
+                            json_data = json_module.loads(resp.text)
+                            for key in response_json_field.split("."):
+                                json_data = json_data[key]
+                            html_content = json_data
+                        except (json_module.JSONDecodeError, KeyError, TypeError) as e:
+                            logger.warning(f"Failed to parse AJAX JSON response: {e}")
+                            return all_items
+
+                    sel = Selector(text=html_content)
+                    for item_node in sel.css(item_selector):
+                        item = {}
+                        for field_name, field_config in extract_config.items():
+                            if field_config.get("type") == "nested_list":
+                                item[field_name] = self._extract_nested_list(
+                                    item_node, field_config
+                                )
+                            else:
+                                value = self._extract_field(item_node, field_config)
+                                procs = field_config.get("processors", [])
+                                if procs:
+                                    value = apply_processors(value, procs)
+                                item[field_name] = value
+                        all_items.append(item)
+                    break  # No pagination for HTML responses
+
+            # Nest replies under parent comments if configured
+            nest_replies = config.get("nest_replies", False)
+            if nest_replies and all_items:
+                id_field = config.get("comment_id_field") or "comment_id"
+                parent_field = config.get("parent_id_field") or "parent_id"
+                replies_field = config.get("replies_field") or "replies"
+
+                # Build lookup by comment_id
+                by_id = {}
+                for item in all_items:
+                    cid = item.get(id_field)
+                    if cid is not None:
+                        by_id[cid] = item
+                        item[replies_field] = []
+
+                if not by_id and all_items:
+                    logger.debug(
+                        f"nest_replies: no '{id_field}' found in items. "
+                        f"Available keys: {list(all_items[0].keys())}"
+                    )
+
+                # Nest children under parents
+                roots = []
+                for item in all_items:
+                    pid = item.get(parent_field)
+                    if pid and pid != 0 and pid in by_id:
+                        by_id[pid][replies_field].append(item)
+                    else:
+                        roots.append(item)
+
+                all_items = roots
+                logger.info(
+                    f"Nested {len(all_items)} top-level comments "
+                    f"(from {len(by_id)} total) from {ajax_url}"
+                )
+            else:
+                logger.info(
+                    f"AJAX extracted {len(all_items)} items from {ajax_url}"
+                )
+
+            return all_items
+
+        except ImportError:
+            logger.warning("curl_cffi not available for AJAX requests")
+            return []
+        except Exception as e:
+            logger.error(f"AJAX extraction failed: {e}")
+            return []
 
     def _get_callback(self, callback_name):
         """Look up a registered callback method by name.
@@ -378,6 +649,14 @@ class BaseDBSpiderMixin:
                 # Handle nested_list type
                 if field_config.get("type") == "nested_list":
                     value = self._extract_nested_list(response, field_config)
+                elif field_config.get("type") == "ajax_nested_list":
+                    value = await self._extract_ajax_nested_list(
+                        response, field_config
+                    )
+                    # json_object returns a dict — merge flat into item
+                    if isinstance(value, dict):
+                        item.update(value)
+                        continue
                 else:
                     value = self._extract_field(response, field_config)
 
