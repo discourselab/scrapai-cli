@@ -12,7 +12,7 @@ from core.config import DATA_DIR
 
 @click.command()
 @click.argument("spider")
-@click.option("--project", default=None, help="Project name")
+@click.option("--project", required=True, help="Project name")
 @click.option("--output", "-o", default=None, help="Output file path")
 @click.option("--limit", "-l", type=int, default=None, help="Limit number of items")
 @click.option("--timeout", "-t", type=int, default=None, help="Max runtime in seconds")
@@ -115,11 +115,15 @@ def _run_spider(
     from core.models import Spider
 
     db = next(get_db())
-    db_spider = db.query(Spider).filter(Spider.name == spider_name).first()
+    db_spider = (
+        db.query(Spider)
+        .filter(Spider.name == spider_name, Spider.project == project_name)
+        .first()
+    )
 
     if not db_spider:
         db.close()
-        click.echo(f"❌ Spider '{spider_name}' not found in database.")
+        click.echo(f"❌ Spider '{spider_name}' not found in project '{project_name}'.")
         return
 
     # Extract all needed info from db_spider before closing the connection
