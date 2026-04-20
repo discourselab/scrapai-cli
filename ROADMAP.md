@@ -15,7 +15,7 @@ ScrapAI is infrastructure for reliable, reusable web scraping. Like npm for Java
 - ✅ Smart proxy middleware (auto-escalation when blocked)
 - ✅ Checkpoint pause/resume (production crawls)
 - ✅ S3 uploads (automatic cloud backup)
-- ✅ Multiple extraction strategies (newspaper, trafilatura, custom)
+- ✅ Multiple extraction strategies (trafilatura, newspaper, custom)
 - ✅ Named callbacks (custom field extraction)
 - ✅ Queue system (batch processing)
 - ✅ Cross-platform (Linux, macOS, Windows via WSL)

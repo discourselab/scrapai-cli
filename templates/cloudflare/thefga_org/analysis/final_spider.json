@@ -56,7 +56,7 @@
     }
   ],
   "settings": {
-    "EXTRACTOR_ORDER": ["newspaper", "trafilatura"],
+    "EXTRACTOR_ORDER": ["trafilatura", "newspaper"],
     "CLOUDFLARE_ENABLED": true,
     "CLOUDFLARE_STRATEGY": "hybrid",
     "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 600,

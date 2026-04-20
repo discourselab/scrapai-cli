@@ -21,7 +21,7 @@ Project-based Scrapy spider management for large-scale web scraping with databas
 - Content focus guidelines
 - Queue system usage
 - CLI command reference
-- Extractor configuration (newspaper, trafilatura, playwright)
+- Extractor configuration (trafilatura, newspaper, playwright)
 - Playwright wait settings (for JS-delayed content)
 - Status marking requirements
 - Common pitfalls and solutions

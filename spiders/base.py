@@ -88,7 +88,7 @@ class BaseDBSpiderMixin:
 
     async def _extract_article(self, response, source_label="database_spider"):
         """Shared article extraction logic."""
-        default_strategies = ["newspaper", "trafilatura", "playwright"]
+        default_strategies = ["trafilatura", "newspaper", "playwright"]
 
         strategies = self.custom_settings.get("EXTRACTOR_ORDER")
         if isinstance(strategies, str):

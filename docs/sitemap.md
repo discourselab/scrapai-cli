@@ -26,7 +26,7 @@ Pick 2-3 article URLs from sitemap:
 ./scrapai inspect https://example.com/article-2 --project proj
 ```
 
-If generic extractors work → `EXTRACTOR_ORDER: ["newspaper", "trafilatura"]`
+If generic extractors work → `EXTRACTOR_ORDER: ["trafilatura", "newspaper"]`
 If they fail → discover custom selectors (see [extractors.md](extractors.md))
 
 ### Step 3: Create Spider JSON
@@ -38,7 +38,7 @@ If they fail → discover custom selectors (see [extractors.md](extractors.md))
   "start_urls": ["https://example.com/sitemap.xml"],
   "settings": {
     "USE_SITEMAP": true,
-    "EXTRACTOR_ORDER": ["newspaper", "trafilatura"]
+    "EXTRACTOR_ORDER": ["trafilatura", "newspaper"]
   }
 }
 ```
@@ -51,7 +51,7 @@ If they fail → discover custom selectors (see [extractors.md](extractors.md))
   "start_urls": ["https://example.com/post-sitemap.xml"],
   "settings": {
     "USE_SITEMAP": true,
-    "EXTRACTOR_ORDER": ["custom", "newspaper"],
+    "EXTRACTOR_ORDER": ["custom", "trafilatura", "newspaper"],
     "CUSTOM_SELECTORS": {
       "title": "h1.article-title",
       "content": "div.article-body",
@@ -102,7 +102,7 @@ Filter sitemap entries by their `<lastmod>` date to only crawl recent content. T
 {
   "USE_SITEMAP": true,
   "SITEMAP_SINCE": "2y",
-  "EXTRACTOR_ORDER": ["newspaper", "trafilatura"]
+  "EXTRACTOR_ORDER": ["trafilatura", "newspaper"]
 }
 ```
 
@@ -116,7 +116,7 @@ Supported relative formats:
 {
   "USE_SITEMAP": true,
   "SITEMAP_SINCE": "2024-01-01",
-  "EXTRACTOR_ORDER": ["newspaper", "trafilatura"]
+  "EXTRACTOR_ORDER": ["trafilatura", "newspaper"]
 }
 ```
 
@@ -140,7 +140,7 @@ Supported relative formats:
 
 **Sitemap + Custom Extractors:**
 ```json
-{ "USE_SITEMAP": true, "EXTRACTOR_ORDER": ["custom", "newspaper"], "CUSTOM_SELECTORS": { ... } }
+{ "USE_SITEMAP": true, "EXTRACTOR_ORDER": ["custom", "trafilatura", "newspaper"], "CUSTOM_SELECTORS": { ... } }
 ```
 
 ## Common Sitemap Locations

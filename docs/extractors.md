@@ -1,6 +1,6 @@
 # Extractors
 
-Test generic extractors (newspaper, trafilatura) first. Only use custom selectors if they fail.
+Test generic extractors (trafilatura, newspaper) first. Only use custom selectors if they fail.
 
 ## Discovery Workflow
 
@@ -30,8 +30,8 @@ Shows: h1/h2 titles with classes, content containers by size, date elements, aut
 
 | Config | When to use |
 |--------|------------|
-| `["newspaper", "trafilatura"]` | Generic extractors work (clean news/blog HTML) |
-| `["custom", "newspaper", "trafilatura"]` | Generic extractors fail; custom selectors needed |
+| `["trafilatura", "newspaper"]` | Generic extractors work (clean news/blog HTML) |
+| `["custom", "trafilatura", "newspaper"]` | Generic extractors fail; custom selectors needed |
 | `["playwright", "custom"]` | JS-rendered content (SPAs, dynamic loading) |
 | `["playwright", "trafilatura"]` | JS-rendered, generic extractors work after rendering |
 

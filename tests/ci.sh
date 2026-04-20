@@ -31,6 +31,18 @@ fail() { echo -e "${RED}✗ $1${NC}"; FAILED+=("$1"); }
 
 FAILED=()
 
+ensure_dev_deps() {
+    if ! "$PY" -c "import pytest, black, flake8, bandit" >/dev/null 2>&1; then
+        step "installing dev deps from requirements-dev.txt"
+        "$PY" -m pip install -q -r requirements-dev.txt || {
+            echo -e "${RED}Failed to install requirements-dev.txt${NC}"
+            exit 1
+        }
+    fi
+}
+
+ensure_dev_deps
+
 run_black() {
     step "black --check"
     if "$PY" -m black --check core spiders cli handlers utils tests; then
