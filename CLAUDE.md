@@ -168,7 +168,7 @@ See [docs/analysis-workflow.md](docs/analysis-workflow.md) for detailed Phase 1-
 
 **DECISION POINT: What type of content are you scraping?**
 
-- **Articles/blog posts?** → Use `parse_article` with generic extractors (newspaper, trafilatura)
+- **Articles/blog posts?** → Use `parse_article` with generic extractors (trafilatura, newspaper)
 - **Products, jobs, listings, forums?** → Use **named callbacks** with custom fields
 
 **For article content (title/content/author/date):**
@@ -386,13 +386,13 @@ Report back: status, spider name, queue item ID, summary.
 
 **Generic extractors (default):**
 ```json
-{ "EXTRACTOR_ORDER": ["newspaper", "trafilatura"] }
+{ "EXTRACTOR_ORDER": ["trafilatura", "newspaper"] }
 ```
 
 **Custom selectors (when generic fails):**
 ```json
 {
-  "EXTRACTOR_ORDER": ["custom", "newspaper", "trafilatura"],
+  "EXTRACTOR_ORDER": ["custom", "trafilatura", "newspaper"],
   "CUSTOM_SELECTORS": { "title": "h1.x", "content": "div.y", "author": "span.z", "date": "time.w" }
 }
 ```
@@ -401,7 +401,7 @@ Report back: status, spider name, queue item ID, summary.
 ```json
 {
   "BROWSER_ENABLED": true,  // Enable browser for all requests
-  "EXTRACTOR_ORDER": ["custom", "newspaper"],
+  "EXTRACTOR_ORDER": ["custom", "trafilatura", "newspaper"],
   "CUSTOM_SELECTORS": { "title": "h1.x", "content": "div.y", "author": "span.z", "date": "time.w" }
 }
 ```
@@ -410,13 +410,13 @@ Report back: status, spider name, queue item ID, summary.
 ```json
 {
   "BROWSER_ENABLED": true,
-  "EXTRACTOR_ORDER": ["newspaper", "trafilatura"]
+  "EXTRACTOR_ORDER": ["trafilatura", "newspaper"]
 }
 ```
 
 **Sitemap spider:** See [docs/sitemap.md](docs/sitemap.md).
 ```json
-{ "USE_SITEMAP": true, "EXTRACTOR_ORDER": ["newspaper", "trafilatura"] }
+{ "USE_SITEMAP": true, "EXTRACTOR_ORDER": ["trafilatura", "newspaper"] }
 ```
 
 **Sitemap with callbacks:** Sitemap spiders support named callbacks. When rules with callbacks are defined, URLs are routed to the appropriate callback instead of `parse_article`.
@@ -430,7 +430,7 @@ Report back: status, spider name, queue item ID, summary.
 
 **Sitemap with date filtering:**
 ```json
-{ "USE_SITEMAP": true, "SITEMAP_SINCE": "2y", "EXTRACTOR_ORDER": ["newspaper", "trafilatura"] }
+{ "USE_SITEMAP": true, "SITEMAP_SINCE": "2y", "EXTRACTOR_ORDER": ["trafilatura", "newspaper"] }
 ```
 `SITEMAP_SINCE` supports relative (`"2y"`, `"6m"`, `"30d"`) and absolute (`"2024-01-01"`) dates. Entries without `lastmod` are always included.
 
@@ -483,7 +483,7 @@ Use when a site blocks Scrapy/Twisted at the TLS level (e.g. returns 403/empty d
 ```json
 {
   "CURL_CFFI_ENABLED": true,
-  "EXTRACTOR_ORDER": ["newspaper", "trafilatura"]
+  "EXTRACTOR_ORDER": ["trafilatura", "newspaper"]
 }
 ```
 

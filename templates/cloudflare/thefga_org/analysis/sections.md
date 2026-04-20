@@ -287,7 +287,7 @@ These URL patterns should be **excluded** from crawling (utility/navigation page
 - Date: `<time>` tag with readable text
 - Structure: Semantic HTML with clean hierarchy
 
-**Extractor Strategy:** Generic extractors (newspaper/trafilatura) recommended
+**Extractor Strategy:** Generic extractors (trafilatura/newspaper) recommended
 - Site uses semantic HTML (`<article>`, `<time>`, proper heading hierarchy)
 - Clean content structure in `<div class="text-box">`
 - No complex JavaScript rendering required for content
@@ -307,7 +307,7 @@ These URL patterns should be **excluded** from crawling (utility/navigation page
   "allowed_domains": ["thefga.org"],
   "start_urls": ["https://thefga.org/"],
   "settings": {
-    "EXTRACTOR_ORDER": ["newspaper", "trafilatura"],
+    "EXTRACTOR_ORDER": ["trafilatura", "newspaper"],
     "CLOUDFLARE_ENABLED": true,
     "CLOUDFLARE_STRATEGY": "hybrid",
     "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 600,

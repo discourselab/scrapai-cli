@@ -17,7 +17,7 @@
     }
   ],
   "settings": {
-    "EXTRACTOR_ORDER": ["newspaper", "trafilatura"],
+    "EXTRACTOR_ORDER": ["trafilatura", "newspaper"],
     "DOWNLOAD_DELAY": 1,
     "CONCURRENT_REQUESTS": 16,
     "ROBOTSTXT_OBEY": true

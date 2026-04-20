@@ -119,7 +119,7 @@ Scrapling's `StealthySession` persists cookies but keeps the browser open for al
 
 | | Scrapling | crawl4ai | ScrapAI |
 |---|---|---|---|
-| **Approach** | Your CSS/XPath selectors | Full-page markdown, per-page LLM, or LLM-generated cached schemas | Targeted field extraction (newspaper/trafilatura or custom callbacks) |
+| **Approach** | Your CSS/XPath selectors | Full-page markdown, per-page LLM, or LLM-generated cached schemas | Targeted field extraction (trafilatura/newspaper or custom callbacks) |
 | **Adaptive parsing** | Yes (survives redesigns) | No | No |
 | **LLM integration** | MCP server | Native (per-page) | At build time only |
 | **Token efficiency** | Depends on your selectors | ~6,300 tokens per article (BBC example) | ~1,200 tokens (same article) |

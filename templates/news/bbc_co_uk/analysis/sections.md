@@ -316,7 +316,7 @@ BBC operates separate language/regional sites:
 - Content paragraphs: `<div class="ssrcss-nqezkk-RichTextContainer">`
 - Clean semantic HTML throughout
 
-**Extractor Strategy:** Generic extractors (newspaper/trafilatura) recommended
+**Extractor Strategy:** Generic extractors (trafilatura/newspaper) recommended
 - Site uses clean semantic HTML
 - Consistent structure across all sections
 - `<article>`, `<time>`, proper heading hierarchy
@@ -343,7 +343,7 @@ BBC uses **hashed IDs** (not sequential numbers):
   "allowed_domains": ["bbc.co.uk", "www.bbc.co.uk"],
   "start_urls": ["https://www.bbc.co.uk/"],
   "settings": {
-    "EXTRACTOR_ORDER": ["newspaper", "trafilatura"],
+    "EXTRACTOR_ORDER": ["trafilatura", "newspaper"],
     "DOWNLOAD_DELAY": 1,
     "CONCURRENT_REQUESTS": 16,
     "ROBOTSTXT_OBEY": true

@@ -83,11 +83,11 @@ Inspect an article page:
 
 If inspector shows "Checking your browser" or 403/503 → re-run with `--browser`.
 
-Check if newspaper/trafilatura would extract correctly:
+Check if trafilatura/newspaper would extract correctly:
 - Clean `<article>` tags / semantic HTML → generic extractors work
 - Complex layouts, JS-rendered, sidebars mixed in → need custom selectors
 
-**If generic works:** Use `EXTRACTOR_ORDER: ["newspaper", "trafilatura"]`
+**If generic works:** Use `EXTRACTOR_ORDER: ["trafilatura", "newspaper"]`
 **If generic fails:** Proceed to custom selector discovery.
 
 ### Step 2C: Custom Selector Discovery (only if needed)
@@ -117,7 +117,7 @@ See [extractors.md](extractors.md) for selector documentation.
   "settings": {
     "DOWNLOAD_DELAY": 2,
     "CONCURRENT_REQUESTS": 3,
-    "EXTRACTOR_ORDER": ["newspaper", "trafilatura"]
+    "EXTRACTOR_ORDER": ["trafilatura", "newspaper"]
   }
 }
 ```
@@ -125,7 +125,7 @@ See [extractors.md](extractors.md) for selector documentation.
 **With custom selectors:** Add to settings:
 ```json
 {
-  "EXTRACTOR_ORDER": ["custom", "newspaper", "trafilatura"],
+  "EXTRACTOR_ORDER": ["custom", "trafilatura", "newspaper"],
   "CUSTOM_SELECTORS": {
     "title": "h1.article-title",
     "content": "div.article-body",
@@ -160,7 +160,7 @@ Create `test_spider.json` with 5 article URLs:
   "allowed_domains": ["example.com"],
   "start_urls": ["https://example.com/article-1", "...4 more..."],
   "rules": [{ "deny": [".*"], "callback": null, "follow": false, "priority": 100 }],
-  "settings": { "DOWNLOAD_DELAY": 1, "CONCURRENT_REQUESTS": 3, "EXTRACTOR_ORDER": ["newspaper", "trafilatura"] }
+  "settings": { "DOWNLOAD_DELAY": 1, "CONCURRENT_REQUESTS": 3, "EXTRACTOR_ORDER": ["trafilatura", "newspaper"] }
 }
 ```
 

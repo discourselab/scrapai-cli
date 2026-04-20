@@ -103,7 +103,7 @@ Here's what an AI-generated spider config looks like:
     }
   ],
   "settings": {
-    "EXTRACTOR_ORDER": ["newspaper", "trafilatura"],
+    "EXTRACTOR_ORDER": ["trafilatura", "newspaper"],
     "DOWNLOAD_DELAY": 2
   }
 }
@@ -219,7 +219,7 @@ ScrapAI doesn't replace developers. It removes the repetitive parts so you can f
 | `cli/` | Click-based CLI: spiders, queue, crawl, show, export, inspect |
 | `spiders/database_spider.py` | Generic spider that loads config from database at runtime |
 | `spiders/sitemap_spider.py` | Sitemap-based spider for sites with XML sitemaps |
-| `core/extractors.py` | Extraction chain: newspaper, trafilatura, custom CSS, Playwright |
+| `core/extractors.py` | Extraction chain: trafilatura, newspaper, custom CSS, Playwright |
 | `core/models.py` | SQLAlchemy models: Spider, SpiderRule, SpiderSetting, ScrapedItem |
 | `handlers/cloudflare_handler.py` | Cloudflare bypass with cookie caching |
 | `middlewares.py` | SmartProxyMiddleware, direct-to-proxy escalation |
