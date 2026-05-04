@@ -422,6 +422,51 @@ class CloudflareBrowserClient:
             logger.warning(f"Direct HTTP failed for {url}: {e}")
             return None
 
+    async def _fetch_via_browser_request(self, url: str) -> Optional[str]:
+        """Fetch raw body through the browser's request context (no rendering).
+
+        For CF-protected non-HTML endpoints, direct HTTP returns 403 because
+        the request lacks browser cookies. Navigating with page.goto() works
+        around the auth but Chromium then applies XSL/viewer rendering, so
+        response.text() returns HTML instead of raw XML. The browser's
+        APIRequestContext (page.context.request) lets us issue a real HTTP
+        request through the browser's network stack — same TLS fingerprint
+        and cookies as a navigation, but no rendering.
+
+        If the browser hasn't passed CF yet, navigate the domain root first
+        to acquire cookies; subsequent calls reuse the verified session.
+        """
+        try:
+            if not self.page:
+                await self.start()
+
+            if not self.cf_verified:
+                from urllib.parse import urlparse
+
+                parsed = urlparse(url)
+                root = f"{parsed.scheme}://{parsed.netloc}/"
+                logger.info(
+                    f"Navigating {root} to acquire CF cookies before raw fetch"
+                )
+                success = await self.verify_cloudflare(root)
+                if not success:
+                    return None
+
+            api_response = await self.page.context.request.get(url, timeout=60000)
+            if api_response.ok:
+                text = await api_response.text()
+                logger.info(
+                    f"Browser request fetched {len(text)} bytes from {url}"
+                )
+                return text
+            logger.warning(
+                f"Browser request returned {api_response.status} for {url}"
+            )
+            return None
+        except Exception as e:
+            logger.warning(f"Browser request fetch failed for {url}: {e}")
+            return None
+
     async def fetch(
         self, url: str, wait_selector: Optional[str] = None, wait_timeout: int = 10
     ) -> Optional[str]:
@@ -435,14 +480,21 @@ class CloudflareBrowserClient:
         Returns:
             HTML content as string, or None if all proxies exhausted
         """
-        # Non-HTML URLs (sitemaps/JSON): bypass browser entirely. Chromium's
-        # XSL transform on Drupal-style sitemaps mangles response.text(),
-        # and most sitemaps aren't CF-protected anyway.
+        # Non-HTML URLs (sitemaps/JSON): bypass browser rendering. Chromium's
+        # XSL transform on styled sitemaps mangles response.text(). Try direct
+        # HTTP first (fast, works for sites with open sitemaps), then fall
+        # back to the browser's request context (passes CF cookies but skips
+        # rendering — needed for sites that protect their sitemaps too).
         if self._is_non_html_url(url):
             body = await self._fetch_raw_http(url)
             if body is not None:
                 return body
-            logger.info(f"Direct HTTP failed for {url}, falling back to browser")
+            body = await self._fetch_via_browser_request(url)
+            if body is not None:
+                return body
+            logger.info(
+                f"Both raw fetch paths failed for {url}, falling back to navigation"
+            )
 
         # Lazy lock creation
         if self.fetch_lock is None:
