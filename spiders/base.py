@@ -34,7 +34,9 @@ class BaseDBSpiderMixin:
 
     def _setup_cloudflare_handlers(self):
         """Configure Cloudflare or curl_cffi download handlers if enabled."""
-        cf_enabled = self.custom_settings.get("CLOUDFLARE_ENABLED", False)
+        cf_enabled = self.custom_settings.get(
+            "CLOUDFLARE_ENABLED", False
+        ) or self.custom_settings.get("BROWSER_ENABLED", False)
         curl_cffi_enabled = self.custom_settings.get("CURL_CFFI_ENABLED", False)
 
         if curl_cffi_enabled:
@@ -54,7 +56,9 @@ class BaseDBSpiderMixin:
     def _apply_cf_to_crawler(cls, spider, crawler):
         """Apply Cloudflare or curl_cffi handlers to crawler settings after spider init."""
         if hasattr(spider, "custom_settings"):
-            cf_enabled = spider.custom_settings.get("CLOUDFLARE_ENABLED", False)
+            cf_enabled = spider.custom_settings.get(
+                "CLOUDFLARE_ENABLED", False
+            ) or spider.custom_settings.get("BROWSER_ENABLED", False)
             curl_cffi_enabled = spider.custom_settings.get("CURL_CFFI_ENABLED", False)
 
             if curl_cffi_enabled:
