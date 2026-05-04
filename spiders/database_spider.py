@@ -1,3 +1,4 @@
+from scrapy import Request
 from scrapy.linkextractors import LinkExtractor
 from scrapy.spiders import CrawlSpider, Rule
 from core.db import get_db
@@ -88,6 +89,42 @@ class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
             # Load settings and CF handlers via mixin
             self._load_settings_from_db(spider)
             self._setup_cloudflare_handlers()
+
+    async def start(self):
+        """Yield start requests, expanding PAGINATED_LISTINGS via browser.
+
+        Original start_urls are yielded first (default CrawlSpider behaviour).
+        Then, for each entry in the PAGINATED_LISTINGS setting, a browser
+        paginator walks the listing's Next button and yields a Request for
+        each discovered article URL routed directly to parse_article.
+        """
+        for url in self.start_urls:
+            yield Request(url, dont_filter=True)
+
+        listings = self.custom_settings.get("PAGINATED_LISTINGS") or []
+        if not listings:
+            return
+
+        from utils.browser_paginator import BrowserPaginator
+
+        for cfg in listings:
+            logger.info(f"[paginator] Expanding listing: {cfg.get('url')}")
+            paginator = BrowserPaginator(
+                url=cfg["url"],
+                link_selector=cfg["link_selector"],
+                next_selector=cfg["next_selector"],
+                wait_selector=cfg.get("wait_selector"),
+                max_pages=cfg.get("max_pages", 100),
+                click_delay=cfg.get("click_delay", 1.5),
+            )
+            try:
+                async for url in paginator.stream():
+                    yield Request(url, callback=self.parse_article)
+            except Exception as e:
+                logger.error(
+                    f"[paginator] Failed to paginate {cfg.get('url')}: {e}"
+                )
+                continue
 
     async def parse_start_url(self, response):
         """Process start URLs - use first available callback, otherwise parse_article."""

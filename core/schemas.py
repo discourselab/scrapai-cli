@@ -90,6 +90,34 @@ class SpiderRuleSchema(BaseModel):
         return v
 
 
+class PaginatedListingSchema(BaseModel):
+    """Config for a JS-paginated listing page.
+
+    The spider opens `url` in a browser, collects hrefs matching
+    `link_selector`, clicks `next_selector`, and repeats until the Next
+    button disappears, `max_pages` is reached, or a page yields no new URLs.
+    Each collected URL is crawled via parse_article.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = Field(..., description="Listing URL to paginate")
+    link_selector: str = Field(
+        ..., description="CSS selector for article links on each page"
+    )
+    next_selector: str = Field(..., description="CSS selector for the Next button")
+    wait_selector: Optional[str] = Field(
+        default=None,
+        description="CSS selector to wait for after each click (signals new content)",
+    )
+    max_pages: int = Field(
+        default=100, ge=1, le=1000, description="Safety cap on page clicks"
+    )
+    click_delay: float = Field(
+        default=1.5, ge=0.5, le=10, description="Seconds to wait after each Next click"
+    )
+
+
 class SpiderSettingsSchema(BaseModel):
     """Schema for spider settings (flexible key-value pairs)."""
 
@@ -105,6 +133,10 @@ class SpiderSettingsSchema(BaseModel):
     DELTAFETCH_ENABLED: Optional[bool] = Field(default=None)
     PLAYWRIGHT_WAIT_SELECTOR: Optional[str] = Field(default=None)
     INFINITE_SCROLL: Optional[bool] = Field(default=None)
+    PAGINATED_LISTINGS: Optional[List[PaginatedListingSchema]] = Field(
+        default=None,
+        description="JS-paginated listings to enumerate via browser clicks at crawl start",
+    )
 
     @field_validator("EXTRACTOR_ORDER")
     @classmethod

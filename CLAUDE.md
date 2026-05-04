@@ -534,6 +534,34 @@ To clear cache and re-crawl everything:
 { "INFINITE_SCROLL": true, "MAX_SCROLLS": 5, "SCROLL_DELAY": 1.0 }
 ```
 
+**Paginated listings (JS click-through):**
+
+For listing pages whose "Next" button is JS-driven (no URL change, no `<link rel=next>`, article URLs aren't discoverable via LinkExtractor on a single page load). The spider opens the listing in a browser at crawl start, clicks Next through all pages, collects article hrefs, and yields a request for each one into the regular `parse_article` pipeline.
+
+```json
+{
+  "PAGINATED_LISTINGS": [
+    {
+      "url": "https://example.com/blog/",
+      "link_selector": "a.article-card-link",
+      "next_selector": "a.next.page-numbers",
+      "wait_selector": "div.article-card",
+      "max_pages": 200,
+      "click_delay": 1.5
+    }
+  ]
+}
+```
+
+- `url` — listing page to paginate
+- `link_selector` — CSS for article links inside each rendered page
+- `next_selector` — CSS for the Next button (click target)
+- `wait_selector` — optional; waited for after each click before collecting
+- `max_pages` — safety cap (default 100)
+- `click_delay` — seconds after each click before reading URLs (default 1.5)
+
+**When to use:** listing pages with hash/JS pagination (`href="#"`) and no URL-based fallback. For sites that support `?paged=N` or expose `<link rel="next">`, use the standard `tags` rule instead — lighter and faster than spinning up a browser.
+
 ---
 
 ## Named Callbacks & Custom Fields
