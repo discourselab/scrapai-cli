@@ -78,6 +78,7 @@ These are non-negotiable. Violating these will cause failures:
   - `--proxy-type none` — direct connection only
 - `./scrapai extract-urls --file <html>` — extract URLs from saved HTML
 - `./scrapai analyze <html>` — analyze HTML structure, test selectors, find fields
+- `./scrapai try <html>` — run newspaper + trafilatura against saved HTML to compare output (fast sanity check before committing to a spider config)
 
 ## Environment
 
@@ -183,8 +184,9 @@ See [docs/analysis-workflow.md](docs/analysis-workflow.md) for detailed Phase 1-
    ./scrapai inspect https://website.com/article-url --project proj --browser
 
    ./scrapai analyze data/proj/spider/analysis/page.html
+   ./scrapai try data/proj/spider/analysis/page.html
    ```
-   If it has clean `<article>` tags / semantic HTML → generic extractors work.
+   `try` runs newspaper + trafilatura in-process and prints title/author/date/length/preview for each, so you can see whether generic extraction is clean before writing any spider config. If it has clean `<article>` tags / semantic HTML → generic extractors work.
 3. **If generic extractors fail** → discover custom CSS selectors using `./scrapai analyze`:
    ```bash
    ./scrapai analyze data/proj/spider/analysis/page.html

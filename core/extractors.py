@@ -190,12 +190,15 @@ class CustomExtractor(BaseExtractor):
             # Parse date if present
             published_date = None
             if date_str:
-                try:
-                    from dateutil import parser
+                from dateutil import parser
 
+                try:
                     published_date = parser.parse(date_str)
-                except Exception as e:
-                    logger.debug(f"Failed to parse date '{date_str}': {e}")
+                except Exception:
+                    try:
+                        published_date = parser.parse(date_str, fuzzy=True)
+                    except Exception as e:
+                        logger.debug(f"Failed to parse date '{date_str}': {e}")
 
             # Extract custom fields into metadata
             metadata = {}
