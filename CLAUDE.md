@@ -386,6 +386,23 @@ Report back: status, spider name, queue item ID, summary.
 
 ## Settings Quick Reference
 
+**Throughput (include in every new spider JSON unless the site is fragile):**
+```json
+{
+  "DOWNLOAD_DELAY": 0,
+  "CONCURRENT_REQUESTS": 32,
+  "CONCURRENT_REQUESTS_PER_DOMAIN": 16,
+  "AUTOTHROTTLE_ENABLED": false
+}
+```
+Project defaults in `settings.py` are conservative (DOWNLOAD_DELAY=1, AutoThrottle on). Every new spider JSON you write should explicitly override to the above values unless the site actively rate-limits.
+
+**Rule `tags` field (pagination in `<link rel="next">`):**
+```json
+{ "allow": ["/page/\\d+/"], "tags": ["a", "area", "link"], "follow": true }
+```
+Scrapy's LinkExtractor by default only scans `<a>` and `<area>` tags. Many WordPress/Yoast sites expose pagination via `<link rel="next">` in `<head>`, which won't fire with the default. Add `"tags": ["a", "area", "link"]` on the pagination rule in those cases. Omit for normal sites.
+
 **Generic extractors (default):**
 ```json
 { "EXTRACTOR_ORDER": ["trafilatura", "newspaper"] }

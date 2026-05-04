@@ -57,6 +57,7 @@ class SpiderRule(Base):
     deny_patterns = Column(JSON, nullable=True)
     restrict_xpaths = Column(JSON, nullable=True)
     restrict_css = Column(JSON, nullable=True)
+    tags = Column(JSON, nullable=True)
 
     callback = Column(String, nullable=True, default=None)
     follow = Column(Boolean, default=True)

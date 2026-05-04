@@ -54,6 +54,10 @@ class SpiderRuleSchema(BaseModel):
     restrict_css: Optional[List[str]] = Field(
         default=None, description="CSS selector restrictions"
     )
+    tags: Optional[List[str]] = Field(
+        default=None,
+        description="HTML tags LinkExtractor scans (default: ['a', 'area']). Include 'link' for <link rel=next> pagination.",
+    )
     callback: Optional[str] = Field(default=None, description="Callback function name")
     follow: bool = Field(
         default=True, description="Whether to follow links matching this rule"
@@ -62,7 +66,7 @@ class SpiderRuleSchema(BaseModel):
         default=0, ge=0, le=1000, description="Rule priority (0-1000)"
     )
 
-    @field_validator("allow", "deny", "restrict_xpaths", "restrict_css")
+    @field_validator("allow", "deny", "restrict_xpaths", "restrict_css", "tags")
     @classmethod
     def validate_patterns(cls, v):
         """Validate that patterns are non-empty strings if provided."""

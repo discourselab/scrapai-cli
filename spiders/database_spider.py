@@ -68,6 +68,8 @@ class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
                     le_kwargs["restrict_xpaths"] = r.restrict_xpaths
                 if r.restrict_css:
                     le_kwargs["restrict_css"] = r.restrict_css
+                if r.tags:
+                    le_kwargs["tags"] = r.tags
 
                 callback = None
                 if r.callback:
