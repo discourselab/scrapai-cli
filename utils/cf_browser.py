@@ -417,8 +417,9 @@ class CloudflareBrowserClient:
                 # CF Turnstile solve may leave the browser on the challenge DOM
                 # even though verification passed — re-navigating forces a fresh load
                 logger.info(f"CF verified, re-navigating to {url} for actual content")
+                response = None
                 try:
-                    await self.page.goto(
+                    response = await self.page.goto(
                         url, wait_until="domcontentloaded", timeout=60000
                     )
                 except Exception as e:
@@ -430,7 +431,7 @@ class CloudflareBrowserClient:
                         raise
 
                 await asyncio.sleep(3)
-                html = await self.page.content()
+                html = await self._body_or_dom(response)
                 logger.info(f"Fetched {len(html)} bytes from {url}")
                 return html
 
@@ -439,7 +440,9 @@ class CloudflareBrowserClient:
             try:
                 # Navigate same page to new URL
                 # Use domcontentloaded (recommended by Playwright, faster than load)
-                await self.page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                response = await self.page.goto(
+                    url, wait_until="domcontentloaded", timeout=60000
+                )
 
                 # Let page stabilize after navigation
                 await asyncio.sleep(2)
@@ -462,8 +465,8 @@ class CloudflareBrowserClient:
                     # No selector - wait for content to fully render
                     await asyncio.sleep(2)
 
-                # Get HTML content
-                html = await self.page.content()
+                # Get content — raw body for XML/JSON/text, rendered DOM for HTML
+                html = await self._body_or_dom(response)
 
                 # Only warn about small HTML if it's not robots.txt or similar
                 if "robots.txt" not in url.lower():
@@ -473,7 +476,7 @@ class CloudflareBrowserClient:
                             f"HTML seems small ({text_length} chars), waiting longer..."
                         )
                         await asyncio.sleep(1.5)  # Additional wait for content
-                        html = await self.page.content()
+                        html = await self._body_or_dom(response)
 
                 logger.info(f"Fetched {len(html)} bytes from {url}")
                 return html
@@ -481,6 +484,27 @@ class CloudflareBrowserClient:
             except Exception as e:
                 logger.error(f"Error fetching {url}: {e}")
                 return None
+
+    async def _body_or_dom(self, response) -> str:
+        """Return the raw response body for non-HTML content, else the rendered DOM.
+
+        Chromium wraps XML/JSON/plain-text responses in a viewer shell
+        (`<html><body><pre>…</pre></body></html>` or the XML pretty-printer),
+        which breaks downstream parsers like Scrapy's SitemapSpider.
+        For those content types we return `response.text()` directly so
+        callers see the raw payload the server sent.
+        """
+        if response is not None:
+            try:
+                ctype = (response.headers or {}).get("content-type", "").lower()
+            except Exception:
+                ctype = ""
+            if ctype and not ctype.startswith("text/html"):
+                try:
+                    return await response.text()
+                except Exception as e:
+                    logger.debug(f"response.text() failed, falling back to DOM: {e}")
+        return await self.page.content()
 
     async def close(self):
         """Close CloakBrowser."""

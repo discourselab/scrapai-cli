@@ -397,9 +397,9 @@ class CloudflareDownloadHandler:
                     "last_browser_html": html,
                 }
 
-            cf_value = cookies.get("cf_clearance", "N/A")[:20]
+            cookie_names = ", ".join(sorted(cookies.keys())) or "none"
             logger.info(
-                f"[{spider_name}] Cached {len(cookies)} cookies (cf_clearance: {cf_value}...)"
+                f"[{spider_name}] Cached {len(cookies)} cookies: {cookie_names}"
             )
 
     async def _invalidate_cookies(self, spider_name: str):
