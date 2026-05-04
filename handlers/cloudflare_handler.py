@@ -18,11 +18,24 @@ import threading
 import time
 from typing import Dict, Optional
 
-from scrapy.http import HtmlResponse, Request
+from scrapy.http import HtmlResponse, Request, XmlResponse
 from twisted.internet import threads
 from settings import USER_AGENT
 
 logger = logging.getLogger(__name__)
+
+
+def _make_response(url: str, body: str, request):
+    """Pick the right Scrapy response class based on URL pattern.
+
+    Scrapy's SitemapSpider only treats responses as sitemaps when they're
+    XmlResponse instances (or url.endswith('.xml')) — paginated sitemap URLs
+    like `sitemap.xml?page=1` fail the URL check, so we route by pattern here.
+    """
+    u = url.lower().split("?", 1)[0]
+    is_xml = u.endswith(".xml") or "/sitemap" in u
+    cls = XmlResponse if is_xml else HtmlResponse
+    return cls(url=url, body=body.encode("utf-8"), encoding="utf-8", request=request)
 
 
 def _start_event_loop(loop):
@@ -230,12 +243,7 @@ class CloudflareDownloadHandler:
             )
 
             if html:
-                return HtmlResponse(
-                    url=request.url,
-                    body=html.encode("utf-8"),
-                    encoding="utf-8",
-                    request=request,
-                )
+                return _make_response(request.url, html, request)
             else:
                 raise Exception(f"Failed to fetch {request.url}")
         except Exception as e:
@@ -257,12 +265,7 @@ class CloudflareDownloadHandler:
             )
 
             if html:
-                return HtmlResponse(
-                    url=request.url,
-                    body=html.encode("utf-8"),
-                    encoding="utf-8",
-                    request=request,
-                )
+                return _make_response(request.url, html, request)
             else:
                 raise Exception(f"Failed to fetch {request.url}")
         except Exception as e:

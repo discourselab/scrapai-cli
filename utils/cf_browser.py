@@ -381,6 +381,47 @@ class CloudflareBrowserClient:
         await asyncio.sleep(random_delay(1.0, 2.0))
         return True
 
+    @staticmethod
+    def _is_non_html_url(url: str) -> bool:
+        """Heuristic for URLs whose body is XML/JSON/text rather than HTML."""
+        u = url.lower().split("?", 1)[0]
+        return (
+            u.endswith(".xml")
+            or u.endswith(".json")
+            or u.endswith(".txt")
+            or "/sitemap" in u
+        )
+
+    async def _fetch_raw_http(self, url: str) -> Optional[str]:
+        """Direct HTTP GET via curl_cffi — preserves raw body for XML/JSON.
+
+        Used for non-HTML URLs (sitemaps, JSON) where Chromium's XSL transform
+        or viewer shell mangles the response. Most sitemaps aren't behind CF
+        protection even on protected sites, so direct HTTP usually works.
+        Returns None on non-200 so the caller can fall back to the browser.
+        """
+        from curl_cffi import requests as curl_requests
+
+        try:
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: curl_requests.get(url, impersonate="chrome", timeout=60),
+            )
+            if response.status_code == 200:
+                logger.info(
+                    f"Direct HTTP fetched {len(response.text)} bytes from {url}"
+                )
+                return response.text
+            logger.warning(
+                f"Direct HTTP returned {response.status_code} for {url}, "
+                "falling back to browser"
+            )
+            return None
+        except Exception as e:
+            logger.warning(f"Direct HTTP failed for {url}: {e}")
+            return None
+
     async def fetch(
         self, url: str, wait_selector: Optional[str] = None, wait_timeout: int = 10
     ) -> Optional[str]:
@@ -394,6 +435,15 @@ class CloudflareBrowserClient:
         Returns:
             HTML content as string, or None if all proxies exhausted
         """
+        # Non-HTML URLs (sitemaps/JSON): bypass browser entirely. Chromium's
+        # XSL transform on Drupal-style sitemaps mangles response.text(),
+        # and most sitemaps aren't CF-protected anyway.
+        if self._is_non_html_url(url):
+            body = await self._fetch_raw_http(url)
+            if body is not None:
+                return body
+            logger.info(f"Direct HTTP failed for {url}, falling back to browser")
+
         # Lazy lock creation
         if self.fetch_lock is None:
             with self._lock_init_lock:
@@ -486,24 +536,30 @@ class CloudflareBrowserClient:
                 return None
 
     async def _body_or_dom(self, response) -> str:
-        """Return the raw response body for non-HTML content, else the rendered DOM.
+        """Return raw response body for non-HTML content, else rendered DOM.
 
-        Chromium wraps XML/JSON/plain-text responses in a viewer shell
-        (`<html><body><pre>…</pre></body></html>` or the XML pretty-printer),
-        which breaks downstream parsers like Scrapy's SitemapSpider.
-        For those content types we return `response.text()` directly so
-        callers see the raw payload the server sent.
+        Chromium wraps non-HTML responses in a viewer shell (XML/JSON viewer)
+        which breaks downstream parsers. For XML referencing an XSL stylesheet
+        (e.g. Drupal simple_sitemap), Chromium applies the transform before
+        Playwright sees the response — `response.text()` then returns the
+        rendered HTML, not the raw XML. Those URLs are routed through
+        `_fetch_raw_http` upstream in `fetch()`, so this fallback only handles
+        the simpler viewer-shell case.
         """
-        if response is not None:
+        if response is None:
+            return await self.page.content()
+
+        try:
+            ctype = (response.headers or {}).get("content-type", "").lower()
+        except Exception:
+            ctype = ""
+
+        if ctype and not ctype.startswith("text/html"):
             try:
-                ctype = (response.headers or {}).get("content-type", "").lower()
-            except Exception:
-                ctype = ""
-            if ctype and not ctype.startswith("text/html"):
-                try:
-                    return await response.text()
-                except Exception as e:
-                    logger.debug(f"response.text() failed, falling back to DOM: {e}")
+                return await response.text()
+            except Exception as e:
+                logger.debug(f"response.text() failed, falling back to DOM: {e}")
+
         return await self.page.content()
 
     async def close(self):
