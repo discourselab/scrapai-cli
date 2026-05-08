@@ -121,9 +121,7 @@ class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
                 async for url in paginator.stream():
                     yield Request(url, callback=self.parse_article)
             except Exception as e:
-                logger.error(
-                    f"[paginator] Failed to paginate {cfg.get('url')}: {e}"
-                )
+                logger.error(f"[paginator] Failed to paginate {cfg.get('url')}: {e}")
                 continue
 
     async def parse_start_url(self, response):

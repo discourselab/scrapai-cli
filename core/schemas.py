@@ -56,7 +56,10 @@ class SpiderRuleSchema(BaseModel):
     )
     tags: Optional[List[str]] = Field(
         default=None,
-        description="HTML tags LinkExtractor scans (default: ['a', 'area']). Include 'link' for <link rel=next> pagination.",
+        description=(
+            "HTML tags LinkExtractor scans (default: ['a', 'area']). "
+            "Include 'link' for <link rel=next> pagination."
+        ),
     )
     callback: Optional[str] = Field(default=None, description="Callback function name")
     follow: bool = Field(

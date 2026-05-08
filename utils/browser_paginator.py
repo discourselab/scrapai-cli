@@ -74,9 +74,7 @@ class BrowserPaginator:
                 )
 
                 if not new_urls and page_num > 1:
-                    logger.info(
-                        f"[paginator] No new URLs on page {page_num}, stopping"
-                    )
+                    logger.info(f"[paginator] No new URLs on page {page_num}, stopping")
                     break
 
                 if not await self._click_next(page, page_num):
@@ -122,8 +120,6 @@ class BrowserPaginator:
         await asyncio.sleep(self.click_delay)
         if self.wait_selector:
             try:
-                await page.wait_for_selector(
-                    self.wait_selector, timeout=10000
-                )
+                await page.wait_for_selector(self.wait_selector, timeout=10000)
             except Exception as e:
                 logger.debug(f"[paginator] wait_for_selector timed out: {e}")

@@ -5,7 +5,12 @@ import click
 
 @click.command(name="try")
 @click.argument("html_file")
-@click.option("--content-preview", default=300, type=int, help="Chars of content to preview (default 300)")
+@click.option(
+    "--content-preview",
+    default=300,
+    type=int,
+    help="Chars of content to preview (default 300)",
+)
 def try_cmd(html_file, content_preview):
     """Run newspaper and trafilatura against a local HTML file and compare output.
 

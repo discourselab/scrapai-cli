@@ -445,9 +445,7 @@ class CloudflareBrowserClient:
 
                 parsed = urlparse(url)
                 root = f"{parsed.scheme}://{parsed.netloc}/"
-                logger.info(
-                    f"Navigating {root} to acquire CF cookies before raw fetch"
-                )
+                logger.info(f"Navigating {root} to acquire CF cookies before raw fetch")
                 success = await self.verify_cloudflare(root)
                 if not success:
                     return None
@@ -455,13 +453,9 @@ class CloudflareBrowserClient:
             api_response = await self.page.context.request.get(url, timeout=60000)
             if api_response.ok:
                 text = await api_response.text()
-                logger.info(
-                    f"Browser request fetched {len(text)} bytes from {url}"
-                )
+                logger.info(f"Browser request fetched {len(text)} bytes from {url}")
                 return text
-            logger.warning(
-                f"Browser request returned {api_response.status} for {url}"
-            )
+            logger.warning(f"Browser request returned {api_response.status} for {url}")
             return None
         except Exception as e:
             logger.warning(f"Browser request fetch failed for {url}: {e}")
