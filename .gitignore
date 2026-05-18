@@ -253,3 +253,8 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
