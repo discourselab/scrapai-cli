@@ -537,18 +537,22 @@ class CloudflareDownloadHandler:
                 )
 
                 # Build chain based on proxy_type
+                proxy_from_start = bool(spider_settings.get("PROXY_FROM_START"))
                 if proxy_type == "residential":
                     # Skip straight to residential proxy (for geo-blocked / strict CF sites)
                     proxy_chain = [res_url] if res_url else [None]
                 elif proxy_type in ("datacenter", "auto"):
-                    proxy_chain = [None]
+                    # PROXY_FROM_START: skip the direct attempt, go straight to proxies
+                    proxy_chain = [] if proxy_from_start else [None]
                     if dc_url:
                         proxy_chain.append(dc_url)
-                    if res_url and is_test_crawl:
+                    if res_url and (is_test_crawl or proxy_from_start):
                         proxy_chain.append(res_url)
                     elif res_url and not is_test_crawl:
                         CloudflareDownloadHandler._residential_available = True
                         CloudflareDownloadHandler._residential_url = res_url
+                    if not proxy_chain:
+                        proxy_chain = [None]
                 else:
                     proxy_chain = [None]
 
