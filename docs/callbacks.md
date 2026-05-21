@@ -163,15 +163,98 @@ Extract fields from the **page URL** using regex (useful when URL contains data 
 - Items are only counted when the detail callback yields (not the iterate callback)
 - `extract` is optional in iterate callbacks (you can follow without extracting row fields)
 
-## AJAX Nested List
+## AJAX Nested List (`ajax_nested_list`)
 
-For extracting data from AJAX endpoints (e.g., comments loaded via AJAX). See CLAUDE.md for full documentation.
+For extracting data from AJAX endpoints (e.g., AJAX-loaded comments). Makes HTTP requests to fetch additional data not in the main page HTML.
 
-Two response types:
-- `json_html` (default) — JSON response containing HTML, parsed with CSS selectors
-- `json_array` — JSON array of objects, extracted with `json_path`
+```json
+{
+  "comments": {
+    "type": "ajax_nested_list",
+    "ajax_url": "/wp-admin/admin-ajax.php",
+    "ajax_method": "POST",
+    "ajax_data": {
+      "action": "wpdLoadMoreComments",
+      "postId": "{post_id}"
+    },
+    "post_id_css": "body::attr(class)",
+    "post_id_regex": "postid-(\\d+)",
+    "response_json_field": "data.comment_list",
+    "selector": "div.wpd-comment",
+    "extract": {
+      "username": {"css": "div.wpd-comment-author a::text"},
+      "text": {"css": "div.wpd-comment-text p::text", "get_all": true}
+    }
+  }
+}
+```
 
-Supports pagination (`ajax_per_page`), dynamic post IDs (`post_id_css` + `post_id_regex`), and nested reply threading (`nest_replies`).
+**Config options:**
+- `ajax_url` — endpoint URL (relative or absolute)
+- `ajax_method` — `GET` or `POST` (default: `POST`)
+- `ajax_data` — request parameters. Use `{post_id}` placeholder for dynamic post IDs
+- `post_id_css` — CSS selector to extract post ID from the page
+- `post_id_regex` — regex to extract ID from the selector value (e.g., `"postid-(\\d+)"`)
+- `response_json_field` — dot-path to HTML content in JSON response (e.g., `"data.comment_list"`)
+- `response_type` — `json_html` (default, HTML inside JSON) or `json_array` (JSON array of objects)
+- `ajax_per_page` — items per page for pagination (0 = no pagination)
+- `selector` / `extract` — same as `nested_list` for HTML responses
+- For `json_array` responses, use `json_path` in extract fields instead of CSS/XPath:
+  ```json
+  {"json_path": "author_name", "processors": [{"type": "strip"}]}
+  ```
+
+### Nesting replies (threaded comments)
+
+When comments have parent-child relationships (e.g., WP REST API returns flat list with `parent` field):
+```json
+{
+  "nest_replies": true,
+  "comment_id_field": "comment_id",
+  "parent_id_field": "parent_id",
+  "replies_field": "replies"
+}
+```
+Builds a tree structure where replies are nested inside their parent comment's `replies` array.
+
+### Common patterns
+
+*wpDiscuz AJAX comments (POST):*
+```json
+{
+  "type": "ajax_nested_list",
+  "ajax_url": "/wp-admin/admin-ajax.php",
+  "ajax_data": {"action": "wpdLoadMoreComments", "offset": "0", "postId": "{post_id}"},
+  "post_id_css": "body::attr(class)",
+  "post_id_regex": "postid-(\\d+)",
+  "response_json_field": "data.comment_list",
+  "selector": "div.wpd-comment",
+  "extract": { ... }
+}
+```
+
+*WP REST API comments (GET, with nesting):*
+```json
+{
+  "type": "ajax_nested_list",
+  "ajax_url": "/wp-json/wp/v2/comments",
+  "ajax_method": "GET",
+  "ajax_data": {"post": "{post_id}", "order": "asc"},
+  "ajax_per_page": 100,
+  "post_id_css": "body::attr(class)",
+  "post_id_regex": "postid-(\\d+)",
+  "response_type": "json_array",
+  "nest_replies": true,
+  "selector": "unused",
+  "extract": {
+    "username": {"json_path": "author_name"},
+    "comment_text": {"json_path": "content.rendered"},
+    "comment_date": {"json_path": "date"},
+    "parent_id": {"json_path": "parent"},
+    "comment_id": {"json_path": "id"}
+  }
+}
+```
 
 ## Templates
 

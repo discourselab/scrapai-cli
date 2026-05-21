@@ -12,6 +12,7 @@ from core.extractors import (
     NewspaperExtractor,
     TrafilaturaExtractor,
     CustomExtractor,
+    _extract_media,
 )
 from core.schemas import ScrapedArticle
 
@@ -382,6 +383,132 @@ class TestSmartExtractor:
         result = await extractor.extract(url="https://example.com/article", html="")
 
         assert result is None
+
+
+class TestExtractMedia:
+    """Unit tests for the _extract_media helper."""
+
+    @pytest.mark.unit
+    def test_returns_empty_on_none(self):
+        images, videos = _extract_media(None)
+        assert images == []
+        assert videos == []
+
+    @pytest.mark.unit
+    def test_returns_empty_on_blank(self):
+        images, videos = _extract_media("")
+        assert images == []
+        assert videos == []
+
+    @pytest.mark.unit
+    def test_collects_images_with_alt(self):
+        html = """
+        <html><body>
+            <img src="https://example.com/a.jpg" alt="A photo">
+            <img src="/b.png" alt="">
+            <img alt="no src">
+        </body></html>
+        """
+        images, _ = _extract_media(html)
+        assert {"src": "https://example.com/a.jpg", "alt": "A photo"} in images
+        assert {"src": "/b.png", "alt": ""} in images
+        assert len(images) == 2
+
+    @pytest.mark.unit
+    def test_collects_videos_and_iframes(self):
+        html = """
+        <html><body>
+            <video src="https://cdn/v.mp4"></video>
+            <iframe src="https://youtube.com/embed/xyz"></iframe>
+            <iframe></iframe>
+        </body></html>
+        """
+        _, videos = _extract_media(html)
+        types = {v["type"] for v in videos}
+        srcs = {v["src"] for v in videos}
+        assert types == {"video", "iframe"}
+        assert "https://cdn/v.mp4" in srcs
+        assert "https://youtube.com/embed/xyz" in srcs
+
+
+class TestExtractorMediaFields:
+    """Tests that NewspaperExtractor / TrafilaturaExtractor populate the new
+    clean_html / markdown / top_image / images / videos fields.
+
+    These tests use long, semantically-rich article HTML so newspaper4k's and
+    trafilatura's content heuristics reliably extract it. If a library upgrade
+    breaks that assumption we want the failure to surface, not hide behind a
+    skip.
+    """
+
+    @pytest.fixture
+    def article_html_with_image(self):
+        """Article HTML with enough body to satisfy both extractors' heuristics."""
+        body = " ".join(
+            [
+                "This is the first paragraph of the article body.",
+                "It contains substantive content that describes a topic.",
+                "The text is long enough to satisfy content-length heuristics",
+                "used by both newspaper4k and trafilatura when deciding what",
+                "counts as the main article body of a webpage.",
+            ]
+        )
+        return f"""<!DOCTYPE html>
+<html><head><title>Article Title Here</title></head><body>
+<article>
+<h1>Article Title Here</h1>
+<p>{body}</p>
+<p>{body}</p>
+<img src="https://example.com/hero.jpg" alt="hero">
+<p>{body}</p>
+<p>{body}</p>
+</article>
+</body></html>"""
+
+    @pytest.mark.unit
+    def test_newspaper_populates_new_fields(self, article_html_with_image):
+        extractor = NewspaperExtractor()
+        result = extractor.extract(
+            url="https://example.com/article", html=article_html_with_image
+        )
+        assert result is not None
+        assert isinstance(result.images, list)
+        assert isinstance(result.videos, list)
+        assert isinstance(result.clean_html, str) and result.clean_html
+        assert isinstance(result.markdown, str) and result.markdown
+
+    @pytest.mark.unit
+    def test_newspaper_extracts_images_from_article_html(self, article_html_with_image):
+        extractor = NewspaperExtractor()
+        result = extractor.extract(
+            url="https://example.com/a", html=article_html_with_image
+        )
+        assert result is not None
+        assert result.clean_html
+        srcs = [img["src"] for img in result.images]
+        assert "https://example.com/hero.jpg" in srcs
+
+    @pytest.mark.unit
+    def test_trafilatura_populates_new_fields(self, article_html_with_image):
+        extractor = TrafilaturaExtractor()
+        result = extractor.extract(
+            url="https://example.com/article", html=article_html_with_image
+        )
+        assert result is not None
+        assert isinstance(result.images, list)
+        assert isinstance(result.videos, list)
+        assert isinstance(result.clean_html, str) and result.clean_html
+        assert isinstance(result.markdown, str) and result.markdown
+
+    @pytest.mark.unit
+    def test_top_image_no_longer_in_metadata(self, article_html_with_image):
+        """top_image is now a top-level field, removed from metadata dict."""
+        extractor = NewspaperExtractor()
+        result = extractor.extract(
+            url="https://example.com/article", html=article_html_with_image
+        )
+        assert result is not None
+        assert "top_image" not in result.metadata
 
 
 class TestExtractorRobustness:

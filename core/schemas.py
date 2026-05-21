@@ -8,33 +8,30 @@ from urllib.parse import urlparse
 
 
 class ScrapedArticle(BaseModel):
-    """Standardized model for scraped article data."""
+    """Standardized model for scraped article data.
+
+    Title/content can be empty — the framework no longer rejects content-light
+    pages (video-only, image-only, very short notices). Validation against the
+    project schema's `required` contract happens in Phase 4 of the agent
+    workflow, not here. See CLAUDE.md "Schema-driven extraction".
+    """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     url: str
-    title: str
-    content: str
+    title: str = ""
+    content: str = ""
     author: Optional[str] = None
     published_date: Optional[datetime] = None
     source: str
     extracted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: Optional[Dict[str, Any]] = {}
     html: Optional[str] = None
-
-    @field_validator("content")
-    @classmethod
-    def content_must_be_long_enough(cls, v):
-        if not v or len(v.strip()) < 100:
-            raise ValueError("Content too short (< 100 chars)")
-        return v
-
-    @field_validator("title")
-    @classmethod
-    def title_must_exist(cls, v):
-        if not v or len(v.strip()) < 5:
-            raise ValueError("Title too short or missing")
-        return v
+    clean_html: Optional[str] = None
+    markdown: Optional[str] = None
+    top_image: Optional[str] = None
+    images: List[Dict[str, str]] = []
+    videos: List[Dict[str, str]] = []
 
 
 class SpiderRuleSchema(BaseModel):
@@ -121,52 +118,6 @@ class PaginatedListingSchema(BaseModel):
     )
 
 
-class SpiderSettingsSchema(BaseModel):
-    """Schema for spider settings (flexible key-value pairs)."""
-
-    model_config = ConfigDict(extra="allow")  # Allow any settings
-
-    # Common settings with validation
-    EXTRACTOR_ORDER: Optional[List[str]] = Field(default=None)
-    CUSTOM_SELECTORS: Optional[Dict[str, str]] = Field(default=None)
-    CONCURRENT_REQUESTS: Optional[int] = Field(default=None, ge=1, le=32)
-    DOWNLOAD_DELAY: Optional[float] = Field(default=None, ge=0, le=60)
-    CLOUDFLARE_ENABLED: Optional[bool] = Field(default=None)
-    CLOUDFLARE_STRATEGY: Optional[str] = Field(default=None)
-    DELTAFETCH_ENABLED: Optional[bool] = Field(default=None)
-    PLAYWRIGHT_WAIT_SELECTOR: Optional[str] = Field(default=None)
-    INFINITE_SCROLL: Optional[bool] = Field(default=None)
-    PAGINATED_LISTINGS: Optional[List[PaginatedListingSchema]] = Field(
-        default=None,
-        description="JS-paginated listings to enumerate via browser clicks at crawl start",
-    )
-
-    @field_validator("EXTRACTOR_ORDER")
-    @classmethod
-    def validate_extractor_order(cls, v):
-        """Validate extractor order contains known extractors."""
-        if v is not None:
-            allowed = {"newspaper", "trafilatura", "custom", "playwright"}
-            for extractor in v:
-                if extractor not in allowed:
-                    raise ValueError(
-                        f"Unknown extractor: {extractor}. Allowed: {allowed}"
-                    )
-        return v
-
-    @field_validator("CLOUDFLARE_STRATEGY")
-    @classmethod
-    def validate_cloudflare_strategy(cls, v):
-        """Validate Cloudflare strategy is valid."""
-        if v is not None:
-            allowed = {"hybrid", "browser_only"}
-            if v.lower() not in allowed:
-                raise ValueError(
-                    f"Invalid Cloudflare strategy: {v}. Allowed: {allowed}"
-                )
-        return v
-
-
 class ProcessorSchema(BaseModel):
     """Schema for field processors."""
 
@@ -192,6 +143,114 @@ class ProcessorSchema(BaseModel):
             raise ValueError(
                 f"Unknown processor type: {v}. Allowed: {', '.join(sorted(allowed))}"
             )
+        return v
+
+
+class FieldExtractDirective(BaseModel):
+    """Per-spider directive for populating a project schema field.
+
+    One of `from_field`, `css`, or `xpath` is required.
+    - `from_field` pulls a value already produced by the article extractor
+      (e.g. "markdown", "top_image", "images", "videos").
+    - `css` / `xpath` runs a selector against the response, like a callback's
+      extract config. Supports `get_all` for lists and `processors` for cleanup.
+    """
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    from_field: Optional[str] = Field(
+        default=None,
+        alias="from",
+        description="Name of an extractor-computed field to pull from",
+    )
+    css: Optional[str] = Field(default=None, description="CSS selector")
+    xpath: Optional[str] = Field(default=None, description="XPath selector")
+    get_all: bool = Field(
+        default=False, description="Return all matches as a list (default: first only)"
+    )
+    to_text: bool = Field(
+        default=False,
+        description=(
+            "Extract joined whitespace-stripped descendant text of the matched "
+            "element (equivalent to bs4 `get_text(separator=' ', strip=True)`)"
+        ),
+    )
+    to_markdown: bool = Field(
+        default=False,
+        description=(
+            "Extract outer HTML of the matched element and convert to markdown "
+            "via markdownify (ATX heading style)"
+        ),
+    )
+    processors: Optional[List[ProcessorSchema]] = Field(
+        default=None, description="Processors to apply to extracted value"
+    )
+
+    @model_validator(mode="after")
+    def validate_has_source(self):
+        if not self.from_field and not self.css and not self.xpath:
+            raise ValueError(
+                "field_extract directive requires one of 'from', 'css', or 'xpath'"
+            )
+        if (self.to_text or self.to_markdown) and self.get_all:
+            raise ValueError(
+                "to_text/to_markdown are not compatible with get_all (single element only)"
+            )
+        if self.to_text and self.to_markdown:
+            raise ValueError("Pick one of to_text or to_markdown, not both")
+        return self
+
+
+class SpiderSettingsSchema(BaseModel):
+    """Schema for spider settings (flexible key-value pairs)."""
+
+    model_config = ConfigDict(extra="allow")  # Allow any settings
+
+    # Common settings with validation
+    EXTRACTOR_ORDER: Optional[List[str]] = Field(default=None)
+    CUSTOM_SELECTORS: Optional[Dict[str, str]] = Field(default=None)
+    CONCURRENT_REQUESTS: Optional[int] = Field(default=None, ge=1, le=32)
+    DOWNLOAD_DELAY: Optional[float] = Field(default=None, ge=0, le=60)
+    CLOUDFLARE_ENABLED: Optional[bool] = Field(default=None)
+    CLOUDFLARE_STRATEGY: Optional[str] = Field(default=None)
+    DELTAFETCH_ENABLED: Optional[bool] = Field(default=None)
+    PLAYWRIGHT_WAIT_SELECTOR: Optional[str] = Field(default=None)
+    INFINITE_SCROLL: Optional[bool] = Field(default=None)
+    PAGINATED_LISTINGS: Optional[List[PaginatedListingSchema]] = Field(
+        default=None,
+        description="JS-paginated listings to enumerate via browser clicks at crawl start",
+    )
+    FIELD_EXTRACT: Optional[Dict[str, FieldExtractDirective]] = Field(
+        default=None,
+        description=(
+            "Per-spider directives for populating non-core project schema fields. "
+            "Keyed by schema field name. Each directive uses `from`, `css`, or `xpath`."
+        ),
+    )
+
+    @field_validator("EXTRACTOR_ORDER")
+    @classmethod
+    def validate_extractor_order(cls, v):
+        """Validate extractor order contains known extractors."""
+        if v is not None:
+            allowed = {"newspaper", "trafilatura", "custom", "playwright"}
+            for extractor in v:
+                if extractor not in allowed:
+                    raise ValueError(
+                        f"Unknown extractor: {extractor}. Allowed: {allowed}"
+                    )
+        return v
+
+    @field_validator("CLOUDFLARE_STRATEGY")
+    @classmethod
+    def validate_cloudflare_strategy(cls, v):
+        """Validate Cloudflare strategy is valid."""
+        if v is not None:
+            allowed = {"hybrid", "browser_only"}
+            if v.lower() not in allowed:
+                raise ValueError(
+                    f"Invalid Cloudflare strategy: {v}. Allowed: {allowed}"
+                )
         return v
 
 
