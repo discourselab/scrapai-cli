@@ -216,8 +216,14 @@ Convert strings to lowercase.
 
 Parse datetime string into ISO format.
 
+**Resolution order:**
+1. If `format` is given, use strptime (explicit wins).
+2. Else try `dateparser` — handles relative dates ("2 weeks ago", "yesterday"), 200+ languages, and fuzzy fragments.
+3. Else fall back to `dateutil`.
+
 **Parameters:**
-- `format` (optional): strptime format string (if None, uses dateutil parser for flexible parsing)
+- `format` (optional): strptime format string. Use when the input is consistent and you want strict parsing.
+- `languages` (optional): list of language hints for `dateparser` (e.g. `["en", "de"]`). Speeds parsing and disambiguates locales.
 
 **Example with format:**
 ```json
@@ -225,6 +231,16 @@ Parse datetime string into ISO format.
   "css": "time.date::attr(datetime)",
   "processors": [
     {"type": "parse_datetime", "format": "%Y-%m-%d"}
+  ]
+}
+```
+
+**Example with language hint:**
+```json
+{
+  "css": "span.date::text",
+  "processors": [
+    {"type": "parse_datetime", "languages": ["de"]}
   ]
 }
 ```
@@ -241,14 +257,19 @@ Parse datetime string into ISO format.
 
 **Input → Output:**
 ```
-"2024-02-24" → "2024-02-24T00:00:00" (ISO format)
-"February 24, 2024" → "2024-02-24T00:00:00"
-"24/02/2024" → "2024-02-24T00:00:00" (auto-detected)
+"2024-02-24"           → "2024-02-24T00:00:00"
+"February 24, 2024"    → "2024-02-24T00:00:00"
+"24/02/2024"           → "2024-02-24T00:00:00"
+"2 weeks ago"          → datetime 2 weeks before now (dateparser)
+"yesterday"            → datetime for yesterday at midnight
+"15. März 2024" (de)   → "2024-03-15T00:00:00"
 ```
 
 **Stored as ISO string in database (automatically serialized).**
 
 **Returns None if parsing fails.**
+
+**Note on fuzzy fragments:** Strings like `"Published on March 15, 2024"` may still fail because the leading text trips both parsers. Either pre-strip the prefix with a `regex` processor, or keep a raw-text fallback field (see [feedback_no_regex_chains.md] practice — don't grow date regexes; capture the raw value alongside).
 
 **Works on:** Strings only
 
