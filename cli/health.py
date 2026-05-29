@@ -150,20 +150,26 @@ def _test_spider(
         )
 
         # Check if any items were scraped by looking at the database
-        # (crawl saves to DB by default)
+        # (crawl saves to DB by default). Items are keyed by spider_id, so
+        # resolve the spider row first, then filter on its id.
         from core.db import get_db
-        from core.models import ScrapedItem
+        from core.models import ScrapedItem, Spider
 
         with get_db() as db:
+            spider = (
+                db.query(Spider)
+                .filter(Spider.name == spider_name, Spider.project == project)
+                .first()
+            )
+
             items = (
                 db.query(ScrapedItem)
-                .filter(
-                    ScrapedItem.spider_name == spider_name,
-                    ScrapedItem.project == project,
-                )
+                .filter(ScrapedItem.spider_id == spider.id)
                 .order_by(ScrapedItem.scraped_at.desc())
                 .limit(limit)
                 .all()
+                if spider
+                else []
             )
 
             result["items_count"] = len(items)
@@ -271,10 +277,10 @@ def _generate_report(
     if custom_path:
         report_path = Path(custom_path)
     else:
-        from core.config import get_data_dir
+        from core.config import DATA_DIR
 
         date = datetime.now().strftime("%Y%m%d")
-        report_path = get_data_dir(project) / "health" / date / "report.md"
+        report_path = Path(DATA_DIR) / project / "health" / date / "report.md"
 
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
