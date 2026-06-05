@@ -13,6 +13,7 @@ Features:
 """
 
 import os
+import re
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -44,6 +45,25 @@ S3_ENABLED = all([
 ])
 
 print(f"S3 Upload: {'ENABLED' if S3_ENABLED else 'DISABLED (credentials not found)'}")
+
+# Strict allowlist for values interpolated into shell commands.
+# Matches the SpiderConfigSchema.validate_name pattern.
+_SAFE_SHELL_TOKEN = re.compile(r'^[a-zA-Z0-9_-]+$')
+
+
+def _validate_shell_token(value: str, label: str) -> str:
+    """Validate that *value* is safe for shell interpolation.
+
+    Only alphanumeric characters, underscores, and hyphens are allowed.
+    Raises ``ValueError`` if the value does not match, preventing shell
+    injection via crafted database rows.
+    """
+    if not _SAFE_SHELL_TOKEN.match(value):
+        raise ValueError(
+            f"Unsafe {label} value rejected for shell command: {value!r}. "
+            "Only alphanumeric characters, underscores, and hyphens are allowed."
+        )
+    return value
 
 
 # Default DAG arguments
@@ -165,13 +185,20 @@ def create_spider_dag(spider):
     # Determine project (default to 'default' if not set)
     project = getattr(spider, 'project', 'default') or 'default'
 
+    # Validate spider name and project before interpolating into shell commands.
+    # Schema validation (SpiderConfigSchema) can be bypassed with --skip-validation,
+    # and the project field is never schema-validated, so we enforce here at the
+    # point of use as a defence-in-depth measure against shell injection.
+    safe_name = _validate_shell_token(spider.name, 'spider name')
+    safe_project = _validate_shell_token(project, 'project')
+
     # Create unique DAG ID
-    dag_id = f"{project}_{spider.name}"
+    dag_id = f"{safe_project}_{safe_name}"
 
     # Tags for filtering and organization
     tags = [
         'scrapai',
-        f'project:{project}',
+        f'project:{safe_project}',
         'spider',
     ]
 
@@ -183,7 +210,7 @@ def create_spider_dag(spider):
     dag = DAG(
         dag_id=dag_id,
         default_args=DEFAULT_DAG_ARGS,
-        description=f'ScrapAI spider: {spider.name} (Project: {project})',
+        description=f'ScrapAI spider: {safe_name} (Project: {safe_project})',
         schedule_interval=schedule_interval,
         tags=tags,
         catchup=False,
@@ -192,8 +219,8 @@ def create_spider_dag(spider):
         # Project-based access control
         # Note: You need to create these roles in Airflow UI first
         # access_control={
-        #     f'{project}_admin': {'can_read', 'can_edit', 'can_delete'},
-        #     f'{project}_user': {'can_read', 'can_edit'},
+        #     f'{safe_project}_admin': {'can_read', 'can_edit', 'can_delete'},
+        #     f'{safe_project}_user': {'can_read', 'can_edit'},
         # },
     )
 
@@ -204,7 +231,7 @@ def create_spider_dag(spider):
             bash_command=f"""
             cd {SCRAPAI_PATH} && \
             source .venv/bin/activate && \
-            ./scrapai crawl {spider.name} --project {project} --timeout 28800
+            ./scrapai crawl {safe_name} --project {safe_project} --timeout 28800
             """,
             # Graceful stop at 8h (28800s), hard kill at 9h as fallback
             execution_timeout=timedelta(hours=9),
@@ -216,7 +243,7 @@ def create_spider_dag(spider):
             bash_command=f"""
             cd {SCRAPAI_PATH} && \
             source .venv/bin/activate && \
-            ./scrapai show {spider.name} --project {project} --limit 5
+            ./scrapai show {safe_name} --project {safe_project} --limit 5
             """,
             execution_timeout=timedelta(minutes=5),
         )
@@ -229,7 +256,7 @@ def create_spider_dag(spider):
             upload_task = PythonOperator(
                 task_id='upload_to_s3',
                 python_callable=upload_to_s3,
-                op_kwargs={'spider_name': spider.name, 'project': project},
+                op_kwargs={'spider_name': safe_name, 'project': safe_project},
                 execution_timeout=timedelta(minutes=30),
             )
             verify_task >> upload_task
