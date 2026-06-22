@@ -17,6 +17,19 @@ from twisted.internet import threads
 logger = logging.getLogger(__name__)
 
 
+def proxies_from_request(request):
+    """Map Scrapy's request.meta['proxy'] to curl_cffi's proxies dict, or None.
+
+    SmartProxyMiddleware communicates the chosen proxy via request.meta['proxy'];
+    curl_cffi needs it as a {scheme: url} dict. Without this the proxy is silently
+    dropped on the curl_cffi transport.
+    """
+    proxy = request.meta.get("proxy")
+    if proxy:
+        return {"http": proxy, "https": proxy}
+    return None
+
+
 class CurlCffiDownloadHandler:
     """
     Download handler that uses curl_cffi with Chrome TLS impersonation.
@@ -82,6 +95,7 @@ class CurlCffiDownloadHandler:
                 impersonate=impersonate,
                 timeout=timeout,
                 allow_redirects=True,
+                proxies=proxies_from_request(request),
             )
 
             url_lower = response.url.lower()

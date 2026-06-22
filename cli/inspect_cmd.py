@@ -48,12 +48,15 @@ def inspect_cmd(
         click.echo("🌐 Using CloakBrowser (headed mode, JS + Cloudflare bypass)")
         _run_browser_inspect(url, project, output_dir, proxy_type, no_save_html)
     else:
-        click.echo("⚡ Using lightweight HTTP fetch")
+        click.echo("⚡ Trying lightweight transports (HTTP → curl_cffi)")
         from utils.inspector import inspect_page
 
-        inspect_page(
+        result = inspect_page(
             url, output_dir, proxy_type, not no_save_html, mode="http", project=project
         )
+        if result and result.get("needs_browser"):
+            click.echo("↑ Lightweight transports blocked — escalating to browser…")
+            _run_browser_inspect(url, project, output_dir, proxy_type, no_save_html)
 
     logger.info("Inspection complete")
 

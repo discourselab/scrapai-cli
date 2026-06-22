@@ -2,13 +2,12 @@
 """
 Page Inspector Utility
 
-This tool downloads and analyzes HTML from a source URL to help with creating scrapers.
-It's designed to be used as part of the scraper development process.
+Downloads and analyzes HTML from a source URL to help create scrapers.
 
-Supports three modes:
-- HTTP (default): Lightweight aiohttp fetch for most sites
-- Browser: Playwright for JS-rendered sites
-- Cloudflare: CloakBrowser for Cloudflare-protected sites
+In the default (lightweight) mode it ESCALATES transports automatically:
+plain HTTP → curl_cffi (TLS impersonation). If both are blocked it reports that a
+browser is needed; the CLI then runs the browser subprocess (with Xvfb handling).
+It tells you which transport worked and the flag to set in the spider config.
 
 Usage:
     python -m utils.inspector https://example.com/fact-checks
@@ -23,7 +22,113 @@ from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 
 from core.config import DATA_DIR
+from core.block_signals import is_blocked
 from settings import USER_AGENT
+
+
+def _resolve_output_dir(url, output_dir, project):
+    """Resolve the analysis output directory from the URL (domain-based)."""
+    if output_dir is not None:
+        return output_dir
+
+    parsed_url = urlparse(url)
+    domain = parsed_url.netloc.replace("www.", "")
+
+    if domain == "web.archive.org":
+        import re
+
+        wayback_pattern = r"/web/(\d{8})\d*/(?:https?://)?(?:www\.)?([^/]+)"
+        match = re.search(wayback_pattern, url)
+        if match:
+            timestamp = match.group(1)
+            original_domain = match.group(2).replace(".", "_").replace(":", "_")
+            return str(
+                Path(DATA_DIR)
+                / project
+                / "web_archive_org"
+                / original_domain
+                / timestamp
+                / "analysis"
+            )
+        return str(Path(DATA_DIR) / project / "web_archive_org" / "analysis")
+
+    source_id = domain.replace(".", "_")
+    return str(Path(DATA_DIR) / project / source_id / "analysis")
+
+
+async def _fetch_http(url):
+    """Plain aiohttp fetch. Returns (status, html) or (None, None) on error."""
+    try:
+        timeout = aiohttp.ClientTimeout(total=30)
+        headers = {"User-Agent": USER_AGENT}
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=timeout) as response:
+                return response.status, await response.text()
+    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        print(f"Plain HTTP fetch failed: {e}")
+        return None, None
+
+
+def _fetch_curl_cffi(url):
+    """curl_cffi (Chrome TLS impersonation). Returns (status, html) or (None, None)."""
+    try:
+        from curl_cffi import requests as cffi_requests
+
+        resp = cffi_requests.get(
+            url, impersonate="chrome", timeout=30, allow_redirects=True
+        )
+        return resp.status_code, resp.text
+    except Exception as e:
+        print(f"curl_cffi fetch failed: {e}")
+        return None, None
+
+
+async def _fetch_browser(url, proxy_type):
+    """CloakBrowser fetch (JS rendering + Cloudflare bypass). Returns html or None."""
+    from utils.cf_browser import CloudflareBrowserClient
+
+    def _env_proxy(prefix):
+        user = os.getenv(f"{prefix}_PROXY_USERNAME")
+        pw = os.getenv(f"{prefix}_PROXY_PASSWORD")
+        host = os.getenv(f"{prefix}_PROXY_HOST")
+        port = os.getenv(f"{prefix}_PROXY_PORT")
+        return (
+            f"http://{user}:{pw}@{host}:{port}" if all([user, pw, host, port]) else None
+        )
+
+    dc_url = _env_proxy("DATACENTER")
+    res_url = _env_proxy("RESIDENTIAL")
+
+    if proxy_type == "residential":
+        proxy_chain = [res_url] if res_url else [None]
+    elif proxy_type == "static":
+        proxy_chain = [dc_url] if dc_url else [None]
+    elif proxy_type == "none":
+        proxy_chain = [None]
+    else:
+        proxy_chain = [None]
+        if dc_url:
+            proxy_chain.append(dc_url)
+        if res_url:
+            proxy_chain.append(res_url)
+
+    async with CloudflareBrowserClient(
+        headless=False, proxy_chain=proxy_chain
+    ) as browser:
+        return await browser.fetch(url)
+
+
+_FLAG_HINT = {
+    "http": "Plain HTTP works — no transport flag needed.",
+    "curl_cffi": "curl_cffi works (plain HTTP was blocked). "
+    'Set "CURL_CFFI_ENABLED": true in the spider config.',
+    "browser": 'Browser works. Set "CLOUDFLARE_ENABLED": true '
+    '(or "BROWSER_ENABLED": true for JS-only sites).',
+}
+
+
+def _report(transport):
+    print(f"\n✓ Transport: {transport} — {_FLAG_HINT[transport]}")
 
 
 async def inspect_page_async(
@@ -34,158 +139,55 @@ async def inspect_page_async(
     mode="http",
     project="default",
 ):
-    """
-    Inspect a page and output analysis to help with creating a scraper
+    """Inspect a page, escalating transport as needed.
 
-    Args:
-        url (str): URL to inspect
-        output_dir (str): Directory to save analysis and HTML. If None, a directory is created based on the domain
-        proxy_type (str): Proxy type to use (unused now, browser handles this)
-        save_html (bool): Whether to save the full HTML
-        mode (str): Fetch mode - 'http' (default) or 'browser' (CloakBrowser for JS + Cloudflare)
-        project (str): Project name for organizing analysis files (default: "default")
-
-    Returns:
-        dict: Analysis results
+    Returns a dict: {"transport": "http"|"curl_cffi"|"browser"|None,
+                     "needs_browser": bool}.
+    In http mode, escalates plain HTTP → curl_cffi; if both blocked, returns
+    needs_browser=True so the caller can run the browser path.
     """
     print(f"Inspecting: {url}")
-    if mode == "browser":
-        print("Using CloakBrowser (JS rendering + Cloudflare bypass)...")
-    else:
-        print("Using lightweight HTTP fetch...")
-
-    # Extract domain for folder name if output_dir is not specified
-    if output_dir is None:
-        parsed_url = urlparse(url)
-        domain = parsed_url.netloc.replace("www.", "")
-
-        # Check if this is a Wayback Machine URL
-        if domain == "web.archive.org":
-            # Parse Wayback Machine URL structure:
-            # https://web.archive.org/web/YYYYMMDDHHMMSS/http://original-domain.com/path
-            import re
-
-            wayback_pattern = r"/web/(\d{8})\d*/(?:https?://)?(?:www\.)?([^/]+)"
-            match = re.search(wayback_pattern, url)
-
-            if match:
-                timestamp = match.group(1)  # 8-digit date (YYYYMMDD)
-                original_domain = match.group(2).replace(".", "_").replace(":", "_")
-                output_dir = str(
-                    Path(DATA_DIR)
-                    / project
-                    / "web_archive_org"
-                    / original_domain
-                    / timestamp
-                    / "analysis"
-                )
-            else:
-                # Fallback if pattern doesn't match
-                output_dir = str(
-                    Path(DATA_DIR) / project / "web_archive_org" / "analysis"
-                )
-        else:
-            source_id = domain.replace(".", "_")
-            output_dir = str(Path(DATA_DIR) / project / source_id / "analysis")
-
-    # Create output directory
+    output_dir = _resolve_output_dir(url, output_dir, project)
     os.makedirs(output_dir, exist_ok=True)
 
-    # Fetch HTML based on mode
     html_content = None
+    transport = None
 
     if mode == "browser":
-        # Use CloakBrowser for JS rendering and Cloudflare bypass
-        # Always headed mode (headless=False) for best stealth
-        from utils.cf_browser import CloudflareBrowserClient
-
-        # Build proxy chain based on proxy_type
-        dc_user = os.getenv("DATACENTER_PROXY_USERNAME")
-        dc_pass = os.getenv("DATACENTER_PROXY_PASSWORD")
-        dc_host = os.getenv("DATACENTER_PROXY_HOST")
-        dc_port = os.getenv("DATACENTER_PROXY_PORT")
-        dc_url = (
-            f"http://{dc_user}:{dc_pass}@{dc_host}:{dc_port}"
-            if all([dc_user, dc_pass, dc_host, dc_port])
-            else None
-        )
-
-        res_user = os.getenv("RESIDENTIAL_PROXY_USERNAME")
-        res_pass = os.getenv("RESIDENTIAL_PROXY_PASSWORD")
-        res_host = os.getenv("RESIDENTIAL_PROXY_HOST")
-        res_port = os.getenv("RESIDENTIAL_PROXY_PORT")
-        res_url = (
-            f"http://{res_user}:{res_pass}@{res_host}:{res_port}"
-            if all([res_user, res_pass, res_host, res_port])
-            else None
-        )
-
-        if proxy_type == "residential":
-            # Skip straight to residential/ISP proxy (e.g. for geo-blocked sites)
-            proxy_chain = [res_url] if res_url else [None]
-        elif proxy_type == "static":
-            # Skip straight to datacenter proxy
-            proxy_chain = [dc_url] if dc_url else [None]
-        elif proxy_type == "none":
-            # Direct only, no proxies
-            proxy_chain = [None]
-        else:
-            # Auto: full escalation chain direct → datacenter → residential
-            proxy_chain = [None]
-            if dc_url:
-                proxy_chain.append(dc_url)
-            if res_url:
-                proxy_chain.append(res_url)
-
-        async with CloudflareBrowserClient(
-            headless=False, proxy_chain=proxy_chain
-        ) as browser:
-            html_content = await browser.fetch(url)
-
-            if not html_content:
-                print(f"Failed to fetch page: {url}")
-                return None
-
+        print("Using CloakBrowser (JS rendering + Cloudflare bypass)...")
+        html_content = await _fetch_browser(url, proxy_type)
+        if not html_content:
+            print(f"Failed to fetch page: {url}")
+            return {"transport": None, "needs_browser": True}
+        transport = "browser"
     else:
-        # Mode 1: Use lightweight HTTP fetch (default)
-        try:
-            timeout = aiohttp.ClientTimeout(total=30)
-            headers = {"User-Agent": USER_AGENT}
+        print("Trying plain HTTP...")
+        status, html_content = await _fetch_http(url)
+        if not is_blocked(status, html_content):
+            transport = "http"
+        else:
+            print(f"Plain HTTP blocked (status {status}) — trying curl_cffi...")
+            status, html_content = await asyncio.to_thread(_fetch_curl_cffi, url)
+            if not is_blocked(status, html_content):
+                transport = "curl_cffi"
+            else:
+                print("curl_cffi also blocked — a browser is needed.")
+                return {"transport": None, "needs_browser": True}
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    url, headers=headers, timeout=timeout
-                ) as response:
-                    if response.status != 200:
-                        print(f"HTTP {response.status} - {url}")
-                        print(
-                            "Hint: Try --browser for JS-rendered or Cloudflare-protected sites"
-                        )
-                        return None
-
-                    html_content = await response.text()
-
-        except aiohttp.ClientError as e:
-            print(f"Failed to fetch page: {e}")
-            print("Hint: Try --browser for JS-rendered or Cloudflare-protected sites")
-            return None
-        except asyncio.TimeoutError:
-            print(f"Request timed out: {url}")
-            return None
-
-    # Save the HTML if requested
     if save_html and html_content:
         html_file = os.path.join(output_dir, "page.html")
         with open(html_file, "w", encoding="utf-8") as f:
             f.write(html_content)
         print(f"Saved HTML to: {html_file}")
 
-    # Parse and analyze the HTML
     if html_content:
         soup = BeautifulSoup(html_content, "html.parser")
         title = soup.title.text if soup.title else "No title"
         print(f"\nTitle: {title}")
         print(f"HTML size: {len(html_content)} bytes")
+
+    _report(transport)
+    return {"transport": transport, "needs_browser": False}
 
 
 def inspect_page(
@@ -196,20 +198,7 @@ def inspect_page(
     mode="http",
     project="default",
 ):
-    """
-    Synchronous wrapper for inspect_page_async
-
-    Args:
-        url (str): URL to inspect
-        output_dir (str): Directory to save analysis and HTML
-        proxy_type (str): Proxy type to use (unused)
-        save_html (bool): Whether to save the full HTML
-        mode (str): Fetch mode - 'http' (default) or 'browser' (CloakBrowser)
-        project (str): Project name for organizing analysis files
-
-    Returns:
-        dict: Analysis results
-    """
+    """Synchronous wrapper for inspect_page_async."""
     return asyncio.run(
         inspect_page_async(url, output_dir, proxy_type, save_html, mode, project)
     )

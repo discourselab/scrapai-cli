@@ -81,7 +81,7 @@ Inspect an article page:
 ./scrapai inspect https://website.com/article-url --project proj
 ```
 
-If inspector shows "Checking your browser" or 403/503 → re-run with `--browser`.
+`inspect` auto-escalates transport (plain HTTP → curl_cffi → browser) and reports the lightest one that worked — set the matching flag it names (`CURL_CFFI_ENABLED` or `CLOUDFLARE_ENABLED`). No need to re-run manually; prefer curl_cffi over the browser when it works.
 
 Check if trafilatura/newspaper would extract correctly:
 - Clean `<article>` tags / semantic HTML → generic extractors work
@@ -202,7 +202,7 @@ Verify ALL phases passed:
 
 **Inspector overwrites files:** NEVER run multiple inspectors in parallel. Each run overwrites `page.html`. Always process output (extract-urls, analyze) before next inspector run.
 
-**Cloudflare during analysis:** If inspector shows "Checking your browser" or 403/503, re-run with `--browser`. Note this for Phase 4 — add `CLOUDFLARE_ENABLED: true` to spider settings. If inspector works fine, do NOT enable Cloudflare.
+**Blocked during analysis:** `inspect` auto-escalates plain HTTP → curl_cffi → browser and reports the transport that worked. Set the flag it names in Phase 4: curl_cffi → `CURL_CFFI_ENABLED: true`; browser → `CLOUDFLARE_ENABLED: true`. If plain HTTP works, set no transport flag. Don't reach for the browser when curl_cffi already gets through.
 
 **Bad extraction in 4A:** Go back to Phase 2, fix selectors or switch extractor order. Delete spider if needed:
 ```bash

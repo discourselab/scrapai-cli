@@ -65,7 +65,7 @@ When the user greets you, introduce yourself:
 - `python`/`python3` in Bash → use `./scrapai analyze`
 
 **HTML processing commands:**
-- `./scrapai inspect <url>` — fetch and save HTML. `--browser` for JS/Cloudflare. `--proxy-type residential|static|none`.
+- `./scrapai inspect <url>` — fetch and save HTML. Auto-escalates transport (plain HTTP → curl_cffi → browser) and reports which one worked + the flag to set. `--browser` forces browser. `--proxy-type residential|static|none`.
 - `./scrapai extract-urls --file <html>` — extract URLs from saved HTML
 - `./scrapai analyze <html>` — analyze structure, test selectors, find fields
 - `./scrapai try <html>` — run newspaper + trafilatura, compare output
@@ -124,6 +124,7 @@ Detailed steps: [docs/analysis-workflow.md](docs/analysis-workflow.md). **Only m
 
 - **Sitemap URL?** → [docs/sitemap.md](docs/sitemap.md).
 - **Otherwise:** `inspect` homepage → `extract-urls` → categorize → drill into sections ONE AT A TIME (inspector overwrites files). Document in `sections.md`.
+- **Transport:** `inspect` auto-escalates plain HTTP → curl_cffi → browser and reports the lightest one that worked. Set the matching flag in the spider config: curl_cffi → `"CURL_CFFI_ENABLED": true`; browser → `"CLOUDFLARE_ENABLED": true` (or `"BROWSER_ENABLED": true` for JS-only). Never use the browser if curl_cffi works — it's far faster.
 - **Exclusion policy:** only exclude about/contact/donate/account/legal/search/PDFs. Everything else: explore and include. When uncertain, include it. User instructions override defaults.
 
 **✓ Phase 1 DONE when:**
