@@ -1,4 +1,4 @@
-"""ScrapAI CLI - click-based command interface."""
+"""scrapai CLI - click-based command interface."""
 
 import click
 import sys
@@ -26,7 +26,7 @@ from .try_cmd import try_cmd  # noqa: E402
 @click.group()
 @click.version_option(version=__version__, prog_name="scrapai")
 def cli():
-    """ScrapAI - AI-powered web scraping CLI"""
+    """scrapai - AI-powered web scraping CLI"""
     pass
 
 

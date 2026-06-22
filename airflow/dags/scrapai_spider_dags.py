@@ -1,7 +1,7 @@
 """
-ScrapAI Spider DAG Generator
+scrapai Spider DAG Generator
 
-This file dynamically generates Airflow DAGs from spiders in the ScrapAI database.
+This file dynamically generates Airflow DAGs from spiders in the scrapai database.
 Each spider becomes a separate DAG that can be scheduled and monitored in Airflow.
 
 Features:
@@ -30,7 +30,7 @@ try:
     from core.db import SessionLocal
     from core.models import Spider
 except ImportError as e:
-    print(f"Warning: Could not import ScrapAI modules: {e}")
+    print(f"Warning: Could not import scrapai modules: {e}")
     print(f"Make sure SCRAPAI_CLI_PATH is set correctly: {SCRAPAI_PATH}")
     # Create empty globals so Airflow doesn't error on import
     sys.exit(0)
@@ -141,7 +141,7 @@ def upload_to_s3(spider_name: str, project: str, **context):
 
 
 def get_spiders_from_db():
-    """Fetch all spiders from ScrapAI database"""
+    """Fetch all spiders from scrapai database"""
     try:
         session = SessionLocal()
         spiders = session.query(Spider).all()
@@ -183,7 +183,7 @@ def create_spider_dag(spider):
     dag = DAG(
         dag_id=dag_id,
         default_args=DEFAULT_DAG_ARGS,
-        description=f'ScrapAI spider: {spider.name} (Project: {project})',
+        description=f'scrapai spider: {spider.name} (Project: {project})',
         schedule_interval=schedule_interval,
         tags=tags,
         catchup=False,

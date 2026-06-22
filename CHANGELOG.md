@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to ScrapAI will be documented in this file.
+All notable changes to scrapai will be documented in this file.
 
 ## [Unreleased]
 

@@ -1,6 +1,6 @@
-# Airflow Setup for ScrapAI
+# Airflow Setup for scrapai
 
-This directory contains Airflow configuration for managing and monitoring your ScrapAI spiders.
+This directory contains Airflow configuration for managing and monitoring your scrapai spiders.
 
 ## Quick Start
 
@@ -11,7 +11,7 @@ This directory contains Airflow configuration for managing and monitoring your S
 cp .env.airflow .env
 
 # Edit .env and set your database credentials
-# Make sure DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD match your ScrapAI database
+# Make sure DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD match your scrapai database
 
 # Set Airflow UID (run this command to get your user ID)
 echo "AIRFLOW_UID=$(id -u)" >> .env
@@ -51,7 +51,7 @@ In the Airflow UI:
 
 ### Automatic DAG Generation
 
-- **Auto-Discovery**: DAGs are automatically generated from your ScrapAI spider database
+- **Auto-Discovery**: DAGs are automatically generated from your scrapai spider database
 - **Project Organization**: Each spider is tagged with its project for filtering
 - **Refresh**: DAGs update when Airflow scheduler refreshes (every few minutes)
 
@@ -207,12 +207,12 @@ dag = DAG(
 └──────────┬──────────┘
            │
 ┌──────────▼──────────┐
-│  DAG Generator      │  Queries ScrapAI DB
+│  DAG Generator      │  Queries scrapai DB
 │  (Python script)    │  Generates DAGs dynamically
 └──────────┬──────────┘
            │
 ┌──────────▼──────────┐
-│  ScrapAI Database   │  Your spider configs
+│  scrapai Database   │  Your spider configs
 │  (PostgreSQL)       │
 └─────────────────────┘
            │
@@ -253,7 +253,7 @@ docker-compose -f docker-compose.airflow.yml exec airflow-webserver \
 
 **Common issues:**
 - Virtual environment not activated → Check bash_command in DAG
-- ScrapAI CLI not found → Check SCRAPAI_CLI_PATH environment variable
+- scrapai CLI not found → Check SCRAPAI_CLI_PATH environment variable
 - Database connection issues → Check DB credentials in .env
 
 **Test spider manually:**
@@ -284,7 +284,7 @@ docker-compose -f docker-compose.airflow.yml up -d
 
 ### Database connection issues
 
-**If DAG generator can't connect to ScrapAI database:**
+**If DAG generator can't connect to scrapai database:**
 
 1. Check network connectivity from container:
 ```bash

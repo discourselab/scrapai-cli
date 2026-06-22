@@ -27,7 +27,7 @@ def run_setup_standalone():
     venv_path = Path(script_dir) / '.venv'
     venv_python = venv_path / 'bin' / 'python'
 
-    print("🚀 Setting up ScrapAI environment...")
+    print("🚀 Setting up scrapai environment...")
 
     # Create venv
     if not venv_path.exists():

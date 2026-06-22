@@ -1,6 +1,6 @@
 # Proxy Support
 
-ScrapAI has **SmartProxyMiddleware** that intelligently manages proxy usage to avoid blocks while minimizing costs.
+scrapai has **SmartProxyMiddleware** that intelligently manages proxy usage to avoid blocks while minimizing costs.
 
 ## How It Works
 

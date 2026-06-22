@@ -1,4 +1,4 @@
-# Scrapling vs crawl4ai vs ScrapAI
+# Scrapling vs crawl4ai vs scrapai
 
 A practical comparison for anyone choosing a scraping tool. Each tool is genuinely good at different things.
 
@@ -6,14 +6,14 @@ A practical comparison for anyone choosing a scraping tool. Each tool is genuine
 
 ## Overview
 
-| | **Scrapling** | **crawl4ai** | **ScrapAI** |
+| | **Scrapling** | **crawl4ai** | **scrapai** |
 |---|---|---|---|
 | **What it is** | Scraping library with adaptive parsing | Crawler & content extractor with LLM integration | AI-agent-driven scraper management |
 | **Best for** | Stealth scraping, anti-bot evasion | Exploration, research, prototyping | Managing many scrapers at scale |
 | **Who writes scrapers** | You (Python) | You (Python) | AI agent (JSON configs) |
 | **License** | BSD-3 | Apache 2.0 | AGPL-3.0 |
 
-**The short version:** Scrapling and crawl4ai are excellent scraping libraries that give developers full control. ScrapAI is a different thing: an orchestration layer where an AI agent builds and manages scrapers, and you talk to it in English. They're not competing for the same job.
+**The short version:** Scrapling and crawl4ai are excellent scraping libraries that give developers full control. scrapai is a different thing: an orchestration layer where an AI agent builds and manages scrapers, and you talk to it in English. They're not competing for the same job.
 
 ### Codebase Size
 
@@ -21,23 +21,23 @@ Measured with [pygount](https://github.com/roskakori/pygount), counting actual c
 
 | Repository | Files | Code Lines | Comment Lines | Comment % |
 |---|---|---|---|---|
-| **ScrapAI** | 37 | 4,028 | 895 | 14% |
+| **scrapai** | 37 | 4,028 | 895 | 14% |
 | **Scrapling** | 43 | 5,875 | 2,063 | 21% |
 | **crawl4ai** | 87 | 26,850 | 10,326 | 21% |
 
-ScrapAI is the smallest codebase. crawl4ai is ~7x larger, which reflects its broader scope (markdown conversion, LLM integration, media extraction, Docker API). Scrapling is closer in size but includes more inline documentation.
+scrapai is the smallest codebase. crawl4ai is ~7x larger, which reflects its broader scope (markdown conversion, LLM integration, media extraction, Docker API). Scrapling is closer in size but includes more inline documentation.
 
 ---
 
 ## Getting Started
 
-| | Scrapling | crawl4ai | ScrapAI |
+| | Scrapling | crawl4ai | scrapai |
 |---|---|---|---|
 | **Install** | `pip install scrapling[all]` + `scrapling install` | `pip install crawl4ai` + `crawl4ai-setup` | `git clone` + `./scrapai setup` |
 | **Time to first scraper** | 30-60 min (inspect, write code, test, debug) | 30-60 min (same) | ~5 min (setup, launch agent, give URL) |
 | **Skills needed** | Python, CSS/XPath, HTTP | Python, async/await, CSS/XPath | Plain English |
 
-With Scrapling or crawl4ai, you're writing Python. With ScrapAI, the agent handles analysis and config generation, but developers can also hand-write, edit, or override any config. The difference is where you spend your time: writing extraction code vs reviewing and refining what the agent produces.
+With Scrapling or crawl4ai, you're writing Python. With scrapai, the agent handles analysis and config generation, but developers can also hand-write, edit, or override any config. The difference is where you spend your time: writing extraction code vs reviewing and refining what the agent produces.
 
 ---
 
@@ -45,7 +45,7 @@ With Scrapling or crawl4ai, you're writing Python. With ScrapAI, the agent handl
 
 ### Building Scrapers
 
-| | Scrapling / crawl4ai | ScrapAI |
+| | Scrapling / crawl4ai | scrapai |
 |---|---|---|
 | **1 scraper** | 30-60 min developer time | 3-6 min, ~$1-3 in API tokens |
 | **100 scrapers** | 50-100 hours developer time | ~$100-300 in tokens, 1-2 days |
@@ -55,20 +55,20 @@ With Scrapling or crawl4ai, you're writing Python. With ScrapAI, the agent handl
 
 This is where the approaches really diverge.
 
-| | Scrapling | crawl4ai | ScrapAI |
+| | Scrapling | crawl4ai | scrapai |
 |---|---|---|---|
 | **AI at runtime** | No | Optional (two modes) | No, deterministic Scrapy |
 | **Per-page cost** | $0 | $0 with cached schemas, LLM cost with per-page extraction | $0 |
 
-crawl4ai has two extraction modes. `LLMExtractionStrategy` calls the LLM on every page, which is powerful for exploration but expensive at scale. `JsonCssExtractionStrategy` uses `generate_schema()` to call the LLM once, generate CSS/XPath selectors, cache the schema as a JSON file, and reuse it for all subsequent pages with no LLM calls. That second mode follows the same principle as ScrapAI: AI once, deterministic forever.
+crawl4ai has two extraction modes. `LLMExtractionStrategy` calls the LLM on every page, which is powerful for exploration but expensive at scale. `JsonCssExtractionStrategy` uses `generate_schema()` to call the LLM once, generate CSS/XPath selectors, cache the schema as a JSON file, and reuse it for all subsequent pages with no LLM calls. That second mode follows the same principle as scrapai: AI once, deterministic forever.
 
-The difference is scope. crawl4ai's cached schemas cover extraction selectors for one page type. ScrapAI's spider configs cover the full pipeline: URL discovery rules, extraction settings, Cloudflare config, proxy behavior, and crawl parameters, all stored in a database and managed through a CLI. crawl4ai gives you the extraction building block; ScrapAI wraps the entire workflow.
+The difference is scope. crawl4ai's cached schemas cover extraction selectors for one page type. scrapai's spider configs cover the full pipeline: URL discovery rules, extraction settings, Cloudflare config, proxy behavior, and crawl parameters, all stored in a database and managed through a CLI. crawl4ai gives you the extraction building block; scrapai wraps the entire workflow.
 
 ### Maintenance
 
 When a site redesigns and breaks a scraper:
 
-| | Scrapling / crawl4ai | ScrapAI |
+| | Scrapling / crawl4ai | scrapai |
 |---|---|---|
 | **Detection** | You notice it's broken | Automated test crawls (monthly cron) |
 | **Fix** | Developer investigates, updates code | Agent re-analyzes, updates config |
@@ -82,7 +82,7 @@ Scrapling has a unique advantage here: its adaptive parser can relocate elements
 
 ### Stealth Capabilities
 
-| | Scrapling | crawl4ai | ScrapAI |
+| | Scrapling | crawl4ai | scrapai |
 |---|---|---|---|
 | **Browser engine** | Patchright (patched Playwright) | Patchright (patched Playwright) | [CloakBrowser](https://github.com/CloakHQ/CloakBrowser) (16 C++ patches) |
 | **reCAPTCHA v3 score** | Not documented | Not documented | **0.9 (verified)** |
@@ -90,7 +90,7 @@ Scrapling has a unique advantage here: its adaptive parser can relocate elements
 
 ### Cloudflare Challenges
 
-| | Scrapling | crawl4ai | ScrapAI |
+| | Scrapling | crawl4ai | scrapai |
 |---|---|---|---|
 | **Non-interactive** ("Just a moment...") | Waits for title change | Stealth handles it | **Auto-solved (CloakBrowser 0.9 score)** |
 | **Turnstile (managed)** | Auto-clicks with offset | Relies on stealth | **Auto-solved or single click** |
@@ -102,7 +102,7 @@ Scrapling has a unique advantage here: its adaptive parser can relocate elements
 
 This is where architecture matters more than stealth.
 
-| | Scrapling (StealthySession) | crawl4ai | ScrapAI (CloakBrowser hybrid) |
+| | Scrapling (StealthySession) | crawl4ai | scrapai (CloakBrowser hybrid) |
 |---|---|---|---|
 | **CF solution** | Solved once per session | Per request (unless stealth bypasses) | **CloakBrowser solves once, cookies cached ~10 min** |
 | **Subsequent requests** | Browser per request (~5-10s) | Browser per request (~5-10s) | **HTTP with cached cookies (~0.1-0.5s)** |
@@ -111,13 +111,13 @@ This is where architecture matters more than stealth.
 | **100 pages** | ~8-16 min | ~8-16 min | **~1 min** |
 | **1,000 pages** | ~1.5-3 hours | ~1.5-3 hours | **~8 min** |
 
-Scrapling's `StealthySession` persists cookies but keeps the browser open for all requests (~5-10s each). ScrapAI solves once, caches cookies, shuts down browser, then uses fast HTTP (~0.1-0.5s per page).
+Scrapling's `StealthySession` persists cookies but keeps the browser open for all requests (~5-10s each). scrapai solves once, caches cookies, shuts down browser, then uses fast HTTP (~0.1-0.5s per page).
 
 ---
 
 ## Data Extraction
 
-| | Scrapling | crawl4ai | ScrapAI |
+| | Scrapling | crawl4ai | scrapai |
 |---|---|---|---|
 | **Approach** | Your CSS/XPath selectors | Full-page markdown, per-page LLM, or LLM-generated cached schemas | Targeted field extraction (trafilatura/newspaper or custom callbacks) |
 | **Adaptive parsing** | Yes (survives redesigns) | No | No |
@@ -126,15 +126,15 @@ Scrapling's `StealthySession` persists cookies but keeps the browser open for al
 
 crawl4ai returns markdown of the full page, including navigation, sidebars, and footers. Heuristic filters help but aren't perfect. Great for exploration ("I don't know what I'm looking for yet") but expensive at scale if you're feeding results to an LLM.
 
-ScrapAI extracts only the fields you need. For a BBC article: title, content, author, date. Clean structured data, 5x fewer tokens than full-page markdown. For non-article content (products, jobs, listings), the agent writes custom callbacks with field-level selectors.
+scrapai extracts only the fields you need. For a BBC article: title, content, author, date. Clean structured data, 5x fewer tokens than full-page markdown. For non-article content (products, jobs, listings), the agent writes custom callbacks with field-level selectors.
 
-Scrapling's adaptive parser is unique: it tracks elements across site redesigns using fuzzy matching. Neither crawl4ai nor ScrapAI have anything like this.
+Scrapling's adaptive parser is unique: it tracks elements across site redesigns using fuzzy matching. Neither crawl4ai nor scrapai have anything like this.
 
 ---
 
 ## Production Infrastructure
 
-| Feature | Scrapling | crawl4ai | ScrapAI |
+| Feature | Scrapling | crawl4ai | scrapai |
 |---|---|---|---|
 | **Pause/resume** | crawldir-based | Crash recovery | Scrapy JOBDIR |
 | **Proxy management** | ProxyRotator | proxy_config | Smart escalation (direct → datacenter auto, residential with approval) |
@@ -144,7 +144,7 @@ Scrapling's adaptive parser is unique: it tracks elements across site redesigns 
 | **Scheduling** | No | Docker + external cron | Airflow DAGs |
 | **S3 upload** | No | No | Built-in |
 
-ScrapAI has more production features because that's what it was built for: running many scrapers on a schedule. Scrapling and crawl4ai are libraries, not platforms. You'd build these features yourself on top of them (and many teams do).
+scrapai has more production features because that's what it was built for: running many scrapers on a schedule. Scrapling and crawl4ai are libraries, not platforms. You'd build these features yourself on top of them (and many teams do).
 
 ---
 
@@ -154,9 +154,9 @@ This matters more than most technical comparisons.
 
 **With Scrapling / crawl4ai:** A new team member needs Python, async programming, CSS/XPath, HTTP internals, and your team's conventions. Onboarding takes days to weeks. If the original developer left, their scrapers become tribal knowledge in code.
 
-**With ScrapAI:** A new team member says "Add Reuters to our news project." Onboarding takes minutes.
+**With scrapai:** A new team member says "Add Reuters to our news project." Onboarding takes minutes.
 
-**Changing settings across scrapers:** With code-based tools, changing the download delay across 100 scrapers means editing 100 files. With ScrapAI, it's one database query.
+**Changing settings across scrapers:** With code-based tools, changing the download delay across 100 scrapers means editing 100 files. With scrapai, it's one database query.
 
 This isn't about one approach being better. If your team is developers who want control, code-based tools are the right choice. If scraping is a means to an end and your team includes non-technical people, the agent-driven approach removes a barrier.
 
@@ -174,7 +174,7 @@ When an agent writes and executes arbitrary code while processing content from u
 
 | | Approach A: AI writes code | Approach B: AI writes config |
 |---|---|---|
-| **Example** | OpenClaw + Scrapling | ScrapAI |
+| **Example** | OpenClaw + Scrapling | scrapai |
 | **What AI produces** | Arbitrary Python | JSON configs |
 | **Runtime** | AI-generated code executes | Deterministic engine loads config |
 | **AI at runtime?** | Yes | No, AI only at build time |
@@ -190,7 +190,7 @@ Neither approach is universally right. Writing code is more flexible. Writing co
 
 ## Agent Compatibility
 
-ScrapAI works with two categories of agents: **coding agents** (interactive, developer in the loop) and **Claws** (autonomous runtimes, no developer in the loop).
+scrapai works with two categories of agents: **coding agents** (interactive, developer in the loop) and **Claws** (autonomous runtimes, no developer in the loop).
 
 ### Coding Agents
 
@@ -206,11 +206,11 @@ We tested with [NanoClaw](https://github.com/qwibitai/nanoclaw) because it align
 
 - **Lightweight.** Minimalist by design, small codebase, small attack surface.
 - **Container isolation.** Agents run in isolated containers with explicit resource limits. Containerization doesn't solve everything, but it limits the blast radius.
-- **Two layers of protection.** NanoClaw's container isolation + ScrapAI's config-only architecture means even a compromised agent can only produce JSON configs and run predefined CLI commands, inside a sandbox.
+- **Two layers of protection.** NanoClaw's container isolation + scrapai's config-only architecture means even a compromised agent can only produce JSON configs and run predefined CLI commands, inside a sandbox.
 
-Our initial test: NanoClaw running from a Telegram bot, reading ScrapAI's workflow, producing working spider configs. More rigorous testing is in progress, particularly around Cloudflare-protected sites and error recovery.
+Our initial test: NanoClaw running from a Telegram bot, reading scrapai's workflow, producing working spider configs. More rigorous testing is in progress, particularly around Cloudflare-protected sites and error recovery.
 
-ScrapAI should work with any Claw runtime that can read instructions and execute shell commands.
+scrapai should work with any Claw runtime that can read instructions and execute shell commands.
 
 ### Enforcement
 
@@ -222,25 +222,25 @@ With other coding agents and Claws, the workflow design (JSON configs + CLI boun
 
 ## Deployment
 
-| | Scrapling | crawl4ai | ScrapAI |
+| | Scrapling | crawl4ai | scrapai |
 |---|---|---|---|
 | **Headless servers** | Supported | Supported | Supported (Xvfb auto-detected) |
 | **Docker** | Official image | Official image + API | No official image |
 
-ScrapAI auto-detects missing displays on Linux servers and sets up Xvfb for Cloudflare verification. The virtual display is only needed ~once per 10 min, then everything switches to HTTP.
+scrapai auto-detects missing displays on Linux servers and sets up Xvfb for Cloudflare verification. The virtual display is only needed ~once per 10 min, then everything switches to HTTP.
 
 ---
 
 ## Community & Maturity
 
-| | Scrapling | crawl4ai | ScrapAI |
+| | Scrapling | crawl4ai | scrapai |
 |---|---|---|---|
 | **GitHub stars** | Growing fast | Large community | Small/new |
 | **Docker image** | Official | Official + playground | No |
 | **MCP server** | Yes | Yes | No |
 | **First release** | 2024 | 2024 | 2025 |
 
-crawl4ai has the largest community by far. Scrapling is newer but growing fast. ScrapAI has been production-tested across hundreds of websites. The public community is just starting.
+crawl4ai has the largest community by far. Scrapling is newer but growing fast. scrapai has been production-tested across hundreds of websites. The public community is just starting.
 
 ---
 
@@ -251,13 +251,13 @@ crawl4ai has the largest community by far. Scrapling is newer but growing fast. 
 | **One-off scrape, full control** | Scrapling or crawl4ai | Developer tools for developers |
 | **Exploring an unfamiliar site** | crawl4ai | Returns everything in one call |
 | **Hard CAPTCHAs** | crawl4ai | Capsolver integration |
-| **Site changes layout often** | Scrapling or ScrapAI | Scrapling: adaptive parser. ScrapAI: agent auto-fixes |
-| **Highest reCAPTCHA score** | ScrapAI | CloakBrowser (0.9 vs config-level tools) |
-| **Non-technical team** | ScrapAI | Plain English, no code |
-| **Managing 50+ scrapers** | ScrapAI | Database + agent + queue |
-| **Cloudflare site, thousands of pages** | ScrapAI | Cookie caching = 10x+ faster |
-| **Team with turnover** | ScrapAI | No knowledge transfer problem |
-| **Feeding data to LLMs** | ScrapAI | 5x fewer tokens than markdown |
+| **Site changes layout often** | Scrapling or scrapai | Scrapling: adaptive parser. scrapai: agent auto-fixes |
+| **Highest reCAPTCHA score** | scrapai | CloakBrowser (0.9 vs config-level tools) |
+| **Non-technical team** | scrapai | Plain English, no code |
+| **Managing 50+ scrapers** | scrapai | Database + agent + queue |
+| **Cloudflare site, thousands of pages** | scrapai | Cookie caching = 10x+ faster |
+| **Team with turnover** | scrapai | No knowledge transfer problem |
+| **Feeding data to LLMs** | scrapai | 5x fewer tokens than markdown |
 | **Research / prototyping** | crawl4ai | Rich results, LLM integration |
 
 ---
@@ -268,7 +268,7 @@ crawl4ai has the largest community by far. Scrapling is newer but growing fast. 
 
 **crawl4ai** is the best exploration and research tool. Point it at a site, get back HTML, markdown, media, links, screenshots, metadata, everything in one call. Largest community, Capsolver for CAPTCHAs, Docker deployment with monitoring. The "I don't know what I'm looking for yet" tool.
 
-**ScrapAI** is built for managing scrapers at scale. An AI agent builds them, a database stores them, Scrapy runs them. CloakBrowser (0.9 reCAPTCHA), cookie-cached Cloudflare bypass, smart proxy escalation, queue system, AI-assisted health checks. We built it because we needed to scrape hundreds of sites and couldn't staff a team to write individual scrapers. Trade-off: you depend on AI agent quality and pay token costs instead of developer hours.
+**scrapai** is built for managing scrapers at scale. An AI agent builds them, a database stores them, Scrapy runs them. CloakBrowser (0.9 reCAPTCHA), cookie-cached Cloudflare bypass, smart proxy escalation, queue system, AI-assisted health checks. We built it because we needed to scrape hundreds of sites and couldn't staff a team to write individual scrapers. Trade-off: you depend on AI agent quality and pay token costs instead of developer hours.
 
 They're different tools for different problems. At small scale, pick whichever fits how you think. At large scale, the question shifts from "which library has better selectors" to "how do I manage hundreds of scrapers without a dedicated team."
 

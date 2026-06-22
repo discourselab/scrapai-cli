@@ -2,7 +2,7 @@
 
 Skips pages unchanged since last crawl. First crawl scrapes everything; subsequent crawls only process new/changed pages.
 
-**✓ Enabled by default** in ScrapAI - all crawls automatically use incremental crawling.
+**✓ Enabled by default** in scrapai - all crawls automatically use incremental crawling.
 
 ## Configuration
 

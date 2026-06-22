@@ -1,6 +1,6 @@
 # Checkpoint Pause/Resume
 
-ScrapAI automatically enables checkpoint support for production crawls, allowing you to pause long-running crawls and resume them later without losing progress.
+scrapai automatically enables checkpoint support for production crawls, allowing you to pause long-running crawls and resume them later without losing progress.
 
 ## How It Works
 
@@ -99,7 +99,7 @@ Request(url, callback=self.parse_article)
 Request(url, callback=some_external_function)
 ```
 
-✅ **ScrapAI spiders already compatible**: Our database spiders use spider methods (`self.parse`), so checkpoints work out of the box!
+✅ **scrapai spiders already compatible**: Our database spiders use spider methods (`self.parse`), so checkpoints work out of the box!
 
 ⚠️ **Cookie expiration**: If you wait too long to resume (days/weeks), cookies may expire and requests may fail. Resume within a reasonable timeframe (hours/days, not weeks).
 

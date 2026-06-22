@@ -1,4 +1,4 @@
-# ScrapAI CLI - Agent Rules (Cursor / Windsurf / Other Agents)
+# scrapai CLI - Agent Rules (Cursor / Windsurf / Other Agents)
 
 **For complete documentation, refer to: `CLAUDE.md`**
 

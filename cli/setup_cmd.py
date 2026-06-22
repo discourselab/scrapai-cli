@@ -11,7 +11,7 @@ def setup(args):
     """Setup virtual environment and database"""
     skip_deps = "--skip-deps" in args
 
-    click.echo("🚀 Setting up ScrapAI environment...")
+    click.echo("🚀 Setting up scrapai environment...")
 
     script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     venv_path = Path(".venv")
@@ -106,7 +106,7 @@ def setup(args):
 
         test_file = data_dir / "welcome.md"
         test_file.write_text(
-            "# Welcome to ScrapAI\n\nThis directory stores your crawl data."
+            "# Welcome to scrapai\n\nThis directory stores your crawl data."
         )
         click.echo(f"✅ Have permission to write to data directory: {data_dir}")
     except Exception as e:
@@ -204,7 +204,7 @@ def setup(args):
     except Exception as e:
         click.echo(f"⚠️  Warning: Could not configure Claude Code settings: {e}")
 
-    click.echo("🎉 ScrapAI setup complete!")
+    click.echo("🎉 scrapai setup complete!")
     click.echo("📝 You can now:")
     cmd_prefix = "scrapai" if sys.platform == "win32" else "./scrapai"
     click.echo(f"   • List spiders: {cmd_prefix} spiders list --project <name>")
@@ -217,7 +217,7 @@ def setup(args):
 @click.command()
 def verify():
     """Verify environment setup (no installations)"""
-    click.echo("🔍 Verifying ScrapAI environment...\n")
+    click.echo("🔍 Verifying scrapai environment...\n")
 
     all_good = True
     script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

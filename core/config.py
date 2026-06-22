@@ -1,5 +1,5 @@
 """
-Configuration module for ScrapAI
+Configuration module for scrapai
 
 Loads settings from .env file with sensible defaults.
 """

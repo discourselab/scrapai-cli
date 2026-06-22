@@ -1,4 +1,4 @@
-# ScrapAI dependencies for Airflow containers
+# scrapai dependencies for Airflow containers
 
 # Database
 psycopg2-binary==2.9.9

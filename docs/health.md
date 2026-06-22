@@ -186,11 +186,11 @@ EXIT_CODE=$?
 if [ $EXIT_CODE -ne 0 ]; then
   # Email notification
   echo "Health check failed for project: $PROJECT" | \
-    mail -s "ScrapAI: Spider failures detected" team@example.com
+    mail -s "scrapai: Spider failures detected" team@example.com
 
   # Or Slack notification
   # curl -X POST https://hooks.slack.com/services/YOUR/WEBHOOK \
-  #   -d '{"text": "ScrapAI health check failed for '"$PROJECT"'"}'
+  #   -d '{"text": "scrapai health check failed for '"$PROJECT"'"}'
 fi
 
 exit $EXIT_CODE

@@ -23,7 +23,7 @@ RUN apt-get update && \
 # Switch to airflow user (non-root) for all Python operations
 USER airflow
 
-# Copy and install ScrapAI requirements
+# Copy and install scrapai requirements
 COPY requirements.txt /tmp/scrapai-requirements.txt
 RUN pip install --no-cache-dir -r /tmp/scrapai-requirements.txt
 

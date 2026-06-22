@@ -1,10 +1,10 @@
-# ScrapAI Roadmap
+# scrapai Roadmap
 
 ## Vision
 
 **AI agents write spider configs. Humans share them. Stop rebuilding scrapers everyone needs.**
 
-ScrapAI is infrastructure for reliable, reusable web scraping. Like npm for JavaScript or PyPI for Python, but for web scrapers.
+scrapai is infrastructure for reliable, reusable web scraping. Like npm for JavaScript or PyPI for Python, but for web scrapers.
 
 ## Current State (v0.x)
 

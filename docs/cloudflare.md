@@ -1,6 +1,6 @@
 # Browser Mode (JS Rendering + Cloudflare Bypass)
 
-Use `--browser` for JavaScript-rendered sites and Cloudflare-protected sites. ScrapAI uses **CloakBrowser** - a stealth Chromium with C++ patches that achieves **0.9 reCAPTCHA scores** and passes advanced bot detection.
+Use `--browser` for JavaScript-rendered sites and Cloudflare-protected sites. scrapai uses **CloakBrowser** - a stealth Chromium with C++ patches that achieves **0.9 reCAPTCHA scores** and passes advanced bot detection.
 
 ## Quick Start
 

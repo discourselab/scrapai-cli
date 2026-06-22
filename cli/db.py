@@ -170,7 +170,7 @@ def tables():
                 except ValueError:
                     # Invalid table name - skip it
                     click.echo(
-                        f"   {table_name.ljust(max_name_len)}  (skipped: not a ScrapAI table)"
+                        f"   {table_name.ljust(max_name_len)}  (skipped: not a scrapai table)"
                     )
                 except Exception as e:
                     click.echo(f"   {table_name.ljust(max_name_len)}  (error: {e})")
