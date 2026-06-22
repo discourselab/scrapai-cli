@@ -126,6 +126,35 @@ Supported relative formats:
 - Log output shows how many entries were filtered vs scheduled
 - Works with all other settings (Cloudflare, DeltaFetch, custom selectors, etc.)
 
+## Excluding URLs with `deny`
+
+Sitemap spiders honor `deny` patterns on rules, the same way rule-based crawls do. Use this to skip PDFs, images, or any URL pattern you don't want sent to the parser (e.g. crawl the sitemap but drop `*.pdf`).
+
+```json
+{
+  "name": "example_sitemap",
+  "allowed_domains": ["example.com"],
+  "start_urls": ["https://example.com/sitemap.xml"],
+  "settings": { "USE_SITEMAP": true, "EXTRACTOR_ORDER": ["trafilatura", "newspaper"] },
+  "rules": [
+    { "allow": ["/article/.*"], "deny": ["\\.pdf$", "/tag/"] }
+  ]
+}
+```
+
+**Behavior:**
+- `deny` patterns are collected from **all** rules (allow+deny or deny-only) and matched against each sitemap URL before a request is built.
+- A deny-only rule (no `allow`) still applies — denied URLs are dropped, everything else is crawled.
+- Matching runs on the **absolute** URL, so it works even when the sitemap uses relative `<loc>` values (see below).
+- Log output shows how many entries were dropped by deny patterns.
+- Invalid regex patterns are logged and skipped, not fatal.
+
+## Relative `<loc>` URLs
+
+Some sitemaps use non-conformant root-relative (`<loc>/blog/post-1</loc>`) or protocol-relative (`<loc>//cdn.example.com/x</loc>`) URLs. These are automatically resolved to absolute URLs (against `https://<first allowed_domain>/`) before requests are built. Without this, a single relative `<loc>` would abort iteration of the rest of the sitemap and silently drop every URL after it. Each rewrite is logged.
+
+> Note: resolution uses the first entry in `allowed_domains` as the base, which is correct for root/protocol-relative locs. Path-relative locs on multi-subdomain sitemaps may not resolve exactly — keep `allowed_domains` accurate.
+
 ## Combining with Other Features
 
 **Sitemap + Cloudflare:**

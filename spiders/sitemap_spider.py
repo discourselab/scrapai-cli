@@ -4,6 +4,7 @@ from core.models import Spider
 from .base import BaseDBSpiderMixin
 from dateutil import parser as dateutil_parser
 from datetime import datetime, timedelta
+from urllib.parse import urljoin, urlparse
 import logging
 import re
 
@@ -81,17 +82,27 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
         rules = sorted(spider.rules, key=lambda r: r.priority, reverse=True)
 
         sitemap_rules = []
+        deny_res = []
         for rule in rules:
             callback = rule.callback or "parse_article"
             if rule.allow_patterns:
                 for pattern in rule.allow_patterns:
                     sitemap_rules.append((pattern, callback))
-            elif rule.deny_patterns:
-                # Scrapy SitemapSpider has no deny support — skip and let the
-                # callback handle filtering if needed.
-                continue
-            else:
+            elif not rule.deny_patterns:
                 sitemap_rules.append(("/", callback))
+
+            # Scrapy SitemapSpider has no native deny support, so collect deny
+            # patterns from every rule (allow+deny or deny-only) and enforce them
+            # ourselves in sitemap_filter().
+            for pattern in rule.deny_patterns or []:
+                try:
+                    deny_res.append(re.compile(pattern))
+                except re.error as e:
+                    logger.warning(f"Skipping invalid deny pattern '{pattern}': {e}")
+
+        self._deny_res = deny_res
+        if deny_res:
+            logger.info(f"Sitemap deny patterns active: {len(deny_res)}")
 
         if not sitemap_rules:
             sitemap_rules = [("/", "parse_article")]
@@ -153,15 +164,41 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
             return None
 
     def sitemap_filter(self, entries):
-        """Filter sitemap entries by lastmod date if SITEMAP_SINCE is set."""
+        """Filter sitemap entries before requests are built.
+
+        Resolves relative ``<loc>`` values to absolute URLs (a relative loc
+        otherwise raises "Missing scheme" downstream and aborts iteration of the
+        rest of the sitemap), drops entries matching any deny pattern, and filters
+        by lastmod date if SITEMAP_SINCE is set.
+        """
         since = self._parse_since_date()
+        deny_res = getattr(self, "_deny_res", [])
+        base = f"https://{self.allowed_domains[0]}/" if self.allowed_domains else None
 
         total = 0
+        rewritten = 0
         filtered = 0
         no_lastmod = 0
+        denied = 0
+        yielded = 0
 
         for entry in entries:
             total += 1
+
+            # Resolve relative <loc> to absolute before anything downstream reads
+            # it. Covers root-relative ("/path") and protocol-relative ("//host").
+            loc = entry.get("loc", "")
+            if loc and not urlparse(loc).scheme:
+                if not base:
+                    logger.warning(
+                        f"Cannot resolve relative loc '{loc}': no allowed_domains; "
+                        "skipping"
+                    )
+                    continue
+                entry["loc"] = urljoin(base, loc)
+                rewritten += 1
+                logger.info(f"Rewrote relative sitemap loc: {loc} -> {entry['loc']}")
+
             if since and entry.get("lastmod"):
                 try:
                     entry_date = dateutil_parser.parse(entry["lastmod"])
@@ -175,11 +212,18 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
             elif since and not entry.get("lastmod"):
                 no_lastmod += 1
 
+            # Enforce deny patterns on the now-absolute loc.
+            if deny_res and any(r.search(entry["loc"]) for r in deny_res):
+                denied += 1
+                continue
+
             logger.debug(f"Sitemap entry: {entry['loc']}")
+            yielded += 1
             yield entry
 
-        if since:
+        if since or denied or rewritten:
             logger.info(
-                f"Sitemap filter: {total} total, {filtered} filtered (before {since.date()}), "
-                f"{no_lastmod} without lastmod, {total - filtered} scheduled"
+                f"Sitemap filter: {total} total, {rewritten} relative locs rewritten, "
+                f"{filtered} filtered (date), {no_lastmod} without lastmod, "
+                f"{denied} denied, {yielded} scheduled"
             )
