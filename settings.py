@@ -10,16 +10,18 @@ NEWSPIDER_MODULE = "spiders"
 # Obey robots.txt rules
 ROBOTSTXT_OBEY = False
 
-# Fast defaults. RetryMiddleware (429/503) and SmartProxyMiddleware
-# (proxy escalation on 403/429) handle automatic back-off; per-spider JSON
-# can dial these down for fragile sites.
+# High-throughput defaults, kept safe by AutoThrottle. AutoThrottle adapts the
+# delay to each server's response latency, so these high concurrency limits are
+# self-regulating: fast on robust hosts, automatically backing off on fragile or
+# struggling ones (the adaptive safety net that prevents bans / 429-403 cascades).
+# Per-spider JSON can dial these further up or down for specific sites.
 DOWNLOAD_DELAY = 0
 RANDOMIZE_DOWNLOAD_DELAY = False
 
 CONCURRENT_REQUESTS = 32
 CONCURRENT_REQUESTS_PER_DOMAIN = 16
 
-AUTOTHROTTLE_ENABLED = False
+AUTOTHROTTLE_ENABLED = True
 AUTOTHROTTLE_START_DELAY = 1
 AUTOTHROTTLE_MAX_DELAY = 10
 AUTOTHROTTLE_TARGET_CONCURRENCY = 2.0

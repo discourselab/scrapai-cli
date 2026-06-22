@@ -167,7 +167,13 @@ def parse_datetime_processor(
 
     if _dateparser is not None:
         try:
-            parsed = _dateparser.parse(value, languages=languages)
+            # DATE_ORDER="MDY" matches dateutil's default interpretation of
+            # ambiguous numeric dates (e.g. "01/02/2024" -> Jan 2), so adopting
+            # dateparser does not silently change dates parsed by existing
+            # spiders. Pass explicit `format` to override per-spider when needed.
+            parsed = _dateparser.parse(
+                value, languages=languages, settings={"DATE_ORDER": "MDY"}
+            )
             if parsed is not None:
                 return parsed
         except Exception as e:
