@@ -142,7 +142,7 @@ def export(spider_name, project, fmt, output, limit, url, text, title):
                 row["published_date"] = (
                     item.published_date.isoformat() if item.published_date else None
                 )
-                # Flatten metadata_json (FIELD_EXTRACT-populated project schema
+                # Flatten metadata_json (FIELDS-populated project schema
                 # fields plus extractor extras) to top-level keys so every
                 # schema field appears as its own column in the export.
                 if item.metadata_json and isinstance(item.metadata_json, dict):

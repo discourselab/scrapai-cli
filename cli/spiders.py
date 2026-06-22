@@ -134,7 +134,7 @@ def import_spider(file, project, skip_validation):
                     for p in problems:
                         click.echo(f"   • {p}")
                     click.echo(
-                        "\n💡 Add the missing FIELD_EXTRACT directives, or use "
+                        "\n💡 Add the missing FIELDS directives, or use "
                         "--skip-validation to bypass (not recommended)."
                     )
                     return

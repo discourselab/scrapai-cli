@@ -358,7 +358,7 @@ def _format_failed_spider(result: Dict) -> List[str]:
             [
                 "- **Fix needed:** Update spider config to populate every "
                 "`required: true` field in project.json.",
-                "- **Action:** Edit final_spider.json — add FIELD_EXTRACT "
+                "- **Action:** Edit final_spider.json — add FIELDS "
                 "directives for the missing fields, then re-run "
                 "`spiders import`. See "
                 "[Schema-driven extraction] in CLAUDE.md.",

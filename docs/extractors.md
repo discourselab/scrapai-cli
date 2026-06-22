@@ -1,8 +1,8 @@
 # Extractors
 
-How to get fields out of HTML — discovery workflow, extractor order, and the schema-driven `FIELD_EXTRACT` directives.
+How to get fields out of HTML — discovery workflow, extractor order, and the schema-driven `FIELDS` directives.
 
-Test generic extractors (trafilatura, newspaper) first. Reach for `FIELD_EXTRACT` when the schema declares non-core fields or generic extractors get the core fields wrong.
+Test generic extractors (trafilatura, newspaper) first. Reach for `FIELDS` when the schema declares non-core fields or generic extractors get the core fields wrong.
 
 ---
 
@@ -44,20 +44,20 @@ Shows h1/h2 titles with classes, content containers by size, date elements, auth
 | Config | When to use |
 |---|---|
 | `["trafilatura", "newspaper"]` | Generic extractors handle clean news/blog HTML. Default. |
-| `["newspaper", "trafilatura"]` + `FIELD_EXTRACT` overlay | Mostly article-shaped with 1–2 extra fields. Newspaper fills core; directives override per field. |
-| `["custom"]` + `FIELD_EXTRACT` | **Pure-CSS mode** — every field via a deliberate selector. Best when most schema fields are non-core. |
+| `["newspaper", "trafilatura"]` + `FIELDS` overlay | Mostly article-shaped with 1–2 extra fields. Newspaper fills core; directives override per field. |
+| `["custom"]` + `FIELDS` | **Pure-CSS mode** — every field via a deliberate selector. Best when most schema fields are non-core. |
 | `["playwright", "trafilatura"]` | JS-rendered, generic extractors work after rendering. |
-| `["playwright", "custom"]` + `FIELD_EXTRACT` | JS-rendered, need selectors. |
+| `["playwright", "custom"]` + `FIELDS` | JS-rendered, need selectors. |
 
 For non-article structured data (products, jobs, forums) use **named callbacks** instead — see [callbacks.md](callbacks.md).
 
 ---
 
-## Schema-driven Extraction (`FIELD_EXTRACT`)
+## Schema-driven Extraction (`FIELDS`)
 
 When a project declares a schema in `project.json`, the schema is the contract: every field in `schema.fields` is guaranteed to appear as a top-level key in every exported row, populated or `null`. Extractor side-channels (newspaper's `markdown`/`top_image`/`videos`, newspaper's wrong author guesses, etc.) are pruned before storage — only schema fields make it through.
 
-`FIELD_EXTRACT` is the per-spider directive set that tells the framework how to populate each schema field. Keyed by schema field name.
+`FIELDS` is the per-spider directive set that tells the framework how to populate each schema field. Keyed by schema field name.
 
 ### Two modes
 
@@ -65,7 +65,7 @@ When a project declares a schema in `project.json`, the schema is the contract: 
 ```json
 {
   "EXTRACTOR_ORDER": ["custom"],
-  "FIELD_EXTRACT": {
+  "FIELDS": {
     "title":            {"css": "h1.article-title", "to_text": true},
     "content":          {"css": "div.article-body",  "to_text": true},
     "author":           {"css": "span.byline a::text", "processors": [{"type": "strip"}]},
@@ -83,7 +83,7 @@ Skips newspaper/trafilatura entirely. Every field comes from a deliberate select
 ```json
 {
   "EXTRACTOR_ORDER": ["newspaper", "trafilatura"],
-  "FIELD_EXTRACT": {
+  "FIELDS": {
     "author":           {"css": "span.byline a::text"},
     "headline_image":   {"from": "top_image"},
     "video_links":      {"from": "videos"},
@@ -98,7 +98,7 @@ Newspaper runs first; any field with a directive overrides newspaper's value. `f
 
 - **Most fields are non-core** (lots of CSS work anyway) → pure-CSS. Cleaner, faster, no wrong newspaper guesses.
 - **Mostly article-shaped (title/content/author/date) + 1–2 extras** → overlay. Let newspaper handle the heavy lifting; override what it gets wrong.
-- **One-off ad-hoc scrape, no schema** → omit `FIELD_EXTRACT`; generic `EXTRACTOR_ORDER` is enough.
+- **One-off ad-hoc scrape, no schema** → omit `FIELDS`; generic `EXTRACTOR_ORDER` is enough.
 
 ### Directive shape
 
@@ -171,7 +171,7 @@ For infinite-scroll pages, see `INFINITE_SCROLL` settings in [settings.md](setti
 
 ## Legacy: `CUSTOM_SELECTORS`
 
-Back-compat only — prefer `FIELD_EXTRACT` for new spiders.
+Back-compat only — prefer `FIELDS` for new spiders.
 
 ```json
 {
@@ -179,4 +179,4 @@ Back-compat only — prefer `FIELD_EXTRACT` for new spiders.
   "CUSTOM_SELECTORS": { "title": "h1.x", "content": "div.y", "author": "span.z", "date": "time.w" }
 }
 ```
-A flat `{field: selector}` map. Auto-translated internally to `FIELD_EXTRACT` with `to_text: true` per field.
+A flat `{field: selector}` map. Auto-translated internally to `FIELDS` with `to_text: true` per field.

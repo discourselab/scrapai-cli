@@ -99,7 +99,7 @@ class DatabasePipeline:
             "scraped_at",
         }
 
-        # Extractor-internal fields that exist on the item only so FIELD_EXTRACT
+        # Extractor-internal fields that exist on the item only so FIELDS
         # `from` directives can reference them; they are never persisted.
         # clean_html is the raw extractor output used to compute markdown and
         # discover media — keeping it in metadata_json would balloon row sizes.
@@ -143,7 +143,7 @@ class DatabasePipeline:
             else:
                 # Legacy article extraction — preserve all non-standard fields
                 # (extractor extras like markdown/top_image/videos plus any
-                # FIELD_EXTRACT-populated project schema fields) in metadata_json
+                # FIELDS-populated project schema fields) in metadata_json
                 # so the project's schema-as-contract holds end-to-end.
                 metadata = dict(item.get("metadata") or {})
                 for key, value in item.items():

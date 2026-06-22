@@ -220,12 +220,16 @@ class SpiderSettingsSchema(BaseModel):
         default=None,
         description="JS-paginated listings to enumerate via browser clicks at crawl start",
     )
-    FIELD_EXTRACT: Optional[Dict[str, FieldExtractDirective]] = Field(
+    FIELDS: Optional[Dict[str, FieldExtractDirective]] = Field(
         default=None,
         description=(
-            "Per-spider directives for populating non-core project schema fields. "
-            "Keyed by schema field name. Each directive uses `from`, `css`, or `xpath`."
+            "Per-spider directives for populating project schema fields. Keyed by "
+            "schema field name. Each directive uses `from`, `css`, or `xpath`."
         ),
+    )
+    FIELD_EXTRACT: Optional[Dict[str, FieldExtractDirective]] = Field(
+        default=None,
+        description="Back-compat alias for FIELDS (FIELDS wins if both set).",
     )
 
     @field_validator("EXTRACTOR_ORDER")

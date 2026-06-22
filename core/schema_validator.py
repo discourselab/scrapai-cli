@@ -2,8 +2,8 @@
 
 A `project.json` schema declares the required output contract. A spider must
 either let a generic extractor populate each required core field, or supply
-a `FIELD_EXTRACT` directive (or legacy `CUSTOM_SELECTORS` entry) for each
-required field. This module is the single source of truth for that check; it
+a `FIELDS` directive (legacy `FIELD_EXTRACT` / `CUSTOM_SELECTORS` also accepted)
+for each required field. This module is the single source of truth for that check; it
 is reused by `spiders import` (pre-commit validation) and `health` (post-hoc
 coverage audit).
 """
@@ -52,7 +52,7 @@ def check_schema_coverage(
 
     fields = schema.get("schema", {}).get("fields", [])
     extractor_order = settings.get("EXTRACTOR_ORDER") or []
-    field_extract = settings.get("FIELD_EXTRACT") or {}
+    field_extract = settings.get("FIELDS") or settings.get("FIELD_EXTRACT") or {}
     custom_selectors = settings.get("CUSTOM_SELECTORS") or {}
 
     has_generic = any(e in GENERIC_EXTRACTORS for e in extractor_order)
@@ -74,13 +74,12 @@ def check_schema_coverage(
                 problems.append(
                     f"required field '{name}' (core) has no source — "
                     "add a generic extractor to EXTRACTOR_ORDER "
-                    "(newspaper/trafilatura) or a FIELD_EXTRACT directive"
+                    "(newspaper/trafilatura) or a FIELDS directive"
                 )
         else:
             if not covered_by_directive:
                 problems.append(
-                    f"required field '{name}' (non-core) has no FIELD_EXTRACT "
-                    "directive"
+                    f"required field '{name}' (non-core) has no FIELDS " "directive"
                 )
 
     # If the schema declares any non-core field (required or optional), the
@@ -98,7 +97,7 @@ def check_schema_coverage(
             f"schema declares non-core fields ({', '.join(non_core_fields)}) "
             f"— generic extractors (newspaper/trafilatura) in EXTRACTOR_ORDER "
             f'are not allowed alongside them. Use EXTRACTOR_ORDER: ["custom"] '
-            f"(pure-CSS mode) with FIELD_EXTRACT directives for every schema "
+            f"(pure-CSS mode) with FIELDS directives for every schema "
             f"field."
         )
 

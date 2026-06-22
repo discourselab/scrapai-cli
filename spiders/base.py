@@ -105,10 +105,12 @@ class BaseDBSpiderMixin:
 
         # Pure-CSS mode: skip the generic extractor entirely when the spider
         # signals "custom-only" (EXTRACTOR_ORDER == ["custom"]) and provides
-        # FIELD_EXTRACT or legacy CUSTOM_SELECTORS. The schema's FIELD_EXTRACT
+        # FIELDS (or legacy FIELD_EXTRACT / CUSTOM_SELECTORS). The schema's FIELDS
         # directives are the sole source of truth.
-        field_extract_set = bool(self.custom_settings.get("FIELD_EXTRACT")) or bool(
-            self.custom_settings.get("CUSTOM_SELECTORS")
+        field_extract_set = (
+            bool(self.custom_settings.get("FIELDS"))
+            or bool(self.custom_settings.get("FIELD_EXTRACT"))
+            or bool(self.custom_settings.get("CUSTOM_SELECTORS"))
         )
         if strategies == ["custom"] and field_extract_set:
             item = self._build_item_pure_css(response, source_label)
@@ -196,7 +198,7 @@ class BaseDBSpiderMixin:
     }
 
     def _build_item_pure_css(self, response, source_label):
-        """Build an item using only FIELD_EXTRACT directives, no generic extractor.
+        """Build an item using only FIELDS directives, no generic extractor.
 
         No length-based rejection: a page with only a video embed, a hero
         image, or a PDF link is still a valid item if its schema fields are
@@ -216,8 +218,13 @@ class BaseDBSpiderMixin:
         return item
 
     def _resolve_field_extract_config(self):
-        """Return the FIELD_EXTRACT dict, translating legacy CUSTOM_SELECTORS if needed."""
-        directives = self.custom_settings.get("FIELD_EXTRACT") or {}
+        """Return the FIELDS dict (legacy FIELD_EXTRACT honored), translating
+        legacy CUSTOM_SELECTORS if needed."""
+        directives = (
+            self.custom_settings.get("FIELDS")
+            or self.custom_settings.get("FIELD_EXTRACT")
+            or {}
+        )
         if isinstance(directives, str):
             try:
                 directives = json.loads(directives)
@@ -225,7 +232,7 @@ class BaseDBSpiderMixin:
                 directives = {}
 
         # Back-compat: a flat {field: "selector"} CUSTOM_SELECTORS dict gets
-        # translated to FIELD_EXTRACT directive shape. Explicit FIELD_EXTRACT
+        # translated to FIELDS directive shape. Explicit FIELDS/FIELD_EXTRACT
         # entries always win — translation only fills the gaps.
         legacy = self.custom_settings.get("CUSTOM_SELECTORS") or {}
         if isinstance(legacy, str):
@@ -249,7 +256,7 @@ class BaseDBSpiderMixin:
         """Populate every project-schema field on the item.
 
         Reads `data/<project>/project.json` for the field whitelist and the
-        spider's FIELD_EXTRACT setting for how to populate each non-core field.
+        spider's FIELDS setting for how to populate each non-core field.
         Fields without a directive (or whose directive returns no value) are
         explicitly set to `None`, so every schema field is guaranteed to appear
         in the output.
@@ -328,9 +335,7 @@ class BaseDBSpiderMixin:
                 try:
                     value = apply_processors(value, processors)
                 except Exception as e:
-                    logger.warning(
-                        f"FIELD_EXTRACT processor failed for '{field_name}': {e}"
-                    )
+                    logger.warning(f"FIELDS processor failed for '{field_name}': {e}")
 
             item[field_name] = value
 

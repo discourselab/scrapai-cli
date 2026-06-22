@@ -88,13 +88,13 @@ After collecting answers, show the user the proposed JSON for confirmation befor
 ```
 
 - `core: true` → maps to a typed column on `items` (title, content, author, published_date). Generic extractors (trafilatura, newspaper) fill these natively.
-- `core: false` (or omitted) → lands in `metadata_json`. Populate via `FIELD_EXTRACT` directives or named callbacks.
+- `core: false` (or omitted) → lands in `metadata_json`. Populate via `FIELDS` directives or named callbacks.
 - `required: true` → `spiders import` rejects spiders that have no source for the field; Phase 4 rejects items where the value is null.
 
 ### How the schema flows into Phase 1-4
 
-- **Phase 2** — read `data/<project>/project.json`. If schema is core-only → `EXTRACTOR_ORDER: ["trafilatura", "newspaper"]`. If non-core fields exist → use `FIELD_EXTRACT` (overlay mode for a few extras, or pure-CSS mode with `EXTRACTOR_ORDER: ["custom"]` when most fields are non-core). For non-article structured data use named callbacks.
-- **`spiders import`** — rejects the spider if any `required: true` field has no source (no generic extractor in `EXTRACTOR_ORDER` AND no `FIELD_EXTRACT` directive). Add the missing directives and re-import. Use `--skip-validation` only if you know what you're doing.
+- **Phase 2** — read `data/<project>/project.json`. If schema is core-only → `EXTRACTOR_ORDER: ["trafilatura", "newspaper"]`. If non-core fields exist → use `FIELDS` (overlay mode for a few extras, or pure-CSS mode with `EXTRACTOR_ORDER: ["custom"]` when most fields are non-core). For non-article structured data use named callbacks.
+- **`spiders import`** — rejects the spider if any `required: true` field has no source (no generic extractor in `EXTRACTOR_ORDER` AND no `FIELDS` directive). Add the missing directives and re-import. Use `--skip-validation` only if you know what you're doing.
 - **Phase 4** — after the 5-item test crawl, verify every `required: true` field has a non-null value on every item (import already covered "can it populate"; this covers "did it actually populate"). On failure → `queue fail <id> -m "schema validation failed: <field>"`.
 - **Conflict rule** — project schema always wins over queue item `custom_instruction`. The instruction can refine *how* to extract, but cannot remove or rename schema fields.
 

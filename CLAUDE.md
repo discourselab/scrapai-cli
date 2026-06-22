@@ -27,7 +27,7 @@ When a user gives you a URL (or asks you to process from queue), you replicate w
 
 Every spider goes through 4 phases:
 - **Phase 1:** Analyze site structure, identify sections, document URL patterns
-- **Phase 2:** Test extractors, write `FIELD_EXTRACT` directives or named callbacks if needed
+- **Phase 2:** Test extractors, write `FIELDS` directives or named callbacks if needed
 - **Phase 3:** Create spider configuration JSON
 - **Phase 4:** Test extraction quality, import to database
 
@@ -135,16 +135,16 @@ Detailed steps: [docs/analysis-workflow.md](docs/analysis-workflow.md). **Only m
 
 ### Phase 2: Rule Generation & Extraction Testing
 
-**Goal:** Create URL matching rules and choose extraction strategy (generic extractors, FIELD_EXTRACT directives, or named callbacks).
+**Goal:** Create URL matching rules and choose extraction strategy (generic extractors, FIELDS directives, or named callbacks).
 
 Full walkthrough (article + non-article): [docs/analysis-workflow.md](docs/analysis-workflow.md).
 
 **Decision point — read `data/<project>/project.json` first:**
-- **Schema is core-only (title/content/author/published_date)** → `parse_article` with `EXTRACTOR_ORDER: ["trafilatura", "newspaper"]`. Add `FIELD_EXTRACT` overlay directives only to override wrong newspaper guesses.
-- **Schema declares ANY non-core field** (required or optional) → **Must use pure-CSS**: `EXTRACTOR_ORDER: ["custom"]` + `FIELD_EXTRACT` for every schema field. `spiders import` rejects mixing generic extractors with a non-core schema. See [docs/extractors.md](docs/extractors.md).
+- **Schema is core-only (title/content/author/published_date)** → `parse_article` with `EXTRACTOR_ORDER: ["trafilatura", "newspaper"]`. Add `FIELDS` overlay directives only to override wrong newspaper guesses.
+- **Schema declares ANY non-core field** (required or optional) → **Must use pure-CSS**: `EXTRACTOR_ORDER: ["custom"]` + `FIELDS` for every schema field. `spiders import` rejects mixing generic extractors with a non-core schema. See [docs/extractors.md](docs/extractors.md).
 - **Products, jobs, listings, forums** → **named callbacks** with custom fields. See [docs/callbacks.md](docs/callbacks.md).
 
-**For article content:** Use `sections.md` to write rules per section. Sanity-check generic extractors with `./scrapai try data/proj/spider/analysis/page.html`. If output is clean → `EXTRACTOR_ORDER: ["trafilatura", "newspaper"]`. If generic extractors fail OR you need non-core fields → write `FIELD_EXTRACT` directives (discover selectors with `./scrapai analyze --test "..."` / `--find "..."`).
+**For article content:** Use `sections.md` to write rules per section. Sanity-check generic extractors with `./scrapai try data/proj/spider/analysis/page.html`. If output is clean → `EXTRACTOR_ORDER: ["trafilatura", "newspaper"]`. If generic extractors fail OR you need non-core fields → write `FIELDS` directives (discover selectors with `./scrapai analyze --test "..."` / `--find "..."`).
 
 **For non-article content (products, jobs, etc.):** Analyze a sample page, identify all fields, discover each CSS selector, build the callback config with processors, and test on 2-3 example pages to verify selectors generalize across items.
 
@@ -152,8 +152,8 @@ Full walkthrough (article + non-article): [docs/analysis-workflow.md](docs/analy
 - `final_spider.json` created with all URL matching rules
 - Extractor strategy chosen:
   - **Generic extractors:** `EXTRACTOR_ORDER` configured (`["trafilatura", "newspaper"]`)
-  - **Pure-CSS `FIELD_EXTRACT`:** `EXTRACTOR_ORDER: ["custom"]` + directive per schema field
-  - **Overlay `FIELD_EXTRACT`:** generic extractor + per-field overrides
+  - **Pure-CSS `FIELDS`:** `EXTRACTOR_ORDER: ["custom"]` + directive per schema field
+  - **Overlay `FIELDS`:** generic extractor + per-field overrides
   - **Named callbacks:** `callbacks` dict (for non-article structured data)
 - Every `required: true` field in `project.json` has a source (extractor or directive)
 - All settings documented (Cloudflare, browser, etc. if needed)
@@ -255,7 +255,7 @@ Example config structure (include `source_url` when processing from queue):
 - Default: 5 items per spider, min 50 char content to pass
 - Reports saved to: `DATA_DIR/<project>/health/<YYYYMMDD>/report.md`
 - Exit code: 0 if all pass, 1 if any fail (useful for CI/cron)
-- Failure modes the report flags: `crawling` (too few items), `extraction` (content too short), `schema_coverage` (spider doesn't populate every `required: true` field after a schema change — fix: update `FIELD_EXTRACT` in `final_spider.json` and re-run `spiders import`).
+- Failure modes the report flags: `crawling` (too few items), `extraction` (content too short), `schema_coverage` (spider doesn't populate every `required: true` field after a schema change — fix: update `FIELDS` in `final_spider.json` and re-run `spiders import`).
 
 **Use case:** Monthly automated testing to detect broken spiders. Agent reads report and fixes. See [docs/health.md](docs/health.md).
 
@@ -329,7 +329,7 @@ Full reference: [docs/settings.md](docs/settings.md).
 }
 ```
 
-**Default extractor:** `{ "EXTRACTOR_ORDER": ["trafilatura", "newspaper"] }`. See [docs/extractors.md](docs/extractors.md) for the discovery workflow and `FIELD_EXTRACT` directives.
+**Default extractor:** `{ "EXTRACTOR_ORDER": ["trafilatura", "newspaper"] }`. See [docs/extractors.md](docs/extractors.md) for the discovery workflow and `FIELDS` directives.
 
 **Pagination via `<link rel="next">`:** add `"tags": ["a", "area", "link"]` on the pagination rule (WordPress/Yoast). Omit for normal sites.
 

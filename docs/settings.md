@@ -19,7 +19,7 @@ Settings go into the spider JSON. Project defaults in `settings.py` are conserva
 { "EXTRACTOR_ORDER": ["trafilatura", "newspaper"] }
 ```
 
-See [extractors.md](extractors.md) for the directive-driven options (`["custom"]` + `FIELD_EXTRACT`).
+See [extractors.md](extractors.md) for the directive-driven options (`["custom"]` + `FIELDS`).
 
 ## Pagination via `<link rel="next">`
 
