@@ -111,7 +111,19 @@ def _test_spider(
         "error": None,
         "sample_item": None,
         "problem": None,
+        "schema_problems": [],
     }
+
+    # Schema coverage check — does the spider's config populate every
+    # `required: true` field declared in project.json? Cheap and catches
+    # schema-vs-spider drift before we even crawl.
+    schema_problems = _check_spider_schema_coverage(spider_name, project)
+    if schema_problems:
+        result["schema_problems"] = schema_problems
+        result["status"] = "failed"
+        result["problem"] = "schema_coverage"
+        result["error"] = "; ".join(schema_problems)
+        return result
 
     # Create temp output file
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -138,20 +150,26 @@ def _test_spider(
         )
 
         # Check if any items were scraped by looking at the database
-        # (crawl saves to DB by default)
+        # (crawl saves to DB by default). Items are keyed by spider_id, so
+        # resolve the spider row first, then filter on its id.
         from core.db import get_db
-        from core.models import ScrapedItem
+        from core.models import ScrapedItem, Spider
 
         with get_db() as db:
+            spider = (
+                db.query(Spider)
+                .filter(Spider.name == spider_name, Spider.project == project)
+                .first()
+            )
+
             items = (
                 db.query(ScrapedItem)
-                .filter(
-                    ScrapedItem.spider_name == spider_name,
-                    ScrapedItem.project == project,
-                )
+                .filter(ScrapedItem.spider_id == spider.id)
                 .order_by(ScrapedItem.scraped_at.desc())
                 .limit(limit)
                 .all()
+                if spider
+                else []
             )
 
             result["items_count"] = len(items)
@@ -203,6 +221,32 @@ def _test_spider(
     return result
 
 
+def _check_spider_schema_coverage(spider_name: str, project: str) -> List[str]:
+    """Return list of missing-required-field diagnostics for a spider, or []."""
+    from core.config import DATA_DIR
+    from core.models import deserialize_spider_settings
+    from core.schema_validator import check_schema_coverage
+
+    with get_db() as db:
+        spider = (
+            db.query(Spider)
+            .filter(Spider.name == spider_name, Spider.project == project)
+            .first()
+        )
+        if not spider:
+            return []
+
+        settings_dict = deserialize_spider_settings(spider.settings)
+        callbacks_config = getattr(spider, "callbacks_config", None)
+
+        return check_schema_coverage(
+            project=project,
+            settings=settings_dict,
+            callbacks_config=callbacks_config,
+            data_dir=DATA_DIR,
+        )
+
+
 def _print_result(result: Dict):
     """Print test result to console."""
     status_icon = "✅" if result["status"] == "passed" else "❌"
@@ -233,10 +277,10 @@ def _generate_report(
     if custom_path:
         report_path = Path(custom_path)
     else:
-        from core.config import get_data_dir
+        from core.config import DATA_DIR
 
         date = datetime.now().strftime("%Y%m%d")
-        report_path = get_data_dir(project) / "health" / date / "report.md"
+        report_path = Path(DATA_DIR) / project / "health" / date / "report.md"
 
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -307,6 +351,17 @@ def _format_failed_spider(result: Dict) -> List[str]:
                 "- **Fix needed:** Update crawling rules "
                 "(URL patterns, start URLs, or allowed domains)",
                 "- **Action:** Re-analyze site structure and update spider config",
+            ]
+        )
+    elif result["problem"] == "schema_coverage":
+        lines.extend(
+            [
+                "- **Fix needed:** Update spider config to populate every "
+                "`required: true` field in project.json.",
+                "- **Action:** Edit final_spider.json — add FIELD_EXTRACT "
+                "directives for the missing fields, then re-run "
+                "`spiders import`. See "
+                "[Schema-driven extraction] in CLAUDE.md.",
             ]
         )
 

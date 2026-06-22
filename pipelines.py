@@ -82,7 +82,7 @@ class DatabasePipeline:
             spider.logger.error(f"Error checking duplicates: {e}")
             existing_urls = set()
 
-        # Standard fields that map to ScrapedItem columns
+        # Fields that map to ScrapedItem columns or are pipeline bookkeeping.
         STANDARD_FIELDS = {
             "url",
             "title",
@@ -98,6 +98,12 @@ class DatabasePipeline:
             "_callback",
             "scraped_at",
         }
+
+        # Extractor-internal fields that exist on the item only so FIELD_EXTRACT
+        # `from` directives can reference them; they are never persisted.
+        # clean_html is the raw extractor output used to compute markdown and
+        # discover media — keeping it in metadata_json would balloon row sizes.
+        EXTRACTOR_INTERNAL_FIELDS = {"clean_html"}
 
         # 2. Filter and Create Objects
         new_objects = []
@@ -135,8 +141,19 @@ class DatabasePipeline:
                 custom_fields["_callback"] = item["_callback"]
                 metadata = custom_fields
             else:
-                # Legacy article extraction - use existing metadata
-                metadata = item.get("metadata")
+                # Legacy article extraction — preserve all non-standard fields
+                # (extractor extras like markdown/top_image/videos plus any
+                # FIELD_EXTRACT-populated project schema fields) in metadata_json
+                # so the project's schema-as-contract holds end-to-end.
+                metadata = dict(item.get("metadata") or {})
+                for key, value in item.items():
+                    if key in STANDARD_FIELDS or key in EXTRACTOR_INTERNAL_FIELDS:
+                        continue
+                    if key in metadata:
+                        continue
+                    if isinstance(value, datetime):
+                        value = value.isoformat()
+                    metadata[key] = value
 
             db_item = ScrapedItem(
                 spider_id=item["spider_id"],

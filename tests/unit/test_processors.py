@@ -173,7 +173,6 @@ class TestParseDatetimeProcessor:
         assert result.day == 24
 
     def test_parse_natural_language(self):
-        # dateutil parser handles various formats
         result = parse_datetime_processor("February 24, 2024")
         assert isinstance(result, datetime)
         assert result.year == 2024
@@ -183,6 +182,54 @@ class TestParseDatetimeProcessor:
         assert parse_datetime_processor("not a date") is None
         assert parse_datetime_processor("") is None
         assert parse_datetime_processor(None) is None
+
+    def test_parse_relative_yesterday(self):
+        """dateparser handles 'yesterday' — dateutil cannot."""
+        result = parse_datetime_processor("yesterday")
+        assert isinstance(result, datetime)
+
+    def test_parse_relative_weeks_ago(self):
+        """dateparser handles 'N weeks ago' — dateutil cannot."""
+        result = parse_datetime_processor("2 weeks ago")
+        assert isinstance(result, datetime)
+
+    def test_parse_with_language_hint(self):
+        """German date with explicit language hint."""
+        result = parse_datetime_processor("15. März 2024", languages=["de"])
+        assert isinstance(result, datetime)
+        assert result.year == 2024
+        assert result.month == 3
+        assert result.day == 15
+
+    def test_format_takes_precedence_over_dateparser(self):
+        """Explicit format wins; dateparser is not consulted."""
+        # An ambiguous string resolved by format
+        result = parse_datetime_processor("01-02-2024", format="%d-%m-%Y")
+        assert result.day == 1
+        assert result.month == 2
+        assert result.year == 2024
+
+    def test_format_failure_returns_none(self):
+        """Bad strptime format → None, no fallback to dateparser/dateutil."""
+        assert parse_datetime_processor("not a date", format="%Y-%m-%d") is None
+
+    def test_whitespace_stripped(self):
+        """Leading/trailing whitespace doesn't break parsing."""
+        result = parse_datetime_processor("  2024-02-24  ")
+        assert isinstance(result, datetime)
+        assert result.year == 2024
+
+    def test_whitespace_only_returns_none(self):
+        assert parse_datetime_processor("   ") is None
+
+    def test_dateutil_fallback_when_dateparser_missing(self, monkeypatch):
+        """If dateparser is unavailable, dateutil still handles standard formats."""
+        import core.processors as procs
+
+        monkeypatch.setattr(procs, "_dateparser", None)
+        result = procs.parse_datetime_processor("2024-02-24")
+        assert isinstance(result, datetime)
+        assert result.year == 2024
 
 
 class TestApplyProcessors:

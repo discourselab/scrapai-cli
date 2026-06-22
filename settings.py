@@ -10,15 +10,17 @@ NEWSPIDER_MODULE = "spiders"
 # Obey robots.txt rules
 ROBOTSTXT_OBEY = False
 
-# Configure delays for requests
-DOWNLOAD_DELAY = 1
-RANDOMIZE_DOWNLOAD_DELAY = True
+# High-throughput defaults, kept safe by AutoThrottle. AutoThrottle adapts the
+# delay to each server's response latency, so these high concurrency limits are
+# self-regulating: fast on robust hosts, automatically backing off on fragile or
+# struggling ones (the adaptive safety net that prevents bans / 429-403 cascades).
+# Per-spider JSON can dial these further up or down for specific sites.
+DOWNLOAD_DELAY = 0
+RANDOMIZE_DOWNLOAD_DELAY = False
 
-# Configure concurrent requests
-CONCURRENT_REQUESTS = 8
-CONCURRENT_REQUESTS_PER_DOMAIN = 4
+CONCURRENT_REQUESTS = 32
+CONCURRENT_REQUESTS_PER_DOMAIN = 16
 
-# Enable AutoThrottle
 AUTOTHROTTLE_ENABLED = True
 AUTOTHROTTLE_START_DELAY = 1
 AUTOTHROTTLE_MAX_DELAY = 10

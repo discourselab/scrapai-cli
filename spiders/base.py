@@ -12,25 +12,15 @@ class BaseDBSpiderMixin:
 
     def _load_settings_from_db(self, spider_record):
         """Deserialize settings from DB spider record into custom_settings."""
+        from core.models import deserialize_spider_settings
+
         if not getattr(self, "custom_settings", None):
             self.custom_settings = {}
 
         if not spider_record.settings:
             return
 
-        for s in spider_record.settings:
-            val = s.value
-            try:
-                val = json.loads(val)
-            except (json.JSONDecodeError, TypeError):
-                if isinstance(val, str):
-                    if val.lower() == "true":
-                        val = True
-                    elif val.lower() == "false":
-                        val = False
-                    elif val.isdigit():
-                        val = int(val)
-            self.custom_settings[s.key] = val
+        self.custom_settings.update(deserialize_spider_settings(spider_record.settings))
 
     def _setup_cloudflare_handlers(self):
         """Configure Cloudflare or curl_cffi download handlers if enabled."""
@@ -54,8 +44,18 @@ class BaseDBSpiderMixin:
 
     @classmethod
     def _apply_cf_to_crawler(cls, spider, crawler):
-        """Apply Cloudflare or curl_cffi handlers to crawler settings after spider init."""
+        """Apply spider settings + Cloudflare/curl_cffi handlers to crawler after init.
+
+        Spider `custom_settings` is populated from the DB in __init__, *after*
+        Scrapy has already frozen `crawler.settings` via `Spider.update_settings`
+        (which reads the class attribute, not the instance one). Without this
+        propagation step, JSON-declared settings like CONCURRENT_REQUESTS,
+        DOWNLOAD_DELAY, and AUTOTHROTTLE_ENABLED are silently ignored.
+        """
         if hasattr(spider, "custom_settings"):
+            for key, value in spider.custom_settings.items():
+                crawler.settings.set(key, value, priority="spider")
+
             cf_enabled = spider.custom_settings.get(
                 "CLOUDFLARE_ENABLED", False
             ) or spider.custom_settings.get("BROWSER_ENABLED", False)
@@ -102,6 +102,22 @@ class BaseDBSpiderMixin:
                 strategies = None
         if not isinstance(strategies, list):
             strategies = default_strategies
+
+        # Pure-CSS mode: skip the generic extractor entirely when the spider
+        # signals "custom-only" (EXTRACTOR_ORDER == ["custom"]) and provides
+        # FIELD_EXTRACT or legacy CUSTOM_SELECTORS. The schema's FIELD_EXTRACT
+        # directives are the sole source of truth.
+        field_extract_set = bool(self.custom_settings.get("FIELD_EXTRACT")) or bool(
+            self.custom_settings.get("CUSTOM_SELECTORS")
+        )
+        if strategies == ["custom"] and field_extract_set:
+            item = self._build_item_pure_css(response, source_label)
+            if item:
+                yield item
+                self._items_scraped += 1
+            else:
+                logger.warning(f"Pure-CSS extraction failed for {response.url}")
+            return
 
         logger.info(f"Using strategies: {strategies}")
 
@@ -161,6 +177,8 @@ class BaseDBSpiderMixin:
             item["spider_id"] = self.spider_config.id
             item["source"] = source_label
 
+            self._apply_field_extract(item, response)
+
             # Yield item first, let Scrapy's CLOSESPIDER_ITEMCOUNT handle the limit
             yield item
 
@@ -168,6 +186,198 @@ class BaseDBSpiderMixin:
             self._items_scraped += 1
         else:
             logger.warning(f"Failed to extract article from {response.url}")
+
+    _CORE_SCHEMA_FIELDS = {
+        "url",
+        "title",
+        "content",
+        "author",
+        "published_date",
+    }
+
+    def _build_item_pure_css(self, response, source_label):
+        """Build an item using only FIELD_EXTRACT directives, no generic extractor.
+
+        No length-based rejection: a page with only a video embed, a hero
+        image, or a PDF link is still a valid item if its schema fields are
+        populated. The project schema's `required` contract is enforced in
+        Phase 4 of the agent workflow, not here.
+        """
+        from datetime import datetime, timezone
+
+        item = {
+            "url": response.url,
+            "spider_name": self.spider_name,
+            "spider_id": self.spider_config.id,
+            "source": source_label,
+            "extracted_at": datetime.now(timezone.utc),
+        }
+        self._apply_field_extract(item, response)
+        return item
+
+    def _resolve_field_extract_config(self):
+        """Return the FIELD_EXTRACT dict, translating legacy CUSTOM_SELECTORS if needed."""
+        directives = self.custom_settings.get("FIELD_EXTRACT") or {}
+        if isinstance(directives, str):
+            try:
+                directives = json.loads(directives)
+            except Exception:
+                directives = {}
+
+        # Back-compat: a flat {field: "selector"} CUSTOM_SELECTORS dict gets
+        # translated to FIELD_EXTRACT directive shape. Explicit FIELD_EXTRACT
+        # entries always win — translation only fills the gaps.
+        legacy = self.custom_settings.get("CUSTOM_SELECTORS") or {}
+        if isinstance(legacy, str):
+            try:
+                legacy = json.loads(legacy)
+            except Exception:
+                legacy = {}
+        if isinstance(legacy, dict):
+            for field_name, selector in legacy.items():
+                if field_name in directives:
+                    continue
+                if not isinstance(selector, str):
+                    continue
+                directives[field_name] = {
+                    "css": selector,
+                    "to_text": True,
+                }
+        return directives
+
+    def _apply_field_extract(self, item, response):
+        """Populate every project-schema field on the item.
+
+        Reads `data/<project>/project.json` for the field whitelist and the
+        spider's FIELD_EXTRACT setting for how to populate each non-core field.
+        Fields without a directive (or whose directive returns no value) are
+        explicitly set to `None`, so every schema field is guaranteed to appear
+        in the output.
+        """
+        project = getattr(self.spider_config, "project", None)
+        if not project:
+            return
+
+        schema_fields = self._load_project_schema_fields(project)
+        if schema_fields is None:
+            return
+
+        directives = self._resolve_field_extract_config()
+
+        from core.processors import apply_processors
+
+        for field_name in schema_fields:
+            directive = (
+                directives.get(field_name) if isinstance(directives, dict) else None
+            )
+
+            if not directive:
+                if field_name in self._CORE_SCHEMA_FIELDS:
+                    # Core fields are already on the item via the extractor.
+                    continue
+                # Whitelist the field even if no directive — explicit null
+                # makes the contract auditable in exports.
+                item.setdefault(field_name, None)
+                continue
+
+            # Directive present: override whatever the extractor produced
+            # (so the agent can fix a wrong newspaper author/title/etc. with
+            # a precise CSS selector).
+
+            value = None
+            from_field = directive.get("from") or directive.get("from_field")
+            css = directive.get("css")
+            xpath = directive.get("xpath")
+            get_all = directive.get("get_all", False)
+            to_text = directive.get("to_text", False)
+            to_markdown = directive.get("to_markdown", False)
+            processors = directive.get("processors") or []
+
+            if from_field:
+                value = item.get(from_field)
+            elif css or xpath:
+                if css:
+                    sel = response.css(css)
+                else:
+                    sel = response.xpath(xpath)
+
+                if to_text:
+                    # Joined descendant text of the first matched element.
+                    # If the selector already targets text/attr nodes, `sel`
+                    # is already textual; otherwise expand it to descendants.
+                    if css:
+                        if "::text" in css or "::attr" in css:
+                            parts = sel.getall()
+                        else:
+                            parts = response.css(css + " *::text").getall()
+                    else:
+                        parts = response.xpath(xpath + "//text()").getall()
+                    value = (
+                        " ".join(p.strip() for p in parts if p and p.strip()) or None
+                    )
+                elif to_markdown:
+                    html_block = sel.get()
+                    if html_block:
+                        from markdownify import markdownify as _md
+
+                        value = _md(html_block, heading_style="ATX")
+                else:
+                    value = sel.getall() if get_all else sel.get()
+
+            if processors:
+                try:
+                    value = apply_processors(value, processors)
+                except Exception as e:
+                    logger.warning(
+                        f"FIELD_EXTRACT processor failed for '{field_name}': {e}"
+                    )
+
+            item[field_name] = value
+
+        # Prune intermediate extractor state. The project schema is the
+        # whitelist — anything not in it (e.g. extractor-side `markdown`,
+        # `top_image`, `images`, `videos`, newspaper's `metadata` dict) gets
+        # dropped before the pipeline so the output contains only schema
+        # fields plus pipeline bookkeeping.
+        bookkeeping = {
+            "spider_id",
+            "spider_name",
+            "source",
+            "extracted_at",
+            "scraped_at",
+            "html",
+            "_callback",
+        }
+        allowed = set(schema_fields) | bookkeeping
+        for key in list(item.keys()):
+            if key not in allowed:
+                del item[key]
+
+    _project_schema_cache: dict = {}
+
+    def _load_project_schema_fields(self, project):
+        """Return the list of schema field names for a project, or None if no schema."""
+        if project in self._project_schema_cache:
+            return self._project_schema_cache[project]
+
+        from pathlib import Path
+        from core.config import DATA_DIR
+
+        path = Path(DATA_DIR) / project / "project.json"
+        if not path.exists():
+            self._project_schema_cache[project] = None
+            return None
+
+        try:
+            with open(path) as f:
+                doc = json.load(f)
+            fields = [f["name"] for f in doc.get("schema", {}).get("fields", [])]
+        except Exception as e:
+            logger.warning(f"Failed to load project schema {path}: {e}")
+            fields = None
+
+        self._project_schema_cache[project] = fields
+        return fields
 
     def _extract_field(self, selector, config):
         """Extract a single field using CSS or XPath selector.

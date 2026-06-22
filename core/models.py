@@ -1,4 +1,6 @@
+import json
 from datetime import datetime, timezone
+from typing import Any, Dict, Iterable
 from sqlalchemy import (
     Column,
     Integer,
@@ -17,6 +19,30 @@ from .db import Base
 def _utcnow():
     """Return current UTC time."""
     return datetime.now(timezone.utc)
+
+
+def deserialize_spider_settings(settings_rows: Iterable) -> Dict[str, Any]:
+    """Convert SpiderSetting rows into a settings dict.
+
+    Values are stored as strings in the DB. We first try JSON decoding (which
+    covers dicts, lists, true/false/null literals, and numbers); failing that,
+    we honor a legacy convention of stringified booleans and integers.
+    """
+    result: Dict[str, Any] = {}
+    for s in settings_rows:
+        val = s.value
+        try:
+            val = json.loads(val)
+        except (json.JSONDecodeError, TypeError):
+            if isinstance(val, str):
+                if val.lower() == "true":
+                    val = True
+                elif val.lower() == "false":
+                    val = False
+                elif val.isdigit():
+                    val = int(val)
+        result[s.key] = val
+    return result
 
 
 class Spider(Base):

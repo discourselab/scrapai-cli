@@ -6,9 +6,28 @@ from typing import Optional, List, Dict
 import newspaper
 import trafilatura
 from bs4 import BeautifulSoup
+from markdownify import markdownify as _md
 from .schemas import ScrapedArticle
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_media(html: Optional[str]):
+    """Walk HTML for <img>/<video>/<iframe> srcs. Returns (images, videos)."""
+    if not html:
+        return [], []
+    soup = BeautifulSoup(html, "lxml")
+    images = [
+        {"src": img["src"], "alt": img.get("alt", "")}
+        for img in soup.find_all("img")
+        if img.get("src")
+    ]
+    videos = [
+        {"src": tag["src"], "type": tag.name}
+        for tag in soup.find_all(["video", "iframe"])
+        if tag.get("src")
+    ]
+    return images, videos
 
 
 class BaseExtractor(ABC):
@@ -58,6 +77,17 @@ class NewspaperExtractor(BaseExtractor):
                 )
                 return None
 
+            clean_html = article.article_html or None
+            # newspaper4k strips <img> from article_html during cleaning, so
+            # _extract_media on clean_html misses them. Merge the URLs newspaper
+            # exposes separately (article.images) and keep alt text when the
+            # clean_html happens to retain a tag.
+            images, videos = _extract_media(clean_html)
+            seen_srcs = {img["src"] for img in images}
+            for src in article.images or []:
+                if src and src not in seen_srcs:
+                    images.append({"src": src, "alt": ""})
+                    seen_srcs.add(src)
             return ScrapedArticle(
                 url=url,
                 title=title,
@@ -66,11 +96,15 @@ class NewspaperExtractor(BaseExtractor):
                 published_date=article.publish_date,
                 source="newspaper4k",
                 metadata={
-                    "top_image": article.top_image,
                     "keywords": article.keywords,
                     "summary": article.summary,
                 },
                 html=html if include_html else None,
+                clean_html=clean_html,
+                markdown=_md(clean_html, heading_style="ATX") if clean_html else None,
+                top_image=article.top_image or None,
+                images=images,
+                videos=videos,
             )
         except Exception as e:
             logger.debug(f"NewspaperExtractor failed for {url}: {e}")
@@ -84,8 +118,18 @@ class TrafilaturaExtractor(BaseExtractor):
         self, url: str, html: str, title_hint: str = None, include_html: bool = False
     ) -> Optional[ScrapedArticle]:
         try:
-            # trafilatura.bare_extraction returns a Document object or dict
-            extracted = trafilatura.bare_extraction(html, url=url)
+            # Parse the HTML once and pass the resulting tree to both trafilatura
+            # calls — bare_extraction yields the structured metadata + plain
+            # text, extract(output_format="html") yields the cleaned HTML used
+            # for image/video discovery and markdown conversion. Sharing the
+            # tree avoids parsing the same document twice per page.
+            from trafilatura.utils import load_html
+
+            tree = load_html(html)
+            if tree is None:
+                return None
+
+            extracted = trafilatura.bare_extraction(tree, url=url)
 
             if not extracted:
                 return None
@@ -106,6 +150,14 @@ class TrafilaturaExtractor(BaseExtractor):
             if not title and title_hint:
                 title = title_hint.strip()
 
+            clean_html = trafilatura.extract(
+                tree,
+                url=url,
+                output_format="html",
+                include_images=True,
+                include_links=True,
+            )
+            images, videos = _extract_media(clean_html)
             return ScrapedArticle(
                 url=url,
                 title=title or "",
@@ -122,6 +174,11 @@ class TrafilaturaExtractor(BaseExtractor):
                     "license": data.get("license"),
                 },
                 html=html if include_html else None,
+                clean_html=clean_html,
+                markdown=_md(clean_html, heading_style="ATX") if clean_html else None,
+                top_image=data.get("image") or None,
+                images=images,
+                videos=videos,
             )
         except Exception as e:
             logger.debug(f"TrafilaturaExtractor failed for {url}: {e}")

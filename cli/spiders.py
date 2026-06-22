@@ -116,6 +116,29 @@ def import_spider(file, project, skip_validation):
                     )
                     return
 
+            # Validate spider config covers every `required: true` field in
+            # the project schema. Skipped when --skip-validation is set,
+            # when the project has no project.json, or when callbacks are used.
+            if not skip_validation:
+                from core.config import DATA_DIR
+                from core.schema_validator import check_schema_coverage
+
+                problems = check_schema_coverage(
+                    project=project,
+                    settings=settings_dict,
+                    callbacks_config=callbacks_dict,
+                    data_dir=DATA_DIR,
+                )
+                if problems:
+                    click.echo(f"❌ Spider does not cover project '{project}' schema:")
+                    for p in problems:
+                        click.echo(f"   • {p}")
+                    click.echo(
+                        "\n💡 Add the missing FIELD_EXTRACT directives, or use "
+                        "--skip-validation to bypass (not recommended)."
+                    )
+                    return
+
             # Validate spider name matches inspector's folder structure
             if source_url:
                 from urllib.parse import urlparse

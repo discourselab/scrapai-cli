@@ -10,6 +10,11 @@ from typing import Any, List, Dict, Optional
 from datetime import datetime
 from dateutil import parser as dateutil_parser
 
+try:
+    import dateparser as _dateparser
+except ImportError:
+    _dateparser = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -124,25 +129,60 @@ def lowercase_processor(value: Any, **kwargs) -> Any:
     return value
 
 
-def parse_datetime_processor(value: Any, format: Optional[str] = None, **kwargs) -> Any:
+def parse_datetime_processor(
+    value: Any,
+    format: Optional[str] = None,
+    languages: Optional[List[str]] = None,
+    **kwargs,
+) -> Any:
     """Parse datetime string into datetime object.
+
+    Resolution order:
+      1. If `format` is given, use strptime (explicit wins).
+      2. Else try dateparser (handles relative dates, 200+ languages, fuzzy text).
+      3. Else fall back to dateutil.
 
     Args:
         value: Input datetime string
-        format: Optional strptime format string (if None, uses dateutil parser)
+        format: Optional strptime format string
+        languages: Optional language hints for dateparser (e.g. ["en", "de"])
 
     Returns datetime object or None if parsing fails.
     """
     if not isinstance(value, str) or not value:
         return None
 
-    try:
-        if format:
-            # Use strptime with explicit format
+    value = value.strip()
+    if not value:
+        return None
+
+    if format:
+        try:
             return datetime.strptime(value, format)
-        else:
-            # Use dateutil for flexible parsing
-            return dateutil_parser.parse(value)
+        except (ValueError, TypeError) as e:
+            logger.warning(
+                f"Failed to parse datetime '{value}' with format '{format}': {e}"
+            )
+            return None
+
+    if _dateparser is not None:
+        try:
+            # DATE_ORDER="MDY" matches dateutil's default interpretation of
+            # ambiguous numeric dates (e.g. "01/02/2024" -> Jan 2), so adopting
+            # dateparser does not silently change dates parsed by existing
+            # spiders. Pass explicit `format` to override per-spider when needed.
+            parsed = _dateparser.parse(
+                value, languages=languages, settings={"DATE_ORDER": "MDY"}
+            )
+            if parsed is not None:
+                return parsed
+        except Exception as e:
+            logger.debug(
+                f"dateparser failed on '{value}': {e}; falling back to dateutil"
+            )
+
+    try:
+        return dateutil_parser.parse(value)
     except (ValueError, TypeError, dateutil_parser.ParserError) as e:
         logger.warning(f"Failed to parse datetime '{value}': {e}")
         return None

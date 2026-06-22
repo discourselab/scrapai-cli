@@ -28,8 +28,20 @@ def queue():
 @click.option("--project", default="default", help="Project name (default: default)")
 def add(url, custom_instruction, priority, project):
     """Add website to queue"""
+    from pathlib import Path
+    from core.config import DATA_DIR
     from core.db import get_db
     from core.models import CrawlQueue
+
+    if project != "default":
+        schema_path = Path(DATA_DIR) / project / "project.json"
+        if not schema_path.exists():
+            click.echo(
+                f"⚠️  No project schema at {schema_path} — items crawled into "
+                f"'{project}' won't have schema-driven field whitelisting at "
+                f"crawl time. Run the project interview (see CLAUDE.md "
+                f'"Project Schema") before processing this URL.'
+            )
 
     with get_db() as db:
         existing = (

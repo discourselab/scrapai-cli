@@ -19,7 +19,7 @@ class SmartProxyMiddleware:
 
     Strategy (auto mode - default):
     1. Start with direct connections (no proxy)
-    2. Detect 403/429 errors (blocked/rate-limited)
+    2. Detect 403/429/503 errors (blocked/rate-limited/unavailable)
     3. Retry with datacenter proxy (if configured)
     4. If datacenter fails → expert-in-the-loop (ask user to use residential)
 
@@ -122,7 +122,7 @@ class SmartProxyMiddleware:
                     "⚠️  No proxies configured - only direct connections available"
                 )
 
-        # Track domains that require proxy (learned from 403/429 errors)
+        # Track domains that require proxy (learned from 403/429/503 errors)
         self.blocked_domains = set()
 
         # Track domains that failed even with current proxy (for expert-in-the-loop)
@@ -144,9 +144,24 @@ class SmartProxyMiddleware:
     def process_request(self, request):
         """
         Decide whether to use proxy based on domain history.
-        If domain was previously blocked, use proxy proactively.
+        - Explicit residential mode OR spider setting PROXY_FROM_START: proxy every request from the start.
+        - Otherwise: proxy only for domains previously seen to block (403/429/503).
         """
         domain = urlparse(request.url).netloc
+
+        # Spider opted into "proxy from start" or explicit residential mode → always proxy
+        spider = getattr(self, "crawler", None) and self.crawler.spider
+        proxy_from_start = bool(
+            getattr(spider, "custom_settings", {}).get("PROXY_FROM_START")
+        ) if spider else False
+        if (
+            (self.proxy_mode == "residential" or proxy_from_start)
+            and self.proxy_available
+            and not request.meta.get("proxy")
+        ):
+            request.meta["proxy"] = self.proxy_url
+            self.stats["proxy_requests"] += 1
+            return None
 
         # Check if this domain needs proxy (learned from previous blocks)
         if domain in self.blocked_domains and self.proxy_available:
@@ -162,13 +177,13 @@ class SmartProxyMiddleware:
 
     def process_response(self, request, response):
         """
-        Detect rate limiting (429) or blocking (403) and retry with proxy.
+        Detect rate limiting (429), blocking (403), or service-unavailable (503) and retry with proxy.
         Implements expert-in-the-loop for expensive proxy escalation.
         """
         domain = urlparse(request.url).netloc
 
         # Check for rate limiting or blocking
-        if response.status in [403, 429]:
+        if response.status in [403, 429, 503]:
             # Check if we already tried with proxy
             if request.meta.get("proxy"):
                 # Already used proxy and still blocked
@@ -249,7 +264,7 @@ class SmartProxyMiddleware:
             logger.info(
                 f"🕷️  Spider '{spider.name}' started - Smart proxy mode enabled"
             )
-            logger.info("   Strategy: Direct → Proxy on block (403/429)")
+            logger.info("   Strategy: Direct → Proxy on block (403/429/503)")
         else:
             logger.info(f"🕷️  Spider '{spider.name}' started - Direct connections only")
 
