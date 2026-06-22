@@ -397,6 +397,8 @@ class BaseDBSpiderMixin:
         css = config.get("css")
         xpath = config.get("xpath")
         get_all = config.get("get_all", False)
+        to_text = config.get("to_text", False)
+        to_markdown = config.get("to_markdown", False)
 
         if css:
             result = selector.css(css)
@@ -404,6 +406,27 @@ class BaseDBSpiderMixin:
             result = selector.xpath(xpath)
         else:
             return None
+
+        if to_text:
+            # Joined whitespace-stripped descendant text of the first match.
+            # If the selector already targets text/attr nodes, it's already
+            # textual; otherwise expand it to descendants.
+            if css:
+                if "::text" in css or "::attr" in css:
+                    parts = result.getall()
+                else:
+                    parts = selector.css(css + " *::text").getall()
+            else:
+                parts = selector.xpath(xpath + "//text()").getall()
+            return " ".join(p.strip() for p in parts if p and p.strip()) or None
+
+        if to_markdown:
+            html_block = result.get()
+            if not html_block:
+                return None
+            from markdownify import markdownify as _md
+
+            return _md(html_block, heading_style="ATX")
 
         if get_all:
             return result.getall()

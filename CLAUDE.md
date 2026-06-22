@@ -144,6 +144,8 @@ Full walkthrough (article + non-article): [docs/analysis-workflow.md](docs/analy
 - **Schema declares ANY non-core field** (required or optional) → **Must use pure-CSS**: `EXTRACTOR_ORDER: ["custom"]` + `FIELDS` for every schema field. `spiders import` rejects mixing generic extractors with a non-core schema. See [docs/extractors.md](docs/extractors.md).
 - **Products, jobs, listings, forums** → **named callbacks** with custom fields. See [docs/callbacks.md](docs/callbacks.md).
 
+**Different layouts per section?** One spider can carry many rules. `FIELDS` is a single global config (same selectors for every page), so when sections need *different* selectors, route each to its own named callback — one `{"allow": ["/blog/.*"], "callback": "parse_blog"}` rule per section, each with its own `extract`. You are not limited to one extraction config per spider.
+
 **For article content:** Use `sections.md` to write rules per section. Sanity-check generic extractors with `./scrapai try data/proj/spider/analysis/page.html`. If output is clean → `EXTRACTOR_ORDER: ["trafilatura", "newspaper"]`. If generic extractors fail OR you need non-core fields → write `FIELDS` directives (discover selectors with `./scrapai analyze --test "..."` / `--find "..."`).
 
 **For non-article content (products, jobs, etc.):** Analyze a sample page, identify all fields, discover each CSS selector, build the callback config with processors, and test on 2-3 example pages to verify selectors generalize across items.
@@ -349,10 +351,13 @@ Full reference: [docs/settings.md](docs/settings.md).
 
 For non-article structured data (products, jobs, real estate, forums), use **named callbacks**. Full guide: [docs/callbacks.md](docs/callbacks.md). Templates: `templates/spider-ecommerce.json`, `spider-jobs.json`, `spider-realestate.json`.
 
-Basic shape:
+Basic shape — multiple rules route different sections to their own callbacks:
 ```json
 {
-  "rules": [{"allow": ["/product/.*"], "callback": "parse_product"}],
+  "rules": [
+    {"allow": ["/product/.*"], "callback": "parse_product"},
+    {"allow": ["/review/.*"], "callback": "parse_review"}
+  ],
   "callbacks": {
     "parse_product": {
       "extract": {
@@ -366,10 +371,18 @@ Basic shape:
           ]
         }
       }
+    },
+    "parse_review": {
+      "extract": {
+        "title": {"css": "h1.review-title::text"},
+        "rating": {"css": "span.stars::attr(data-score)"},
+        "body": {"css": "div.review-body p::text", "get_all": true}
+      }
     }
   }
 }
 ```
+Each section gets independent selectors — add as many `{allow, callback}` rules + matching callbacks as the site has distinct layouts.
 
 **Processors (8 available):** `strip`, `replace`, `regex`, `cast`, `join`, `default`, `lowercase`, `parse_datetime`. See [docs/processors.md](docs/processors.md). `parse_datetime` uses `dateparser` (relative dates, 200+ languages) with `dateutil` fallback; explicit `format` wins.
 

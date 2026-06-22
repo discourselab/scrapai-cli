@@ -44,6 +44,10 @@ Extract custom fields from any structured data - products, jobs, listings, forum
 - CSS: `{"css": "h1::text"}`, `{"css": "img::attr(src)"}`
 - XPath: `{"xpath": "//h1/text()"}`
 - Lists: `{"css": "li::text", "get_all": true}`
+- Clean text: `{"css": "div.body", "to_text": true}` — joined whitespace-stripped descendant text of the matched element
+- Markdown: `{"css": "div.body", "to_markdown": true}` — outer HTML of the matched element converted to markdown
+
+`to_text` / `to_markdown` operate on a single element (not compatible with `get_all`, and mutually exclusive).
 
 **Nested lists:**
 ```json

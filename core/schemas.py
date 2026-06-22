@@ -271,6 +271,20 @@ class FieldExtractSchema(BaseModel):
     processors: Optional[List[ProcessorSchema]] = Field(
         default=None, description="Processors to apply to extracted value"
     )
+    to_text: Optional[bool] = Field(
+        default=False,
+        description=(
+            "Extract joined whitespace-stripped descendant text of the matched "
+            "element (bs4 get_text(separator=' ', strip=True) equivalent)"
+        ),
+    )
+    to_markdown: Optional[bool] = Field(
+        default=False,
+        description=(
+            "Convert outer HTML of the matched element to markdown via "
+            "markdownify (ATX heading style)"
+        ),
+    )
 
     # For nested list extraction
     type: Optional[str] = Field(
@@ -358,6 +372,13 @@ class FieldExtractSchema(BaseModel):
             raise ValueError(
                 "ajax_nested_list fields must have 'ajax_url', 'selector', and 'extract' fields"
             )
+
+        if (self.to_text or self.to_markdown) and self.get_all:
+            raise ValueError(
+                "to_text/to_markdown are not compatible with get_all (single element only)"
+            )
+        if self.to_text and self.to_markdown:
+            raise ValueError("Pick one of to_text or to_markdown, not both")
 
         return self
 
