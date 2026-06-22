@@ -1,4 +1,4 @@
-<h1 align="center">ScrapAI</h1>
+<h1 align="center">scrapai</h1>
 
 <p align="center">
   <a href="https://github.com/discourselab/scrapai-cli/stargazers"><img src="https://img.shields.io/github/stars/discourselab/scrapai-cli" alt="GitHub stars"></a>
@@ -17,13 +17,13 @@ Minutes later you have a tested, production-ready scraper stored in a database. 
 Built by [DiscourseLab](https://www.discourselab.ai/). Used in production across 500+ websites.
 
 <p align="center">
-  <img src="demo.svg" alt="ScrapAI Demo" width="800">
+  <img src="demo.svg" alt="scrapai Demo" width="800">
 </p>
 
 ## Table of Contents
 
 - [Who This Is For](#who-this-is-for)
-- [Why ScrapAI?](#why-scrapai)
+- [Why scrapai?](#why-scrapai)
 - [How It Works](#how-it-works)
 - [Features](#features)
 - [Quick Start](#quick-start)
@@ -55,11 +55,11 @@ Built by [DiscourseLab](https://www.discourselab.ai/). Used in production across
 
 See [COMPARISON.md](COMPARISON.md) for a detailed comparison with Scrapling and crawl4ai.
 
-## Why ScrapAI?
+## Why scrapai?
 
 We needed data for our work. Hundreds of websites, scraped regularly, structured consistently. We got sick of building and maintaining fleets of scrapers.
 
-There are great crawling frameworks out there. [Scrapy](https://scrapy.org/), [crawl4ai](https://github.com/unclecode/crawl4ai), and [Scrapling](https://github.com/D4Vinci/Scrapling) are our favourites, and ScrapAI is built on top of Scrapy. But even with great frameworks, you hit a wall at scale. You still need to write code for every site, monitor for breakage, and fix things when layouts change. 10 scrapers is fine. 100 is a full-time job. 500 is a team.
+There are great crawling frameworks out there. [Scrapy](https://scrapy.org/), [crawl4ai](https://github.com/unclecode/crawl4ai), and [Scrapling](https://github.com/D4Vinci/Scrapling) are our favourites, and scrapai is built on top of Scrapy. But even with great frameworks, you hit a wall at scale. You still need to write code for every site, monitor for breakage, and fix things when layouts change. 10 scrapers is fine. 100 is a full-time job. 500 is a team.
 
 We looked at three options:
 
@@ -69,13 +69,13 @@ We looked at three options:
 
 **Option 3: AI once, deterministic forever.** Use AI at build time to analyze the site and write extraction rules. Then run those rules with Scrapy: no AI in the loop, no per-page costs. The cost is per *website*, not per page. After that, you own the scraper and run it as many times as you want.
 
-We chose option 3. That's ScrapAI.
+We chose option 3. That's scrapai.
 
 **Self-hosted, no vendor lock-in.** You clone the repo, you own everything. No SaaS, no subscription, no per-page billing. Your scrapers are JSON configs in a database. Export them, share them, move them between projects.
 
 ## How It Works
 
-ScrapAI is an orchestration layer on top of Scrapy. Instead of writing a Python spider file per website, an AI agent generates a JSON config and stores it in a database. A single generic spider (`DatabaseSpider`) loads any config at runtime.
+scrapai is an orchestration layer on top of Scrapy. Instead of writing a Python spider file per website, an AI agent generates a JSON config and stores it in a database. A single generic spider (`DatabaseSpider`) loads any config at runtime.
 
 ```
 You (plain English) → AI Agent → JSON config → Database → Scrapy crawl
@@ -113,7 +113,7 @@ Adding a new website means adding a new row. See [`templates/`](templates/) for 
 
 ### What's Under the Hood
 
-ScrapAI is glue. These projects do the heavy lifting:
+scrapai is glue. These projects do the heavy lifting:
 
 - **[Scrapy](https://scrapy.org/)** for crawling. Everything runs through Scrapy; we just load configs from a database instead of Python files.
 - **[newspaper4k](https://github.com/AndyTheFactory/newspaper4k)** and **[trafilatura](https://github.com/adbar/trafilatura)** for article extraction (title, content, author, date). For non-article content (products, jobs, listings), the agent writes custom callbacks with CSS/XPath selectors and data processors.
@@ -168,7 +168,7 @@ cd scrapai-cli
 
 ### Using with AI Agents
 
-ScrapAI is designed to work with AI coding agents. The agent reads the workflow instructions, analyzes websites, and produces JSON configs through the CLI.
+scrapai is designed to work with AI coding agents. The agent reads the workflow instructions, analyzes websites, and produces JSON configs through the CLI.
 
 **Claude Code** is what we use and test with. `CLAUDE.md` contains the complete 4-phase workflow, and `./scrapai setup` configures permission rules that block the agent from modifying framework code. The full agent instructions fit in ~5k tokens. Additional docs (Cloudflare, proxies, callbacks, etc.) are loaded only when needed, not upfront. Most of the context window goes to actual site analysis, not reading a manual.
 
@@ -186,14 +186,14 @@ Agent: [Queues them, processes in parallel batches]
 
 **Other coding agents** (OpenCode, Cursor, Antigravity, etc.) should work with any agent that can read instructions and run shell commands. An `Agents.md` file is included. These agents lack Claude Code's permission enforcement, so review changes carefully.
 
-**Claws.** ScrapAI works with any Claw that can read instructions and execute shell commands. We tested with [NanoClaw](https://github.com/qwibitai/nanoclaw) for autonomous operation via Telegram. More rigorous testing is in progress, and we're excited to try other Claws like PicoClaw, IronClaw, and Nanobot. See [Security](#security) for how the architecture keeps agents safe.
+**Claws.** scrapai works with any Claw that can read instructions and execute shell commands. We tested with [NanoClaw](https://github.com/qwibitai/nanoclaw) for autonomous operation via Telegram. More rigorous testing is in progress, and we're excited to try other Claws like PicoClaw, IronClaw, and Nanobot. See [Security](#security) for how the architecture keeps agents safe.
 
 ### Migrating Existing Scrapers
 
-Point the agent at your existing Python scripts (Scrapy spiders, BeautifulSoup, Scrapling, whatever) and it'll read them, understand the extraction logic, and write the equivalent ScrapAI JSON config.
+Point the agent at your existing Python scripts (Scrapy spiders, BeautifulSoup, Scrapling, whatever) and it'll read them, understand the extraction logic, and write the equivalent scrapai JSON config.
 
 ```
-You: "Migrate my spider at scripts/bbc_spider.py to ScrapAI"
+You: "Migrate my spider at scripts/bbc_spider.py to scrapai"
 Agent: [Reads Python, extracts URL patterns and selectors, writes JSON config, tests, saves to database]
 ```
 
@@ -201,13 +201,13 @@ Your existing scrapers keep running while you verify. No big bang migration requ
 
 ## For Developers
 
-ScrapAI doesn't replace developers. It removes the repetitive parts so you can focus on the hard problems.
+scrapai doesn't replace developers. It removes the repetitive parts so you can focus on the hard problems.
 
 **You're always in the loop.** The agent doesn't just run off and do things. During site analysis, it writes detailed notes in `sections.md`: what URL patterns it found, what sections the site has, what extraction strategy it chose and why. Plain language, easy to read. You can review at any point, correct the agent's assumptions, and bring your expertise into the process.
 
 **Hand-write, edit, or override anything.** Write your own JSON configs from scratch. Edit AI-generated ones. Override settings per spider. Write custom callbacks with your own CSS/XPath selectors and data processors. `./scrapai spiders import my_config.json` works the same whether a human or an agent wrote it. The AI is a tool in your workflow, not a replacement for it.
 
-**Consistency across the fleet.** When 5 developers write 100 spiders, you get 5 different styles, naming conventions, and quality levels. ScrapAI produces uniform configs with the same schema, validation, and structure. Easier to review, easier to debug, easier to onboard new people.
+**Consistency across the fleet.** When 5 developers write 100 spiders, you get 5 different styles, naming conventions, and quality levels. scrapai produces uniform configs with the same schema, validation, and structure. Easier to review, easier to debug, easier to onboard new people.
 
 **Small, readable codebase.** ~4,000 lines of code. Built on Scrapy, SQLAlchemy, Alembic — tools you already know. Read the whole thing in an afternoon. Easy to extend, easy to contribute to.
 
@@ -244,7 +244,7 @@ All input is validated through [Pydantic](https://docs.pydantic.dev/) schemas be
 
 When you pair an AI agent with a scraping framework, the agent can potentially modify code, run arbitrary commands, and interact with untrusted web content. This isn't theoretical. In February 2026, an [OpenClaw agent deleted 200+ emails](https://techcrunch.com/2026/02/23/a-meta-ai-security-researcher-said-an-openclaw-agent-ran-amok-on-her-inbox/) after context compaction caused it to lose safety constraints. Scraping makes this worse: every page you crawl is untrusted input that could contain prompt injections.
 
-ScrapAI's approach: **the agent writes config, not code.**
+scrapai's approach: **the agent writes config, not code.**
 
 - With Claude Code, permission rules block `Write(**/*.py)`, `Edit(**/*.py)`, and destructive shell commands at the tool level
 - The agent interacts only through a defined CLI (`./scrapai inspect`, `./scrapai spiders import`, etc.)
@@ -365,7 +365,7 @@ Contributions welcome. Areas where help would be particularly valuable:
 
 ## Responsible Use
 
-ScrapAI is a tool. What you scrape is your responsibility. Respect robots.txt, check each site's terms of service, and comply with applicable laws in your jurisdiction. Don't scrape personal data without a legal basis. We provide the software; you're responsible for how you use it.
+scrapai is a tool. What you scrape is your responsibility. Respect robots.txt, check each site's terms of service, and comply with applicable laws in your jurisdiction. Don't scrape personal data without a legal basis. We provide the software; you're responsible for how you use it.
 
 ## License
 
