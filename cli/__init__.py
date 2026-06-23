@@ -21,6 +21,7 @@ from .extract_urls import extract_urls  # noqa: E402
 from .projects import projects  # noqa: E402
 from .health import health  # noqa: E402
 from .try_cmd import try_cmd  # noqa: E402
+from .browser_cmd import browser  # noqa: E402
 
 
 @click.group()
@@ -45,3 +46,4 @@ cli.add_command(extract_urls, "extract-urls")
 cli.add_command(projects)
 cli.add_command(health)
 cli.add_command(try_cmd)
+cli.add_command(browser)
