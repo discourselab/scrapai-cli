@@ -64,7 +64,12 @@ class SmartProxyMiddleware:
         self.expert_message_shown = False
 
         # Statistics
-        self.stats = {"direct_requests": 0, "proxy_requests": 0, "blocked_retries": 0}
+        self.stats = {
+            "direct_requests": 0,
+            "proxy_requests": 0,  # proxy attempts
+            "proxy_successes": 0,  # proxied requests that came back 200
+            "blocked_retries": 0,
+        }
 
     @classmethod
     def from_crawler(cls, crawler):
@@ -158,6 +163,13 @@ class SmartProxyMiddleware:
                     f"❌ Blocked ({response.status}) but no proxy available: {request.url}"
                 )
 
+        # Not blocked. If this request went through a proxy and returned 200,
+        # the proxy actually got us through — record a real success (vs. attempt).
+        if request.meta.get("proxy") and response.status == 200:
+            self.stats["proxy_successes"] += 1
+            if self.crawler is not None and getattr(self.crawler, "stats", None):
+                self.crawler.stats.inc_value("proxy/success")
+
         return response
 
     def _show_expert_message(self):
@@ -204,9 +216,18 @@ class SmartProxyMiddleware:
 
     def spider_closed(self, spider):
         """Log statistics when spider finishes"""
+        attempts = self.stats["proxy_requests"]
+        successes = self.stats["proxy_successes"]
         logger.info(f"📊 Proxy Statistics for '{spider.name}':")
         logger.info(f"   Direct requests: {self.stats['direct_requests']}")
-        logger.info(f"   Proxy requests: {self.stats['proxy_requests']}")
+        if attempts:
+            pct = round(100 * successes / attempts)
+            logger.info(
+                f"   Proxy: {attempts} attempts, {successes} unblocked (200) "
+                f"— {pct}% success"
+            )
+        else:
+            logger.info("   Proxy: not used")
         logger.info(f"   Blocked & retried: {self.stats['blocked_retries']}")
         logger.info(f"   Blocked domains: {len(self.blocked_domains)}")
         if self.blocked_domains:
