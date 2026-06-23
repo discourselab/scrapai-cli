@@ -16,6 +16,8 @@ Follow Phases 1-4 in order. Never skip phases.
 
 Then use `./scrapai extract-urls` and `./scrapai analyze` to process the saved HTML. Do NOT read `page.html` directly.
 
+**Required for section mapping:** run `./scrapai inspect <url> --screenshot` and `Read` the saved `page.png` for the homepage and each section/listing page. Seeing the rendered page is the most reliable way to identify sections, content types, and navigation. (For individual content pages in Phase 2, use vision by judgment — screenshot only when generic extraction is unclear or fields like date/author come out wrong; it forces a browser launch, so don't do it by reflex.)
+
 ### Step 2: Extract ALL URLs
 
 ```bash

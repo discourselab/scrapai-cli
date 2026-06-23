@@ -45,7 +45,7 @@ When the user greets you, introduce yourself:
 
 1. **ALWAYS use `--project <name>`** on spider, queue, crawl, show, and export commands
 2. **NEVER run production `crawl`** without `--limit` flag — users run production crawls themselves
-3. **NEVER read HTML files directly** with Read/Grep — only use `inspect`, `analyze`, `extract-urls`, `try`
+3. **NEVER read HTML files directly** with Read/Grep — only use `inspect`, `analyze`, `extract-urls`, `try`. **Exception:** screenshots saved by `inspect --screenshot` (`page.png`) — read those with the Read tool to *see* the page.
 4. **NEVER skip phases** — always complete 1→2→3→4 sequentially
 5. **Run commands ONE AT A TIME** — never chain with `&&`, read output before proceeding
 
@@ -65,7 +65,7 @@ When the user greets you, introduce yourself:
 - `python`/`python3` in Bash → use `./scrapai analyze`
 
 **HTML processing commands:**
-- `./scrapai inspect <url>` — fetch and save HTML. Auto-escalates transport (plain HTTP → curl_cffi → browser) and reports which one worked + the flag to set. `--browser` forces browser. `--proxy-type residential|static|none`.
+- `./scrapai inspect <url>` — fetch and save HTML. Auto-escalates transport (plain HTTP → curl_cffi → browser) and reports which one worked + the flag to set. `--browser` forces browser. `--screenshot` saves a `page.png` (top ~2 screen-heights by default; `--screenshot-screens N` for more; forces browser) — then `Read` it to *see* the page when the DOM is hard to reason about. `--proxy-type <name>` (any proxy configured in .env).
 - `./scrapai extract-urls --file <html>` — extract URLs from saved HTML
 - `./scrapai analyze <html>` — analyze structure, test selectors, find fields
 - `./scrapai try <html>` — run newspaper + trafilatura, compare output
@@ -125,10 +125,12 @@ Detailed steps: [docs/analysis-workflow.md](docs/analysis-workflow.md). **Only m
 - **Sitemap URL?** → [docs/sitemap.md](docs/sitemap.md).
 - **Otherwise:** `inspect` homepage → `extract-urls` → categorize → drill into sections ONE AT A TIME (inspector overwrites files). Document in `sections.md`.
 - **Transport:** `inspect` auto-escalates plain HTTP → curl_cffi → browser and reports the lightest one that worked. Set the matching flag in the spider config: curl_cffi → `"CURL_CFFI_ENABLED": true`; browser → `"CLOUDFLARE_ENABLED": true` (or `"BROWSER_ENABLED": true` for JS-only). Never use the browser if curl_cffi works — it's far faster.
+- **Screenshot the structure (required for section mapping).** For the homepage and each section/listing page, run `./scrapai inspect <url> --screenshot` and **`Read` the `page.png`**. Use the rendered view to identify sections, content types, and navigation — vision is the most reliable way to *see* structure, and it's where it pays off most. The DOM can mislead; the rendered page doesn't.
 - **Exclusion policy:** only exclude about/contact/donate/account/legal/search/PDFs. Everything else: explore and include. When uncertain, include it. User instructions override defaults.
 
 **✓ Phase 1 DONE when:**
 - `sections.md` exists in `data/<project>/<spider>/analysis/`
+- Homepage/section structure reviewed visually (`page.png` screenshots `Read`)
 - ALL content section types identified (blog, news, reports, etc.)
 - URL pattern documented for EACH section type
 - Example URLs listed (minimum 3 per section) for Phase 2 testing
@@ -147,7 +149,9 @@ Full walkthrough (article + non-article): [docs/analysis-workflow.md](docs/analy
 
 **Different layouts per section?** One spider can carry many rules. `FIELDS` is a single global config (same selectors for every page), so when sections need *different* selectors, route each to its own named callback — one `{"allow": ["/blog/.*"], "callback": "parse_blog"}` rule per section, each with its own `extract`. You are not limited to one extraction config per spider.
 
-**For article content:** Use `sections.md` to write rules per section. Sanity-check generic extractors with `./scrapai try data/proj/spider/analysis/page.html`. If output is clean → `EXTRACTOR_ORDER: ["trafilatura", "newspaper"]`. If generic extractors fail OR you need non-core fields → write `FIELDS` directives (discover selectors with `./scrapai analyze --test "..."` / `--find "..."`).
+**For article content:** Use `sections.md` to write rules per section. Sanity-check generic extractors with `./scrapai try data/proj/spider/analysis/page.html`. If output is clean → `EXTRACTOR_ORDER: ["trafilatura", "newspaper"]`. If generic extractors fail OR you need non-core fields → write `FIELDS` directives.
+
+**Use vision when extraction is unclear (your judgment — not every page).** If `try`/`analyze` already extract cleanly, skip the screenshot. But when generic extraction is shaky, the layout is non-obvious, or fields (especially **date/author**) come out wrong → `inspect --screenshot` a sample content page, `Read` the `page.png` to see where each field sits, then confirm selectors with `./scrapai analyze --test "..."` / `--find "..."`. Vision tells you *what* to target; `analyze` confirms it. Don't screenshot every content page by reflex — it forces a browser launch.
 
 **For non-article content (products, jobs, etc.):** Analyze a sample page, identify all fields, discover each CSS selector, build the callback config with processors, and test on 2-3 example pages to verify selectors generalize across items.
 

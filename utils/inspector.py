@@ -91,14 +91,49 @@ def _fetch_curl_cffi(url, proxy_url=None):
         return None, None
 
 
-async def _fetch_browser(url, proxy_type):
-    """CloakBrowser fetch (JS rendering + Cloudflare bypass). Returns html or None."""
+async def _capture_screenshot(page, path, screens=2):
+    """Save a screenshot capped at ``screens`` viewport-heights from the top.
+
+    A full-page PNG of a long article is too tall to stay legible once viewed
+    (and costs a lot of tokens). Capping at ~2 screen-heights keeps the header,
+    title, and start of the content sharp — which is where most fields live.
+    ``screens=0`` falls back to a full-page capture.
+    """
+    if not screens:
+        await page.screenshot(path=path, full_page=True)
+        return
+    vp = page.viewport_size or {"width": 1280, "height": 800}
+    try:
+        scroll_h = int(await page.evaluate("document.body.scrollHeight"))
+    except Exception:
+        scroll_h = vp["height"] * screens
+    height = min(vp["height"] * screens, scroll_h) or vp["height"]
+    await page.screenshot(
+        path=path, clip={"x": 0, "y": 0, "width": vp["width"], "height": height}
+    )
+
+
+async def _fetch_browser(url, proxy_type, screenshot_path=None, screenshot_screens=2):
+    """CloakBrowser fetch (JS rendering + Cloudflare bypass). Returns html or None.
+
+    When ``screenshot_path`` is given, also saves a PNG of the rendered page
+    (capped at ``screenshot_screens`` screen-heights) for the agent to view.
+    """
     from utils.cf_browser import CloudflareBrowserClient
 
     async with CloudflareBrowserClient(
         headless=False, proxy_chain=proxy.chain(proxy_type)
     ) as browser:
-        return await browser.fetch(url)
+        html = await browser.fetch(url)
+        if screenshot_path and html:
+            try:
+                await _capture_screenshot(
+                    browser.page, screenshot_path, screenshot_screens
+                )
+                print(f"Saved screenshot to: {screenshot_path}")
+            except Exception as e:
+                print(f"Screenshot failed: {e}")
+        return html
 
 
 _FLAG_HINT = {
@@ -121,13 +156,16 @@ async def inspect_page_async(
     save_html=True,
     mode="http",
     project="default",
+    screenshot=False,
+    screenshot_screens=2,
 ):
     """Inspect a page, escalating transport as needed.
 
     Returns a dict: {"transport": "http"|"curl_cffi"|"browser"|None,
                      "needs_browser": bool}.
     In http mode, escalates plain HTTP → curl_cffi; if both blocked, returns
-    needs_browser=True so the caller can run the browser path.
+    needs_browser=True so the caller can run the browser path. When ``screenshot``
+    is set (browser mode), saves a full-page page.png for the agent to view.
     """
     print(f"Inspecting: {url}")
     output_dir = _resolve_output_dir(url, output_dir, project)
@@ -138,7 +176,8 @@ async def inspect_page_async(
 
     if mode == "browser":
         print("Using CloakBrowser (JS rendering + Cloudflare bypass)...")
-        html_content = await _fetch_browser(url, proxy_type)
+        shot = os.path.join(output_dir, "page.png") if screenshot else None
+        html_content = await _fetch_browser(url, proxy_type, shot, screenshot_screens)
         if not html_content:
             print(f"Failed to fetch page: {url}")
             return {"transport": None, "needs_browser": True}
@@ -189,10 +228,21 @@ def inspect_page(
     save_html=True,
     mode="http",
     project="default",
+    screenshot=False,
+    screenshot_screens=2,
 ):
     """Synchronous wrapper for inspect_page_async."""
     return asyncio.run(
-        inspect_page_async(url, output_dir, proxy_type, save_html, mode, project)
+        inspect_page_async(
+            url,
+            output_dir,
+            proxy_type,
+            save_html,
+            mode,
+            project,
+            screenshot,
+            screenshot_screens,
+        )
     )
 
 
@@ -215,11 +265,23 @@ def main():
     parser.add_argument(
         "--browser", action="store_true", help="Use CloakBrowser for JS + Cloudflare"
     )
+    parser.add_argument(
+        "--screenshot",
+        action="store_true",
+        help="Save a screenshot (page.png) — forces browser rendering",
+    )
+    parser.add_argument(
+        "--screenshot-screens",
+        type=int,
+        default=2,
+        help="Screen-heights to capture from the top (default 2; 0 = full page)",
+    )
     parser.add_argument("--project", type=str, default="default", help="Project name")
 
     args = parser.parse_args()
 
-    mode = "browser" if args.browser else "http"
+    # A screenshot needs a rendered page, so it implies browser mode.
+    mode = "browser" if (args.browser or args.screenshot) else "http"
     inspect_page(
         args.url,
         args.output_dir,
@@ -227,6 +289,8 @@ def main():
         not args.no_save_html,
         mode=mode,
         project=args.project,
+        screenshot=args.screenshot,
+        screenshot_screens=args.screenshot_screens,
     )
 
 

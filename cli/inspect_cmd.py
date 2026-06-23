@@ -22,6 +22,17 @@ import logging
     help="Use CloakBrowser for JS-rendered sites and Cloudflare bypass",
 )
 @click.option(
+    "--screenshot",
+    is_flag=True,
+    help="Save a screenshot (page.png) to view the page — forces browser",
+)
+@click.option(
+    "--screenshot-screens",
+    type=int,
+    default=2,
+    help="Screen-heights to capture from the top (default 2; raise to see lower, 0 = full page)",
+)
+@click.option(
     "--log-level",
     type=click.Choice(["debug", "info", "warning", "error", "critical"]),
     default="info",
@@ -35,20 +46,32 @@ def inspect_cmd(
     proxy_type,
     no_save_html,
     browser,
+    screenshot,
+    screenshot_screens,
     log_level,
     log_file,
 ):
     """Inspect a website to help create scrapers
 
     Uses lightweight HTTP by default. Use --browser for JS-rendered or Cloudflare-protected sites.
+    Use --screenshot to save a full-page page.png you can view directly.
     """
     logging.basicConfig(level=getattr(logging, log_level.upper(), logging.INFO))
     logger = logging.getLogger("inspector")
     logger.info(f"Starting inspection of {url}")
 
-    if browser:
-        click.echo("🌐 Using CloakBrowser (headed mode, JS + Cloudflare bypass)")
-        _run_browser_inspect(url, project, output_dir, proxy_type, no_save_html)
+    # A screenshot needs a rendered page → force the browser path.
+    if browser or screenshot:
+        click.echo("Using CloakBrowser (headed mode, JS + Cloudflare bypass)")
+        _run_browser_inspect(
+            url,
+            project,
+            output_dir,
+            proxy_type,
+            no_save_html,
+            screenshot,
+            screenshot_screens,
+        )
     else:
         click.echo("⚡ Trying lightweight transports (HTTP → curl_cffi)")
         from utils.inspector import inspect_page
@@ -63,7 +86,15 @@ def inspect_cmd(
     logger.info("Inspection complete")
 
 
-def _run_browser_inspect(url, project, output_dir, proxy_type, no_save_html):
+def _run_browser_inspect(
+    url,
+    project,
+    output_dir,
+    proxy_type,
+    no_save_html,
+    screenshot=False,
+    screenshot_screens=2,
+):
     """Run browser inspection as subprocess (same pattern as crawl.py).
 
     Wraps with xvfb-run on headless servers automatically.
@@ -74,6 +105,8 @@ def _run_browser_inspect(url, project, output_dir, proxy_type, no_save_html):
     # Build subprocess command: python -m utils.inspector <url> --browser ...
     cmd = [sys.executable, "-m", "utils.inspector", url, "--browser"]
     cmd += ["--project", project]
+    if screenshot:
+        cmd += ["--screenshot", "--screenshot-screens", str(screenshot_screens)]
     if output_dir:
         cmd += ["--output-dir", output_dir]
     if proxy_type != "auto":
