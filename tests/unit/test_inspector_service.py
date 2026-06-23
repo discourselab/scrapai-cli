@@ -46,10 +46,8 @@ async def test_fetch_browser_does_not_call_service_when_down(monkeypatch):
         return None
 
     monkeypatch.setattr(browser_client, "request", boom)
-    # Stop before a real browser launches: a fake client that yields no html.
-    monkeypatch.setattr(
-        inspector, "_fetch_browser_cold", _fake_cold := _make_fake_cold()
-    )
+    # Stop before a real browser launches: a fake cold-start that yields a marker.
+    monkeypatch.setattr(inspector, "_fetch_browser_cold", _make_fake_cold())
 
     html = await inspector._fetch_browser("https://a.com/p", "auto", None, 2)
     assert called["n"] == 0  # service never consulted
