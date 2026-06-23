@@ -95,6 +95,17 @@ def setup(args):
         except Exception as e:
             click.echo(f"⚠️  Warning: Could not create .env: {e}")
 
+    # Lock down .env — it holds secrets (proxy creds, DB URL, S3 keys). Set
+    # owner-only (600) so other OS users on a shared host can't read it.
+    if env_file.exists():
+        try:
+            import os
+
+            os.chmod(env_file, 0o600)
+            click.echo("🔒 .env permissions set to 600 (owner-only)")
+        except Exception as e:
+            click.echo(f"⚠️  Could not set .env permissions: {e}")
+
     # Test write permission to DATA_DIR
     click.echo("📁 Checking data directory permissions...")
     try:
