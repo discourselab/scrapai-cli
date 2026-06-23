@@ -7,6 +7,19 @@ import re
 logger = logging.getLogger(__name__)
 
 
+def with_scroll_fallback(strategies, custom_settings):
+    """Ensure the playwright strategy is present when INFINITE_SCROLL is set.
+
+    The legacy ``playwright`` extractor strategy was removed from the default
+    order (it re-fetched each page in a cold browser — wasteful at scale; use
+    BROWSER_ENABLED instead). Infinite-scroll still rides on it, so re-add it
+    only when the spider explicitly asks for scrolling.
+    """
+    if custom_settings.get("INFINITE_SCROLL") and "playwright" not in strategies:
+        return strategies + ["playwright"]
+    return strategies
+
+
 class BaseDBSpiderMixin:
     """Mixin providing shared logic for DatabaseSpider and SitemapDatabaseSpider."""
 
@@ -92,7 +105,7 @@ class BaseDBSpiderMixin:
 
     async def _extract_article(self, response, source_label="database_spider"):
         """Shared article extraction logic."""
-        default_strategies = ["trafilatura", "newspaper", "playwright"]
+        default_strategies = ["trafilatura", "newspaper"]
 
         strategies = self.custom_settings.get("EXTRACTOR_ORDER")
         if isinstance(strategies, str):
@@ -102,6 +115,8 @@ class BaseDBSpiderMixin:
                 strategies = None
         if not isinstance(strategies, list):
             strategies = default_strategies
+
+        strategies = with_scroll_fallback(strategies, self.custom_settings)
 
         # Pure-CSS mode: skip the generic extractor entirely when the spider
         # signals "custom-only" (EXTRACTOR_ORDER == ["custom"]) and provides

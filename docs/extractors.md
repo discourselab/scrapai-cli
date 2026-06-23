@@ -152,7 +152,7 @@ Signs that `page.html` needs browser rendering:
 
 **Hybrid browser (preferred — fast, also bypasses Cloudflare):** add `"BROWSER_ENABLED": true` or `"CLOUDFLARE_ENABLED": true` to settings. See [cloudflare.md](cloudflare.md).
 
-**Playwright extractor (legacy):** `EXTRACTOR_ORDER: ["playwright", "trafilatura"]` with optional wait config:
+**Playwright extractor (legacy):** prefer `BROWSER_ENABLED` above — the playwright strategy re-fetches each page in a cold browser (a second request per URL), so it's **no longer in the default order**. It stays available only when you list it explicitly, and is auto-enabled for `INFINITE_SCROLL`. Usage with optional wait config:
 ```json
 {
   "EXTRACTOR_ORDER": ["playwright", "trafilatura"],

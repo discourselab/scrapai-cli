@@ -329,7 +329,7 @@ class SmartExtractor:
     def __init__(
         self, strategies: List[str] = None, custom_selectors: Dict[str, str] = None
     ):
-        self.strategies = strategies or ["trafilatura", "newspaper", "playwright"]
+        self.strategies = strategies or ["trafilatura", "newspaper"]
         self.custom_selectors = custom_selectors
 
     async def extract(
