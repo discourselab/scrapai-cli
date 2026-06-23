@@ -10,9 +10,21 @@ stale, helpers fail gracefully so callers can fall back to spawning their own.
 import json
 import os
 import socket
-import tempfile
 
-STATE_FILE = os.path.join(tempfile.gettempdir(), "scrapai_browser.json")
+
+def _default_state_file():
+    """A stable, per-user location for the service state.
+
+    Must be the same path for every scrapai process (the `browser start` and all
+    `inspect` callers) so they can find one running service. ``tempfile.gettempdir()``
+    is unsuitable: it follows $TMPDIR, which differs per shell/sandbox on macOS,
+    so a service started in one terminal is invisible from another. Anchor on the
+    user's home instead.
+    """
+    return os.path.join(os.path.expanduser("~"), ".scrapai", "browser_service.json")
+
+
+STATE_FILE = _default_state_file()
 
 
 def read_state():
@@ -25,6 +37,7 @@ def read_state():
 
 
 def write_state(pid, port):
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
     with open(STATE_FILE, "w") as f:
         json.dump({"pid": pid, "port": port}, f)
 

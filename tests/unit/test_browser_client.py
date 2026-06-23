@@ -1,6 +1,7 @@
 """Tests for the browser-service client (state file + IPC protocol)."""
 
 import json
+import os
 import socket
 import threading
 
@@ -14,6 +15,25 @@ pytestmark = pytest.mark.unit
 @pytest.fixture(autouse=True)
 def _tmp_state(tmp_path, monkeypatch):
     monkeypatch.setattr(bc, "STATE_FILE", str(tmp_path / "state.json"))
+
+
+def test_state_file_is_home_based_not_tmpdir(monkeypatch):
+    # The state file must be discoverable across terminals/processes, so it
+    # cannot depend on $TMPDIR (which differs per shell/sandbox on macOS).
+    monkeypatch.setenv("TMPDIR", "/weird/sandbox/tmp")
+    path = bc._default_state_file()
+    assert path == os.path.join(
+        os.path.expanduser("~"), ".scrapai", "browser_service.json"
+    )
+    assert "/weird/sandbox/tmp" not in path
+
+
+def test_write_state_creates_parent_dir(tmp_path, monkeypatch):
+    nested = tmp_path / "deep" / "dir" / "state.json"
+    monkeypatch.setattr(bc, "STATE_FILE", str(nested))
+    bc.write_state(7, 8)
+    assert nested.exists()
+    assert bc.read_state() == {"pid": 7, "port": 8}
 
 
 def test_state_roundtrip():
