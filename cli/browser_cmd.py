@@ -27,7 +27,13 @@ def browser():
     default="auto",
     help="Proxy for the service (auto/none, or any name in .env)",
 )
-def start(proxy_type):
+@click.option(
+    "--pool",
+    default=5,
+    type=int,
+    help="Max concurrent lanes (one per site, default 5)",
+)
+def start(proxy_type, pool):
     """Start the background browser service."""
     if bc.is_running():
         state = bc.read_state()
@@ -45,6 +51,8 @@ def start(proxy_type):
         str(port),
         "--proxy-type",
         proxy_type,
+        "--pool",
+        str(pool),
     ]
 
     from utils.display_helper import needs_xvfb, has_xvfb

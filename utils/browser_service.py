@@ -1,61 +1,95 @@
 """Persistent browser service daemon.
 
-Owns ONE warm CloakBrowser for its lifetime and answers requests over a local
-socket. This avoids the open-browser / pass-Cloudflare / close cycle on every
-page — the browser opens once, solves Cloudflare once, and is reused.
+Owns ONE warm browser process and a pool of "lanes" (isolated context + page
+that solves Cloudflare on its own). Requests are routed to a lane by their URL
+domain: the same site reuses its lane (and its solved CF session), different
+sites get different lanes and run concurrently. This lets several agents inspect
+different sites at once through a single browser instead of one browser each.
 
-Step 1 is serialized (one page at a time) via an op-lock; parallel tabs come
-later. Run as: python -m utils.browser_service --port N [--proxy-type auto]
+Run as: python -m utils.browser_service --port N [--proxy-type auto] [--pool 5]
 """
 
 import argparse
 import asyncio
 import json
 import os
+from urllib.parse import urlparse
 
 from utils.cf_browser import CloudflareBrowserClient
 from utils.inspector import _capture_screenshot
+from utils.lane_pool import LanePool
 from core import proxy as proxy_mod
 
 
-async def _run(port, proxy_type):
-    client = CloudflareBrowserClient(
+def _domain(url):
+    return urlparse(url).netloc
+
+
+async def handle_request(pool, req, stop):
+    """Route one request to a lane and return the response dict.
+
+    Pure of socket I/O so it can be tested with a fake pool/lane.
+    """
+    action = req.get("action")
+
+    if action == "ping":
+        return {"ok": True, "pid": os.getpid()}
+
+    if action == "shutdown":
+        stop.set()
+        return {"ok": True}
+
+    if action == "fetch":
+        lane = await pool.acquire(_domain(req["url"]))
+        html = await lane.fetch(req["url"])
+        return {"ok": html is not None, "bytes": len(html or "")}
+
+    if action == "screenshot":
+        lane = await pool.acquire(_domain(req["url"]))
+        html = await lane.fetch(req["url"])
+        if html:
+            await _capture_screenshot(lane.page, req["path"], req.get("screens", 2))
+            return {"ok": True, "bytes": len(html)}
+        return {"ok": False, "error": "fetch failed"}
+
+    return {"ok": False, "error": "unknown action"}
+
+
+async def _run(port, proxy_type, pool_size):
+    parent = CloudflareBrowserClient(
         headless=False, proxy_chain=proxy_mod.chain(proxy_type)
     )
-    await client.start()
-    print(f"[browser-service] browser ready, listening on 127.0.0.1:{port}", flush=True)
+    await parent.start()
+
+    parent_used = False
+
+    async def _open_lane():
+        # Reuse the browser's first tab as lane 0 so no idle tab is left over;
+        # every later lane is a new tab in the same (one-window) context.
+        nonlocal parent_used
+        if not parent_used:
+            parent_used = True
+            return parent
+        return await parent.attach_lane()
+
+    async def _close_lane(lane):
+        await lane.close_lane()
+
+    pool = LanePool(_open_lane, _close_lane, max_lanes=pool_size)
+    print(
+        f"[browser-service] browser ready, {pool_size}-lane pool, "
+        f"listening on 127.0.0.1:{port}",
+        flush=True,
+    )
 
     stop = asyncio.Event()
-    op_lock = asyncio.Lock()  # serialize browser ops (Step 1: one page at a time)
 
     async def handle(reader, writer):
         resp = {"ok": False, "error": "unknown action"}
         try:
             line = await reader.readline()
             req = json.loads(line.decode())
-            action = req.get("action")
-
-            if action == "ping":
-                resp = {"ok": True, "pid": os.getpid()}
-            elif action == "shutdown":
-                resp = {"ok": True}
-                stop.set()
-            elif action == "fetch":
-                async with op_lock:
-                    html = await client.fetch(req["url"])
-                resp = {"ok": html is not None, "bytes": len(html or "")}
-            elif action == "screenshot":
-                async with op_lock:
-                    html = await client.fetch(req["url"])
-                    if html:
-                        await _capture_screenshot(
-                            client.page, req["path"], req.get("screens", 2)
-                        )
-                resp = (
-                    {"ok": True, "bytes": len(html)}
-                    if html
-                    else {"ok": False, "error": "fetch failed"}
-                )
+            resp = await handle_request(pool, req, stop)
         except Exception as e:
             resp = {"ok": False, "error": str(e)}
 
@@ -71,7 +105,8 @@ async def _run(port, proxy_type):
     async with server:
         await stop.wait()
 
-    await client.close()
+    await pool.close()
+    await parent.close()
     print("[browser-service] stopped", flush=True)
 
 
@@ -79,8 +114,9 @@ def main():
     parser = argparse.ArgumentParser(description="scrapai persistent browser service")
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--proxy-type", default="auto")
+    parser.add_argument("--pool", type=int, default=5, help="Max concurrent lanes")
     args = parser.parse_args()
-    asyncio.run(_run(args.port, args.proxy_type))
+    asyncio.run(_run(args.port, args.proxy_type, args.pool))
 
 
 if __name__ == "__main__":

@@ -622,6 +622,38 @@ class CloudflareBrowserClient:
             except Exception as e:
                 logger.warning(f"Error closing CloakBrowser: {e}")
 
+    async def attach_lane(self):
+        """Create a sibling client sharing this browser AND context but driving
+        its own tab/page.
+
+        All lanes live in the one shared context, so they appear as tabs in a
+        single window. Each lane still solves Cloudflare on its own page (fresh
+        ``cf_verified``); cookies land in the shared context and are kept apart
+        per-domain, so different sites don't clash. Used by the browser
+        service's lane pool. The lane reuses this client's proxy chain.
+        """
+        lane = CloudflareBrowserClient(
+            headless=self.headless,
+            proxy_chain=list(self._proxy_chain),
+        )
+        lane.browser = self.browser
+        lane.driver = self.browser
+        lane.context = self.context  # shared context => one window, many tabs
+        lane.page = await self.context.new_page()
+        lane.tab = lane.page
+        return lane
+
+    async def close_lane(self):
+        """Close just this lane's tab, leaving the shared context and browser
+        running (other lanes' tabs live in the same context)."""
+        if self.page:
+            try:
+                await self.page.close()
+            except Exception as e:
+                logger.debug(f"Error closing lane tab: {e}")
+            self.page = None
+            self.tab = None
+
     async def __aenter__(self):
         """Async context manager entry."""
         await self.start()
