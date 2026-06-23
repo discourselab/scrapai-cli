@@ -18,9 +18,11 @@ from core.config import DATA_DIR
 @click.option("--timeout", "-t", type=int, default=None, help="Max runtime in seconds")
 @click.option(
     "--proxy-type",
-    type=click.Choice(["auto", "datacenter", "residential"], case_sensitive=False),
     default="auto",
-    help="Proxy strategy: auto (smart escalation), datacenter, or residential (default: auto)",
+    help=(
+        "Proxy to use: auto (smart escalation), none, or any name configured in "
+        ".env (datacenter, residential, isp, mobile, …). Default: auto"
+    ),
 )
 @click.option(
     "--browser",
@@ -166,10 +168,10 @@ def _run_spider(
 
     if proxy_type == "auto":
         click.echo("🔄 Proxy mode: auto (smart escalation with expert-in-the-loop)")
-    elif proxy_type == "residential":
-        click.echo("🏠 Proxy mode: residential (explicit, used when blocked)")
-    elif proxy_type == "datacenter":
-        click.echo("🏢 Proxy mode: datacenter (explicit, used when blocked)")
+    elif proxy_type == "none":
+        click.echo("🌐 Proxy mode: none (direct connections only)")
+    else:
+        click.echo(f"🔀 Proxy mode: {proxy_type} (explicit, used when blocked)")
 
     # Check if browser mode enabled (CLI flag or spider setting)
     cf_enabled = browser  # CLI flag takes precedence

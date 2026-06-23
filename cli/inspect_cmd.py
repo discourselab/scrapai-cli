@@ -9,9 +9,11 @@ import logging
 @click.option("--output-dir", default=None, help="Directory to save analysis")
 @click.option(
     "--proxy-type",
-    type=click.Choice(["none", "static", "residential", "auto"]),
     default="auto",
-    help="Proxy type to use",
+    help=(
+        "Proxy to test with: auto/none, or any name configured in .env "
+        "(datacenter, residential, isp, mobile, …)"
+    ),
 )
 @click.option("--no-save-html", is_flag=True, help="Do not save the full HTML")
 @click.option(

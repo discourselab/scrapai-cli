@@ -12,10 +12,10 @@ GOOD = "<html><head><title>T</title></head><body>" + ("x" * 6000) + "</body></ht
 def _patch(monkeypatch, http_result, curl_result):
     calls = {"curl": 0}
 
-    async def fake_http(url):
+    async def fake_http(url, proxy_url=None):
         return http_result
 
-    def fake_curl(url):
+    def fake_curl(url, proxy_url=None):
         calls["curl"] += 1
         return curl_result
 

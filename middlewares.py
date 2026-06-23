@@ -3,11 +3,12 @@
 Scrapy middlewares for proxy support and enhanced downloading
 """
 
-import os
 import logging
 from scrapy import signals
 from dotenv import load_dotenv
 from urllib.parse import urlparse
+
+from core import proxy
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -33,94 +34,25 @@ class SmartProxyMiddleware:
         # Determine proxy type (auto, datacenter, or residential)
         self.proxy_mode = settings.get("PROXY_TYPE", "auto") if settings else "auto"
 
-        # Load datacenter proxy credentials
-        dc_username = os.getenv("DATACENTER_PROXY_USERNAME")
-        dc_password = os.getenv("DATACENTER_PROXY_PASSWORD")
-        dc_host = os.getenv("DATACENTER_PROXY_HOST")
-        dc_port = os.getenv("DATACENTER_PROXY_PORT")
+        # All proxy URLs come from core.proxy — the single, env-driven source.
+        self.datacenter_configured = proxy.datacenter_url() is not None
+        self.residential_configured = proxy.residential_url() is not None
+        self.proxy_url, self.active_proxy_type = proxy.select(self.proxy_mode)
+        self.proxy_available = self.proxy_url is not None
 
-        # Load residential proxy credentials
-        res_username = os.getenv("RESIDENTIAL_PROXY_USERNAME")
-        res_password = os.getenv("RESIDENTIAL_PROXY_PASSWORD")
-        res_host = os.getenv("RESIDENTIAL_PROXY_HOST")
-        res_port = os.getenv("RESIDENTIAL_PROXY_PORT")
-
-        # Check what's configured
-        self.datacenter_configured = all([dc_username, dc_password, dc_host, dc_port])
-        self.residential_configured = all(
-            [res_username, res_password, res_host, res_port]
-        )
-
-        # Determine active proxy based on mode
-        if self.proxy_mode == "residential":
-            # Explicit residential mode
-            if self.residential_configured:
-                self.proxy_url = (
-                    f"http://{res_username}:{res_password}@{res_host}:{res_port}"
-                )
-                self.proxy_available = True
-                self.active_proxy_type = "residential"
-                logger.info(f"✅ Residential proxy enabled: {res_host}:{res_port}")
-                logger.info("📋 Strategy: Direct → Residential (explicit mode)")
-            else:
-                self.proxy_available = False
-                self.active_proxy_type = None
-                logger.error(
-                    "❌ Residential proxy requested but "
-                    "RESIDENTIAL_PROXY_* vars not configured in .env"
-                )
-                logger.error("   Please add residential proxy credentials")
-        elif self.proxy_mode == "datacenter":
-            # Explicit datacenter mode
-            if self.datacenter_configured:
-                self.proxy_url = (
-                    f"http://{dc_username}:{dc_password}@{dc_host}:{dc_port}"
-                )
-                self.proxy_available = True
-                self.active_proxy_type = "datacenter"
-                logger.info(f"✅ Datacenter proxy enabled: {dc_host}:{dc_port}")
-                logger.info("📋 Strategy: Direct → Datacenter (explicit mode)")
-            else:
-                self.proxy_available = False
-                self.active_proxy_type = None
-                logger.warning(
-                    "⚠️  Datacenter proxy not configured - only direct connections available"
+        if self.proxy_available:
+            logger.info(
+                f"✅ Proxy active: {self.active_proxy_type} (mode={self.proxy_mode}). "
+                "Strategy: Direct → proxy on block."
+            )
+            if self.proxy_mode == "auto" and self.residential_configured:
+                logger.info(
+                    "💡 Residential proxy detected (will prompt if datacenter fails)"
                 )
         else:
-            # Auto mode (default): prefer datacenter, escalate to expert-in-the-loop for residential
-            if self.datacenter_configured:
-                self.proxy_url = (
-                    f"http://{dc_username}:{dc_password}@{dc_host}:{dc_port}"
-                )
-                self.proxy_available = True
-                self.active_proxy_type = "datacenter"
-                logger.info(
-                    f"✅ Auto mode: Datacenter proxy available: {dc_host}:{dc_port}"
-                )
-                logger.info("📋 Strategy: Direct → Datacenter → Expert-in-the-loop")
-                if self.residential_configured:
-                    logger.info(
-                        "💡 Residential proxy detected (will prompt if datacenter fails)"
-                    )
-            elif self.residential_configured:
-                # No datacenter, but residential available - use it in auto mode
-                self.proxy_url = (
-                    f"http://{res_username}:{res_password}@{res_host}:{res_port}"
-                )
-                self.proxy_available = True
-                self.active_proxy_type = "residential"
-                logger.info(
-                    f"✅ Auto mode: Residential proxy available: {res_host}:{res_port}"
-                )
-                logger.info(
-                    "📋 Strategy: Direct → Residential (only proxy configured)"
-                )
-            else:
-                self.proxy_available = False
-                self.active_proxy_type = None
-                logger.warning(
-                    "⚠️  No proxies configured - only direct connections available"
-                )
+            logger.warning(
+                f"⚠️  No proxy active (mode={self.proxy_mode}) — direct connections only"
+            )
 
         # Track domains that require proxy (learned from 403/429/503 errors)
         self.blocked_domains = set()
@@ -151,9 +83,11 @@ class SmartProxyMiddleware:
 
         # Spider opted into "proxy from start" or explicit residential mode → always proxy
         spider = getattr(self, "crawler", None) and self.crawler.spider
-        proxy_from_start = bool(
-            getattr(spider, "custom_settings", {}).get("PROXY_FROM_START")
-        ) if spider else False
+        proxy_from_start = (
+            bool(getattr(spider, "custom_settings", {}).get("PROXY_FROM_START"))
+            if spider
+            else False
+        )
         if (
             (self.proxy_mode == "residential" or proxy_from_start)
             and self.proxy_available

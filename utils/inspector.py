@@ -23,6 +23,7 @@ from urllib.parse import urlparse
 
 from core.config import DATA_DIR
 from core.block_signals import is_blocked
+from core import proxy
 from settings import USER_AGENT
 
 
@@ -56,26 +57,33 @@ def _resolve_output_dir(url, output_dir, project):
     return str(Path(DATA_DIR) / project / source_id / "analysis")
 
 
-async def _fetch_http(url):
+async def _fetch_http(url, proxy_url=None):
     """Plain aiohttp fetch. Returns (status, html) or (None, None) on error."""
     try:
         timeout = aiohttp.ClientTimeout(total=30)
         headers = {"User-Agent": USER_AGENT}
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=timeout) as response:
+            async with session.get(
+                url, headers=headers, timeout=timeout, proxy=proxy_url
+            ) as response:
                 return response.status, await response.text()
     except (aiohttp.ClientError, asyncio.TimeoutError) as e:
         print(f"Plain HTTP fetch failed: {e}")
         return None, None
 
 
-def _fetch_curl_cffi(url):
+def _fetch_curl_cffi(url, proxy_url=None):
     """curl_cffi (Chrome TLS impersonation). Returns (status, html) or (None, None)."""
     try:
         from curl_cffi import requests as cffi_requests
 
+        proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
         resp = cffi_requests.get(
-            url, impersonate="chrome", timeout=30, allow_redirects=True
+            url,
+            impersonate="chrome",
+            timeout=30,
+            allow_redirects=True,
+            proxies=proxies,
         )
         return resp.status_code, resp.text
     except Exception as e:
@@ -87,33 +95,8 @@ async def _fetch_browser(url, proxy_type):
     """CloakBrowser fetch (JS rendering + Cloudflare bypass). Returns html or None."""
     from utils.cf_browser import CloudflareBrowserClient
 
-    def _env_proxy(prefix):
-        user = os.getenv(f"{prefix}_PROXY_USERNAME")
-        pw = os.getenv(f"{prefix}_PROXY_PASSWORD")
-        host = os.getenv(f"{prefix}_PROXY_HOST")
-        port = os.getenv(f"{prefix}_PROXY_PORT")
-        return (
-            f"http://{user}:{pw}@{host}:{port}" if all([user, pw, host, port]) else None
-        )
-
-    dc_url = _env_proxy("DATACENTER")
-    res_url = _env_proxy("RESIDENTIAL")
-
-    if proxy_type == "residential":
-        proxy_chain = [res_url] if res_url else [None]
-    elif proxy_type == "static":
-        proxy_chain = [dc_url] if dc_url else [None]
-    elif proxy_type == "none":
-        proxy_chain = [None]
-    else:
-        proxy_chain = [None]
-        if dc_url:
-            proxy_chain.append(dc_url)
-        if res_url:
-            proxy_chain.append(res_url)
-
     async with CloudflareBrowserClient(
-        headless=False, proxy_chain=proxy_chain
+        headless=False, proxy_chain=proxy.chain(proxy_type)
     ) as browser:
         return await browser.fetch(url)
 
@@ -161,13 +144,22 @@ async def inspect_page_async(
             return {"transport": None, "needs_browser": True}
         transport = "browser"
     else:
+        # Only route the lightweight fetchers through a proxy when one is
+        # explicitly requested; "auto"/"none" stay direct (direct-first).
+        http_proxy = (
+            proxy.select(proxy_type)[0] if proxy_type not in ("auto", "none") else None
+        )
+        if http_proxy:
+            print(f"Using {proxy_type} proxy for HTTP/curl_cffi...")
         print("Trying plain HTTP...")
-        status, html_content = await _fetch_http(url)
+        status, html_content = await _fetch_http(url, http_proxy)
         if not is_blocked(status, html_content):
             transport = "http"
         else:
             print(f"Plain HTTP blocked (status {status}) — trying curl_cffi...")
-            status, html_content = await asyncio.to_thread(_fetch_curl_cffi, url)
+            status, html_content = await asyncio.to_thread(
+                _fetch_curl_cffi, url, http_proxy
+            )
             if not is_blocked(status, html_content):
                 transport = "curl_cffi"
             else:
@@ -214,9 +206,8 @@ def main():
     )
     parser.add_argument(
         "--proxy-type",
-        choices=["none", "static", "residential", "auto"],
         default="auto",
-        help="Proxy type to use",
+        help="Proxy to use: auto/none, or any name configured in .env",
     )
     parser.add_argument(
         "--no-save-html", action="store_true", help="Do not save the full HTML"

@@ -13,7 +13,6 @@ Strategies:
 
 import asyncio
 import logging
-import os
 import threading
 import time
 from typing import Dict, Optional
@@ -423,23 +422,11 @@ class CloudflareDownloadHandler:
                 "Cookie": cookie_str,
             }
 
-            # Get proxy from environment (use residential if available, else datacenter)
-            proxy = None
-            res_user = os.getenv("RESIDENTIAL_PROXY_USERNAME")
-            res_pass = os.getenv("RESIDENTIAL_PROXY_PASSWORD")
-            res_host = os.getenv("RESIDENTIAL_PROXY_HOST")
-            res_port = os.getenv("RESIDENTIAL_PROXY_PORT")
-            if all([res_user, res_pass, res_host, res_port]):
-                proxy = f"http://{res_user}:{res_pass}@{res_host}:{res_port}"
-            else:
-                dc_user = os.getenv("DATACENTER_PROXY_USERNAME")
-                dc_pass = os.getenv("DATACENTER_PROXY_PASSWORD")
-                dc_host = os.getenv("DATACENTER_PROXY_HOST")
-                dc_port = os.getenv("DATACENTER_PROXY_PORT")
-                if all([dc_user, dc_pass, dc_host, dc_port]):
-                    proxy = f"http://{dc_user}:{dc_pass}@{dc_host}:{dc_port}"
+            # Proxy from the single source — prefer residential, else datacenter.
+            from core import proxy as proxy_cfg
 
-            proxies = {"https": proxy, "http": proxy} if proxy else None
+            proxy_url = proxy_cfg.residential_url() or proxy_cfg.datacenter_url()
+            proxies = {"https": proxy_url, "http": proxy_url} if proxy_url else None
 
             # Run curl_cffi in thread to avoid blocking the event loop
             loop = asyncio.get_event_loop()
@@ -516,25 +503,10 @@ class CloudflareDownloadHandler:
                     "PROXY_TYPE", self.settings.get("PROXY_TYPE", "auto")
                 )
 
-                dc_user = os.getenv("DATACENTER_PROXY_USERNAME")
-                dc_pass = os.getenv("DATACENTER_PROXY_PASSWORD")
-                dc_host = os.getenv("DATACENTER_PROXY_HOST")
-                dc_port = os.getenv("DATACENTER_PROXY_PORT")
-                dc_url = (
-                    f"http://{dc_user}:{dc_pass}@{dc_host}:{dc_port}"
-                    if all([dc_user, dc_pass, dc_host, dc_port])
-                    else None
-                )
+                from core import proxy
 
-                res_user = os.getenv("RESIDENTIAL_PROXY_USERNAME")
-                res_pass = os.getenv("RESIDENTIAL_PROXY_PASSWORD")
-                res_host = os.getenv("RESIDENTIAL_PROXY_HOST")
-                res_port = os.getenv("RESIDENTIAL_PROXY_PORT")
-                res_url = (
-                    f"http://{res_user}:{res_pass}@{res_host}:{res_port}"
-                    if all([res_user, res_pass, res_host, res_port])
-                    else None
-                )
+                dc_url = proxy.datacenter_url()
+                res_url = proxy.residential_url()
 
                 # Build chain based on proxy_type
                 proxy_from_start = bool(spider_settings.get("PROXY_FROM_START"))
