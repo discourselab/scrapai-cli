@@ -553,11 +553,7 @@ class TestIterateRuntime:
         callback = mixin._make_callback("parse_listing", callback_config)
 
         # Collect yielded objects
-        results = list(
-            asyncio.get_event_loop().run_until_complete(
-                self._collect_async(callback(response))
-            )
-        )
+        results = list(asyncio.run(self._collect_async(callback(response))))
 
         assert len(results) == 2
         # Should yield Request objects (response.follow returns Request)
@@ -595,11 +591,7 @@ class TestIterateRuntime:
         response = self._make_response("https://example.com/listing", html)
         callback = mixin._make_callback("parse_listing", callback_config)
 
-        results = list(
-            asyncio.get_event_loop().run_until_complete(
-                self._collect_async(callback(response))
-            )
-        )
+        results = list(asyncio.run(self._collect_async(callback(response))))
 
         # Only one row has a URL, so only one request
         assert len(results) == 1
@@ -637,11 +629,7 @@ class TestIterateRuntime:
         response = self._make_response("https://example.com/us/listing", html)
         callback = mixin._make_callback("parse_listing", callback_config)
 
-        results = list(
-            asyncio.get_event_loop().run_until_complete(
-                self._collect_async(callback(response))
-            )
-        )
+        results = list(asyncio.run(self._collect_async(callback(response))))
 
         assert len(results) == 1
         listing_data = results[0].meta["listing_data"]
@@ -668,11 +656,7 @@ class TestIterateRuntime:
 
         callback = mixin._make_callback("parse_detail", callback_config)
 
-        results = list(
-            asyncio.get_event_loop().run_until_complete(
-                self._collect_async(callback(response))
-            )
-        )
+        results = list(asyncio.run(self._collect_async(callback(response))))
 
         assert len(results) == 1
         item = results[0]
@@ -699,11 +683,7 @@ class TestIterateRuntime:
 
         callback = mixin._make_callback("parse_page", callback_config)
 
-        results = list(
-            asyncio.get_event_loop().run_until_complete(
-                self._collect_async(callback(response))
-            )
-        )
+        results = list(asyncio.run(self._collect_async(callback(response))))
 
         assert len(results) == 1
         assert results[0]["title"] == "Test Title"
