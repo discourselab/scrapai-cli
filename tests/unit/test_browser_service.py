@@ -77,3 +77,41 @@ async def test_shutdown_sets_stop_event():
 async def test_unknown_action():
     resp = await handle_request(FakePool(), {"action": "frobnicate"}, asyncio.Event())
     assert resp["ok"] is False
+
+
+async def test_inspect_returns_html_and_screenshots(monkeypatch):
+    captured = {}
+
+    async def fake_capture(page, path, screens):
+        captured["shot"] = (path, screens)
+
+    monkeypatch.setattr("utils.browser_service._capture_screenshot", fake_capture)
+    pool = FakePool()
+    resp = await handle_request(
+        pool,
+        {
+            "action": "inspect",
+            "url": "https://c.com/x",
+            "path": "/tmp/c.png",
+            "screens": 2,
+        },
+        asyncio.Event(),
+    )
+    assert pool.acquired == ["c.com"]
+    assert resp["ok"] is True
+    assert "<html>" in resp["html"]
+    assert captured["shot"] == ("/tmp/c.png", 2)
+
+
+async def test_inspect_without_path_skips_screenshot(monkeypatch):
+    calls = {"n": 0}
+
+    async def fake_capture(*a):
+        calls["n"] += 1
+
+    monkeypatch.setattr("utils.browser_service._capture_screenshot", fake_capture)
+    resp = await handle_request(
+        FakePool(), {"action": "inspect", "url": "https://d.com/"}, asyncio.Event()
+    )
+    assert resp["ok"] is True
+    assert calls["n"] == 0  # no path -> no screenshot

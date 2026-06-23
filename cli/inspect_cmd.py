@@ -102,6 +102,26 @@ def _run_browser_inspect(
     import os
     import subprocess
 
+    # If the shared browser service is running, route through it in-process —
+    # no separate browser, no subprocess, no Xvfb needed.
+    from utils import browser_client
+
+    if browser_client.is_running():
+        click.echo("Using shared browser service (reusing the warm browser)")
+        from utils.inspector import inspect_page
+
+        inspect_page(
+            url,
+            output_dir,
+            proxy_type,
+            not no_save_html,
+            mode="browser",
+            project=project,
+            screenshot=screenshot,
+            screenshot_screens=screenshot_screens,
+        )
+        return
+
     # Build subprocess command: python -m utils.inspector <url> --browser ...
     cmd = [sys.executable, "-m", "utils.inspector", url, "--browser"]
     cmd += ["--project", project]

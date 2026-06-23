@@ -114,6 +114,37 @@ async def _capture_screenshot(page, path, screens=2):
 
 
 async def _fetch_browser(url, proxy_type, screenshot_path=None, screenshot_screens=2):
+    """Fetch a rendered page, reusing the shared browser service if it is
+    running, otherwise cold-starting a browser. Returns html or None.
+
+    When ``screenshot_path`` is given, a PNG of the rendered page is saved too.
+    """
+    from utils import browser_client
+
+    if browser_client.is_running():
+        print("Using shared browser service (warm browser)...")
+        resp = browser_client.request(
+            "inspect",
+            url=url,
+            path=screenshot_path,
+            screens=screenshot_screens,
+            timeout=180,
+        )
+        if resp and resp.get("ok"):
+            if screenshot_path:
+                print(f"Saved screenshot to: {screenshot_path}")
+            return resp.get("html")
+        print("Browser service fetch failed.")
+        return None
+
+    return await _fetch_browser_cold(
+        url, proxy_type, screenshot_path, screenshot_screens
+    )
+
+
+async def _fetch_browser_cold(
+    url, proxy_type, screenshot_path=None, screenshot_screens=2
+):
     """CloakBrowser fetch (JS rendering + Cloudflare bypass). Returns html or None.
 
     When ``screenshot_path`` is given, also saves a PNG of the rendered page

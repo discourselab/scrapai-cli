@@ -67,6 +67,8 @@ When the user greets you, introduce yourself:
 **HTML processing commands:**
 - `./scrapai inspect <url>` — fetch and save HTML. Auto-escalates transport (plain HTTP → curl_cffi → browser) and reports which one worked + the flag to set. `--browser` forces browser. `--screenshot` saves a `page.png` (top ~2 screen-heights by default; `--screenshot-screens N` for more; forces browser) — then `Read` it to *see* the page when the DOM is hard to reason about. `--proxy-type <name>` (any proxy configured in .env).
 - `./scrapai extract-urls --file <html>` — extract URLs from saved HTML
+
+**Optional: persistent browser service (speeds up repeated/parallel browser inspects).** When a session will do many browser inspects (Cloudflare sites, `--screenshot`, or parallel processing), start one warm browser the agent reuses: `./scrapai browser start`. Then `inspect` auto-routes through it — one tab per site, Cloudflare solved once per site, far faster than cold-starting a browser per call. `./scrapai browser stop` when done; `--pool N` sets max concurrent sites (default 5). Optional — `inspect` cold-starts its own browser when the service isn't running. See [docs/browser-service.md](docs/browser-service.md).
 - `./scrapai analyze <html>` — analyze structure, test selectors, find fields
 - `./scrapai try <html>` — run newspaper + trafilatura, compare output
 
@@ -300,6 +302,7 @@ When user requests processing multiple websites, you can process them in paralle
 1. **Max 5 websites in parallel.** Batch if more (e.g., 12 → 5+5+2).
 2. **Phases within each website are always sequential:** Phase 1→2→3→4.
 3. Report progress per batch. Report failures immediately.
+4. **Start the browser service first** (`./scrapai browser start`) so all agents share one warm browser (one tab per site) instead of each launching its own; `./scrapai browser stop` when the batch is done. See [docs/browser-service.md](docs/browser-service.md).
 
 **Parallel mode:** Spawn one Task agent per website (max 5). Do NOT use `run_in_background=true`. Wait for batch to complete before next batch.
 

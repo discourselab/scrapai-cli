@@ -52,6 +52,15 @@ async def handle_request(pool, req, stop):
             return {"ok": True, "bytes": len(html)}
         return {"ok": False, "error": "fetch failed"}
 
+    if action == "inspect":
+        # Like screenshot but returns the HTML so `inspect` can save page.html
+        # and report the title. Screenshots only when a path is given.
+        lane = await pool.acquire(_domain(req["url"]))
+        html = await lane.fetch(req["url"])
+        if html and req.get("path"):
+            await _capture_screenshot(lane.page, req["path"], req.get("screens", 2))
+        return {"ok": html is not None, "html": html or ""}
+
     return {"ok": False, "error": "unknown action"}
 
 
