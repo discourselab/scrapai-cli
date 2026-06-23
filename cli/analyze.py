@@ -4,15 +4,83 @@ import click
 @click.command()
 @click.argument("html_file")
 @click.option("--test", default=None, help="Test a specific CSS selector")
-@click.option("--find", default=None, help="Find elements by keyword")
-def analyze(html_file, test, find):
+@click.option("--find", default=None, help="Find elements by class/id keyword")
+@click.option(
+    "--find-text",
+    default=None,
+    help="Find the element holding a VALUE you saw in the screenshot "
+    "(author name, date, title) and get its selector",
+)
+def analyze(html_file, test, find, find_text):
     """Analyze HTML for CSS selector discovery"""
     if test:
         _test_selector(html_file, test)
     elif find:
         _find_by_keyword(html_file, find)
+    elif find_text:
+        _find_by_text_cmd(html_file, find_text)
     else:
         _analyze_html(html_file)
+
+
+def _selector_for(el):
+    """Build a usable CSS selector for a BeautifulSoup element."""
+    el_id = el.get("id")
+    if el_id:
+        return f"{el.name}#{el_id}"
+    classes = el.get("class") or []
+    if classes:
+        return f"{el.name}." + ".".join(classes)
+    return el.name
+
+
+def find_by_text(html, value, limit=8):
+    """Elements whose visible text contains ``value``, tightest container first.
+
+    Lets you go from a value you SAW in the screenshot to the selector that
+    holds it — even when the class name is obfuscated. Returns a list of
+    {selector, tag, text}, deduped by selector. Long containers (>200 chars of
+    text) are skipped so you get the tight field element, not the whole article.
+    """
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "lxml")
+    needle = value.strip().lower()
+    candidates = []
+    for el in soup.find_all():
+        text = el.get_text(strip=True)
+        if text and len(text) < 200 and needle in text.lower():
+            candidates.append((len(text), el, text))
+    candidates.sort(key=lambda c: c[0])
+
+    results, seen = [], set()
+    for _, el, text in candidates:
+        sel = _selector_for(el)
+        if sel in seen:
+            continue
+        seen.add(sel)
+        results.append({"selector": sel, "tag": el.name, "text": text[:120]})
+        if len(results) >= limit:
+            break
+    return results
+
+
+def _find_by_text_cmd(html_path, value):
+    with open(html_path, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    matches = find_by_text(html, value)
+    click.echo(f"\nElements holding the value '{value}' (tightest first):")
+    click.echo("=" * 60)
+    if not matches:
+        click.echo(f"\nNo element found containing '{value}'.")
+        click.echo(
+            "Check the value matches the screenshot exactly (spacing; case is OK)."
+        )
+        return
+    for m in matches:
+        click.echo(f"\n  {m['selector']}")
+        click.echo(f"    Text: {m['text']}")
 
 
 def _analyze_html(html_path):
