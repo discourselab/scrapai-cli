@@ -5,6 +5,7 @@ from core.db import get_db
 from core.models import Spider
 from .base import BaseDBSpiderMixin
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,10 @@ class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
 
             # Compile rules AFTER callbacks are registered
             self.rules = []
+            # (allow_patterns, callback) for each content rule (priority order),
+            # used to decide whether a start URL is itself content. Captured here,
+            # inside the DB session, to avoid touching detached ORM objects later.
+            self._start_match_rules = []
             db_rules = sorted(spider.rules, key=lambda r: r.priority, reverse=True)
 
             for r in db_rules:
@@ -85,6 +90,10 @@ class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
                 self.rules.append(
                     Rule(LinkExtractor(**le_kwargs), callback=callback, follow=r.follow)
                 )
+                # Only rules with a real callback parse content; follow-only
+                # rules (callback=None) just extract links and never apply here.
+                if callback:
+                    self._start_match_rules.append((r.allow_patterns or [], callback))
 
             # Load settings and CF handlers via mixin
             self._load_settings_from_db(spider)
@@ -125,27 +134,36 @@ class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
                 continue
 
     async def parse_start_url(self, response):
-        """Process start URLs - use first available callback, otherwise parse_article."""
-        logger.info(f"Processing start URL: {response.url}")
+        """Parse a start URL only when it is itself content.
 
-        # If there are any callbacks defined, use the first one for start URLs
-        for rule in self.rules:
-            cb = rule.callback
-            if not cb:
-                continue
-            # cb may be a string or a bound method (after _compile_rules)
-            cb_name = cb if isinstance(cb, str) else getattr(cb, "__name__", "")
-            # Guard against infinite recursion from reserved callback names
-            if cb_name in ("parse_start_url", "parse", "start_requests"):
-                continue
-            logger.info(f"Start URL using callback: {cb_name}")
-            callback_method = getattr(self, cb_name) if isinstance(cb, str) else cb
-            async for item in callback_method(response):
-                yield item
+        Start URLs are crawl entry points; their links are followed by the
+        rules regardless. We parse the start URL as content only when it matches
+        a content rule (it's both an entry point and a content page), or when the
+        spider has no rules at all (a single-page spider whose start URL *is* the
+        content). A listing/section start URL that matches no content rule is NOT
+        parsed - that previously produced junk rows.
+        """
+        url = response.url
+
+        # Parse with the first content rule whose pattern the start URL matches.
+        # A content rule with no allow patterns is a deliberate match-all.
+        for allow_patterns, callback in self._start_match_rules:
+            if not allow_patterns or any(re.search(p, url) for p in allow_patterns):
+                logger.info(f"Start URL is content, using callback: {callback}")
+                callback_method = getattr(self, callback, None)
+                if callback_method:
+                    async for item in callback_method(response):
+                        yield item
+                return
+
+        # No content rule matched. If the spider has crawl rules, this start URL
+        # is a listing/entry point - don't parse it (links are still followed).
+        if self.rules:
+            logger.info(f"Start URL {url} is a listing entry point, not parsed")
             return
 
-        # No callbacks defined, use default article extraction
-        logger.info("Start URL using default article extraction")
+        # No rules at all: single-page spider, the start URL is the content.
+        logger.info("Single-page spider, parsing start URL as article")
         async for item in self.parse_article(response):
             yield item
 
