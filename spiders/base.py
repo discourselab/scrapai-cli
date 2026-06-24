@@ -20,6 +20,81 @@ def with_scroll_fallback(strategies, custom_settings):
     return strategies
 
 
+def _clean_pdf_text(text):
+    """Tidy raw PDF text: de-hyphenate and join mid-sentence line wraps.
+
+    PDF text comes line-wrapped at the page's column width, often with
+    hyphenated words split across lines. We join those so the stored text reads
+    as paragraphs, while preserving sentence/heading breaks. Conservative on
+    purpose — aggressive reflow is left to post-processing.
+    """
+    if not text:
+        return ""
+    text = text.replace("\r\n", "\n").replace("\r", "\n")  # pypdfium2 emits \r / \r\n
+    text = re.sub(
+        r"\xad[ \t]*\n?[ \t]*", "", text
+    )  # soft-hyphen (U+00AD) de-hyphenation
+    text = re.sub(r"(\w)-[ \t]*\n[ \t]*(\w)", r"\1\2", text)  # ascii hyphen at line end
+    # join a wrapped line into the next when it's a mid-sentence continuation
+    # (line doesn't end in sentence punctuation; next line starts lowercase)
+    text = re.sub(r"([^\n.!?:;])[ \t]*\n[ \t]*([a-z])", r"\1 \2", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n[ \t]+", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _extract_pdf_text(pdf_bytes):
+    """Full text from PDF bytes via pypdfium2, cleaned.
+
+    Graceful: returns "" (so the caller keeps the URL-only item) when pypdfium2
+    isn't installed, the bytes aren't a parseable PDF, or the PDF has no text
+    layer (e.g. a scanned/image-only PDF — we don't OCR).
+    """
+    if not pdf_bytes:
+        return ""
+    try:
+        import pypdfium2 as pdfium
+    except Exception:
+        return ""
+    pdf = None
+    try:
+        pdf = pdfium.PdfDocument(pdf_bytes)
+        parts = []
+        for i in range(len(pdf)):
+            page = pdf[i]
+            tp = page.get_textpage()
+            parts.append(tp.get_text_range())
+            tp.close()
+            page.close()
+        return _clean_pdf_text("\n".join(parts))
+    except Exception as e:
+        logger.warning(f"PDF text extraction failed: {e}")
+        return ""
+    finally:
+        if pdf is not None:
+            try:
+                pdf.close()
+            except Exception:
+                pass
+
+
+def _pdf_links(response):
+    """Absolute PDF URLs linked on an HTML page. [] for non-HTML responses."""
+    try:
+        hrefs = response.css("a::attr(href)").getall()
+    except Exception:
+        return []  # non-HTML response (a PDF, etc.) has no .css
+    out, seen = [], set()
+    for h in hrefs:
+        if h and h.lower().split("?")[0].split("#")[0].endswith(".pdf"):
+            u = response.urljoin(h)
+            if u not in seen:
+                seen.add(u)
+                out.append(u)
+    return out
+
+
 class BaseDBSpiderMixin:
     """Mixin providing shared logic for DatabaseSpider and SitemapDatabaseSpider."""
 
@@ -103,8 +178,71 @@ class BaseDBSpiderMixin:
         if spider._item_limit:
             logger.info(f"Item limit set to {spider._item_limit}")
 
+    @staticmethod
+    def _is_pdf_response(response):
+        """A PDF by URL suffix or Content-Type. PDFs aren't HTML."""
+        path = response.url.lower().split("?")[0].split("#")[0]
+        if path.endswith(".pdf"):
+            return True
+        ctype = response.headers.get("Content-Type", b"")
+        if isinstance(ctype, (bytes, bytearray)):
+            ctype = ctype.decode("latin-1", "ignore")
+        return "application/pdf" in ctype.lower()
+
+    def _pdf_mode(self):
+        """'extract' (follow + extract text) or 'links_only' (default)."""
+        mode = self.custom_settings.get("PDF_MODE") or "links_only"
+        return str(mode).strip().strip('"').lower()
+
+    def _build_pdf_item(self, response, source_label):
+        """Item for a PDF response. Text extracted only in PDF_MODE=extract."""
+        import os
+        from datetime import datetime, timezone
+        from urllib.parse import urlparse, unquote
+
+        name = unquote(os.path.basename(urlparse(response.url).path)) or response.url
+        content = (
+            _extract_pdf_text(response.body) if self._pdf_mode() == "extract" else ""
+        )
+        return {
+            "url": response.url,
+            "title": name,
+            "content": content,
+            "spider_name": self.spider_name,
+            "spider_id": self.spider_config.id,
+            "source": source_label,
+            "extracted_at": datetime.now(timezone.utc),
+            "metadata_json": {"content_type": "pdf"},
+        }
+
+    def _url_only_pdf_item(self, url, found_on, source_label):
+        """Lightweight item recording a discovered PDF link (links_only mode)."""
+        import os
+        from datetime import datetime, timezone
+        from urllib.parse import urlparse, unquote
+
+        name = unquote(os.path.basename(urlparse(url).path)) or url
+        return {
+            "url": url,
+            "title": name,
+            "content": "",
+            "spider_name": self.spider_name,
+            "spider_id": self.spider_config.id,
+            "source": source_label,
+            "extracted_at": datetime.now(timezone.utc),
+            "metadata_json": {"content_type": "pdf", "found_on": found_on.url},
+        }
+
     async def _extract_article(self, response, source_label="database_spider"):
         """Shared article extraction logic."""
+        # PDFs (and similar binaries) aren't HTML: the extractors can't read them
+        # and response.text/.css would raise. We follow .pdf links on purpose
+        # (see database_spider), so collect the URL as a minimal item here.
+        if self._is_pdf_response(response):
+            yield self._build_pdf_item(response, source_label)
+            self._items_scraped += 1
+            return
+
         default_strategies = ["trafilatura", "newspaper"]
 
         strategies = self.custom_settings.get("EXTRACTOR_ORDER")

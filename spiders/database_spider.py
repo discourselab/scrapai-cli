@@ -1,9 +1,9 @@
 from scrapy import Request
-from scrapy.linkextractors import LinkExtractor
+from scrapy.linkextractors import LinkExtractor, IGNORED_EXTENSIONS
 from scrapy.spiders import CrawlSpider, Rule
 from core.db import get_db
 from core.models import Spider
-from .base import BaseDBSpiderMixin
+from .base import BaseDBSpiderMixin, _pdf_links
 import logging
 import re
 
@@ -64,8 +64,23 @@ class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
             self._start_match_rules = []
             db_rules = sorted(spider.rules, key=lambda r: r.priority, reverse=True)
 
+            # PDF_MODE governs whether .pdf links are followed. "extract" follows
+            # and downloads them; "links_only" (default) leaves them to be
+            # recorded as URL-only items without a download.
+            pdf_mode = "links_only"
+            for s in spider.settings or []:
+                if getattr(s, "key", None) == "PDF_MODE":
+                    pdf_mode = str(s.value or "links_only").strip().strip('"').lower()
+
             for r in db_rules:
                 le_kwargs = {}
+                # Scrapy's LinkExtractor denies .pdf by default (pdf in
+                # IGNORED_EXTENSIONS). In extract mode, allow it through (keep
+                # every other default exclusion) so PDF links are followed.
+                if pdf_mode == "extract":
+                    le_kwargs["deny_extensions"] = [
+                        e for e in IGNORED_EXTENSIONS if e != "pdf"
+                    ]
                 if r.allow_patterns:
                     le_kwargs["allow"] = r.allow_patterns
                 if r.deny_patterns:
@@ -178,3 +193,8 @@ class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
             response, source_label="database_spider"
         ):
             yield item
+        # links_only: record PDF links found on this page as URL-only items
+        # (no download). In extract mode, PDFs are followed via the rules instead.
+        if self._pdf_mode() == "links_only":
+            for purl in _pdf_links(response):
+                yield self._url_only_pdf_item(purl, response, "database_spider")
