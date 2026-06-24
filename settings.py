@@ -45,7 +45,9 @@ DOWNLOADER_MIDDLEWARES = {
 
 # Spider middlewares
 SPIDER_MIDDLEWARES = {
-    "scrapy_deltafetch.DeltaFetch": 100,
+    # AsyncDeltaFetch subclasses scrapy_deltafetch.DeltaFetch to add
+    # async spider-output support required by Scrapy 2.16+.
+    "middlewares.AsyncDeltaFetch": 100,
 }
 
 # DeltaFetch settings (enabled by default for incremental crawling)

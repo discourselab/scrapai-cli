@@ -498,6 +498,8 @@ class BaseDBSpiderMixin:
         # dropped before the pipeline so the output contains only schema
         # fields plus pipeline bookkeeping.
         bookkeeping = {
+            "url",  # primary key + dedup key — must survive even when a
+            # project schema does not list 'url' as one of its fields
             "spider_id",
             "spider_name",
             "source",

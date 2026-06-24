@@ -4,7 +4,9 @@ Scrapy middlewares for proxy support and enhanced downloading
 """
 
 import logging
-from scrapy import signals
+import time
+from scrapy import signals, Request
+from scrapy_deltafetch import DeltaFetch
 from dotenv import load_dotenv
 from urllib.parse import urlparse
 
@@ -244,3 +246,31 @@ class SmartProxyMiddleware:
             and not self.expert_message_shown
         ):
             self._show_expert_message()
+
+
+class AsyncDeltaFetch(DeltaFetch):
+    """DeltaFetch with async spider-output support for Scrapy 2.16+.
+
+    Upstream ``scrapy_deltafetch.DeltaFetch`` only defines a synchronous
+    ``process_spider_output`` generator. Scrapy 2.16 rejects that when the
+    spider produces output asynchronously (our database spider does), raising
+    a TypeError at engine start. This subclass adds an async-generator variant
+    that applies the same skip/store logic over an async ``result`` stream.
+    The sync method is kept (inherited) for non-async spiders.
+    """
+
+    async def process_spider_output_async(self, response, result, spider):
+        async for r in result:
+            if isinstance(r, Request):
+                key = self._get_key(r)
+                if key in self.db and self._is_enabled_for_request(r):
+                    logger.info(f"Ignoring already visited: {r}")
+                    if self.stats:
+                        self.stats.inc_value("deltafetch/skipped", spider=spider)
+                    continue
+            else:
+                key = self._get_key(response.request)
+                self.db[key] = str(time.time())
+                if self.stats:
+                    self.stats.inc_value("deltafetch/stored", spider=spider)
+            yield r

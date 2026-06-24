@@ -67,6 +67,18 @@ class DatabasePipeline:
         if not self.buffer:
             return
 
+        # Drop malformed items missing the 'url' key before anything else.
+        # A single url-less item used to raise KeyError in the dedup step
+        # below and abort the whole flush, losing every buffered item.
+        dropped = [i for i in self.buffer if "url" not in i]
+        if dropped:
+            spider.logger.warning(
+                f"Skipping {len(dropped)} item(s) with no 'url' key during flush"
+            )
+            self.buffer = [i for i in self.buffer if "url" in i]
+        if not self.buffer:
+            return
+
         # 1. Deduplication (Batch Query) — scoped per-spider so the same URL
         #    can legitimately exist across spiders / projects
         urls = [i["url"] for i in self.buffer]
