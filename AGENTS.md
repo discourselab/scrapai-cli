@@ -1,27 +1,5 @@
-# scrapai CLI - Agent Rules (Cursor / Windsurf / Other Agents)
+# scrapai CLI — Agent Rules (Cursor / Windsurf / Codex / Gemini / other agents)
 
-**For complete documentation, refer to: `CLAUDE.md`**
+**All agent instructions live in [`CLAUDE.md`](CLAUDE.md). Read that file — it is the single source of truth for every AI assistant.**
 
-This file previously contained duplicate instructions. All agent guidance has been consolidated into CLAUDE.md to ensure consistency across all AI assistants (Claude Code, Cursor, Windsurf, Gemini, etc.).
-
-## Quick Reference
-
-Project-based Scrapy spider management for large-scale web scraping with database-first approach.
-
-**Core Principles:**
-- ✅ Process ONE website at a time (sequential only, never parallel)
-- ✅ Follow 4-phase workflow: Analysis → Rules → Import → Test
-- ✅ Complete ALL steps before marking status
-- ✅ Run commands directly: `./scrapai <command>` (venv activation is automatic)
-- ✅ Run ONE command at a time (no chaining)
-
-**See CLAUDE.md for:**
-- Complete workflow documentation (4 phases)
-- Command execution rules
-- Content focus guidelines
-- Queue system usage
-- CLI command reference
-- Extractor configuration (trafilatura, newspaper, playwright)
-- Playwright wait settings (for JS-delayed content)
-- Status marking requirements
-- Common pitfalls and solutions
+This file intentionally contains **no rules of its own**. Duplicating instructions here only causes drift: this file previously said "process one website at a time, sequential only, never parallel," which directly contradicted CLAUDE.md (it supports up to 5 in parallel). To prevent that, keep AGENTS.md a thin pointer and never add a rule, command, or principle here.

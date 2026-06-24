@@ -36,6 +36,22 @@ Shows h1/h2 titles with classes, content containers by size, date elements, auth
 ```bash
 ./scrapai analyze data/proj/spider/analysis/page.html --find "price"
 ```
+`--find` matches the keyword against element class/id.
+
+**6. Screenshot → value → selector (the date/author fast path)**
+
+When `try`/`analyze` come back shaky — especially wrong **date** or **author** — go from what you SEE to the selector:
+```bash
+./scrapai inspect https://example.com/article-url --project proj --screenshot
+```
+`--screenshot` forces the browser and saves `page.png`. Read it, read off the field values you see (author `John Smith`, date `June 20, 2026`, the title), then reverse-search the HTML for the element holding each value:
+```bash
+./scrapai analyze data/proj/spider/analysis/page.html --find-text "John Smith"
+```
+`--find-text` returns the element + selector containing that value, tightest container first (it works even on obfuscated class names like `time.css-1a2b3c`). Confirm the selector it gives you:
+```bash
+./scrapai analyze data/proj/spider/analysis/page.html --test "span.byline a"
+```
 
 ---
 

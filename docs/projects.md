@@ -61,7 +61,7 @@ Ask one question at a time. Do not batch.
 2. **Content type** — `articles` / `products` / `forums` / `listings` / `mixed`. Determines default extractor strategy.
 3. **Mandatory fields** — `name:type` pairs. Types: `string`, `datetime`, `list`, `number`, `url`. These must populate or Phase 4 fails the spider.
 4. **Optional fields** — same format. Nice-to-have, won't fail the crawl but tracked.
-5. **Exclusions** — anything beyond the standard skips (about, contact, donate, legal, search, PDFs)?
+5. **Infinite traps (usually skip this question)** — the crawl collects **everything** by default; there is no exclusion list. About/contact pages (when they hold content) and PDF links (`PDF_MODE: links_only`; set `PDF_MODE: extract` to download and extract text — see CLAUDE.md §7.1) are all collected. Only ask if the user already knows of a specific infinite-trap pattern to avoid — calendar `?date=` loops, faceted-search/filter permutations — which goes in `exclusions`. Everything else: collect it.
 6. **Language / date scope** — only ask if the user signals non-English content or a time-bounded corpus.
 
 After collecting answers, show the user the proposed JSON for confirmation before writing.

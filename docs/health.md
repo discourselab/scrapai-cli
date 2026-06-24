@@ -116,7 +116,7 @@ The generated report is designed for coding agents to read and fix:
 - reuters (5 items)
 ```
 
-## Two Failure Modes
+## Three Failure Modes
 
 ### 1. Extraction Broken
 
@@ -143,6 +143,14 @@ The generated report is designed for coding agents to read and fix:
 **Cause:** URL patterns changed (e.g., `/blog/` → `/articles/`)
 
 **Fix:** Agent updates crawling rules
+
+### 3. Schema Coverage Broken
+
+**Symptoms:** A `required: true` field declared in `project.json` is no longer populated by the spider's config — usually after the project schema changed (a new required field was added, or an existing one renamed).
+
+**Cause:** Schema-vs-spider drift: the spider doesn't have a source (a `FIELDS` directive or callback) for a required field.
+
+**Fix:** Add or correct the matching `FIELDS` directives in `final_spider.json`, then re-run `spiders import`.
 
 ## Automated Testing with Cron
 
@@ -269,15 +277,18 @@ fi
 
 For each spider, the health check:
 
-1. **Runs crawl:** `./scrapai crawl <spider> --limit 5 --project <name>`
-2. **Counts items:** Queries database for scraped items
-3. **Checks crawling:**
+1. **Checks schema coverage (before crawling):** Compares the spider's config against the `required: true` fields in `project.json`. If any required field has no source, the spider is marked failed (`schema_coverage`) and the crawl is skipped — no point crawling a spider that can't populate its schema.
+   - Pass: every required field has a source → continue to crawl
+   - Fail: a required field is unpopulated (schema coverage broken)
+2. **Runs crawl:** `./scrapai crawl <spider> --limit 5 --project <name>`
+3. **Counts items:** Queries database for scraped items
+4. **Checks crawling:**
    - ✅ Pass: 3+ items found
    - ❌ Fail: < 3 items (crawling broken)
-4. **Checks extraction:**
+5. **Checks extraction:**
    - ✅ Pass: Content length ≥ 50 chars
    - ❌ Fail: Content too short (extraction broken)
-5. **Generates report:** Markdown with failure details + sample output
+6. **Generates report:** Markdown with failure details + sample output
 
 ## Best Practices
 

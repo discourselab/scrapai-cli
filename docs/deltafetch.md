@@ -31,40 +31,18 @@ This clears:
 
 Then starts a completely fresh crawl.
 
-**Custom storage location (advanced):**
-```json
-{
-  "DELTAFETCH_ENABLED": true,
-  "DELTAFETCH_DIR": ".scrapy/deltafetch/my_spider"
-}
-```
+**Storage location (not overridable):** The CLI always sets the storage directory per project to `.scrapy/deltafetch/<project>/`, so a spider's hash database lives at `.scrapy/deltafetch/<project>/<spider>.db`. `DELTAFETCH_DIR` in spider JSON is ignored — the CLI overrides it on every crawl.
 
-**Reset (for testing — clears stored hashes):**
-```json
-{
-  "DELTAFETCH_ENABLED": true,
-  "DELTAFETCH_RESET": true
-}
-```
+**Deprecated: `DELTAFETCH_RESET`** is not honored from spider settings. Use the `--reset-deltafetch` CLI flag (below) instead.
 
 ## Reset Options
 
-**Preferred: Use CLI flag** (clears both DeltaFetch + checkpoint):
+**Use the CLI flag** — it clears both the DeltaFetch hash database and the checkpoint:
 ```bash
 ./scrapai crawl spider --project proj --reset-deltafetch
 ```
 
-**Manual: Delete all hash storage:**
-```bash
-rm -rf .scrapy/deltafetch/
-```
-
-**Manual: Delete specific project/spider:**
-```bash
-rm -rf .scrapy/deltafetch/<project>/<spider>.db
-```
-
-**Deprecated: Config-based reset:** Set `DELTAFETCH_RESET: true` (use CLI flag instead).
+This deletes `.scrapy/deltafetch/<project>/<spider>.db` and removes the spider's checkpoint directory, then starts a completely fresh crawl.
 
 ## Combining with Other Features
 
@@ -79,16 +57,13 @@ rm -rf .scrapy/deltafetch/<project>/<spider>.db
 ## Troubleshooting
 
 **"Not skipping any pages":**
-- Verify `DELTAFETCH_ENABLED: true` is in spider settings
+- Verify `DELTAFETCH_ENABLED` is not set to `false` in spider settings (it is on by default)
 - First crawl never skips (nothing to compare against)
-- Check `.scrapy/deltafetch/` directory exists and has data
 
 **"Skipping pages that should be re-crawled":**
-- Delete hash database: `rm -rf .scrapy/deltafetch/`
-- Or set `DELTAFETCH_RESET: true` for one run
+- Reset the cache: `./scrapai crawl spider --project proj --reset-deltafetch`
 
 **Monitoring:** Look for log lines: `[scrapy_deltafetch] DEBUG: Ignoring already fetched: <url>`
-Check storage: `ls -lh .scrapy/deltafetch/`
 
 ## Limitations
 

@@ -11,7 +11,7 @@ Agent must explicitly set `"USE_SITEMAP": true` — no auto-detection.
 ```
 
 **Regular sitemap:** Contains article URLs directly.
-**Sitemap index:** References sub-sitemaps. Inspect each sub-sitemap to identify which contain articles vs static pages.
+**Sitemap index:** References sub-sitemaps. Inspect each sub-sitemap to map what each one holds (articles, plus peripheral content pages like about/contact). Collect every sub-sitemap that holds content — only leave out infinite non-content traps.
 
 ```bash
 ./scrapai inspect https://example.com/post-sitemap.xml --project proj
@@ -26,8 +26,8 @@ Pick 2-3 article URLs from sitemap:
 ./scrapai inspect https://example.com/article-2 --project proj
 ```
 
-If generic extractors work → `EXTRACTOR_ORDER: ["trafilatura", "newspaper"]`
-If they fail → discover custom selectors (see [extractors.md](extractors.md))
+If generic extractors work (core schema: title/content/author/published_date) → `EXTRACTOR_ORDER: ["trafilatura", "newspaper"]`
+If the schema has any non-core field, or generic extraction is wrong → pure-CSS mode: `EXTRACTOR_ORDER: ["custom"]` + one `FIELDS` directive per field (see [extractors.md](extractors.md))
 
 ### Step 3: Create Spider JSON
 
@@ -43,7 +43,7 @@ If they fail → discover custom selectors (see [extractors.md](extractors.md))
 }
 ```
 
-**With custom selectors:**
+**With `FIELDS` (pure-CSS mode):**
 ```json
 {
   "name": "example_sitemap",
@@ -51,16 +51,18 @@ If they fail → discover custom selectors (see [extractors.md](extractors.md))
   "start_urls": ["https://example.com/post-sitemap.xml"],
   "settings": {
     "USE_SITEMAP": true,
-    "EXTRACTOR_ORDER": ["custom", "trafilatura", "newspaper"],
-    "CUSTOM_SELECTORS": {
-      "title": "h1.article-title",
-      "content": "div.article-body",
-      "author": "span.author-name",
-      "date": "time.publish-date"
+    "EXTRACTOR_ORDER": ["custom"],
+    "FIELDS": {
+      "title": {"css": "h1.article-title::text"},
+      "content": {"css": "div.article-body", "to_text": true},
+      "author": {"css": "span.author-name::text"},
+      "published_date": {"css": "time.publish-date::attr(datetime)"}
     }
   }
 }
 ```
+
+Use `EXTRACTOR_ORDER: ["custom"]` whenever the project schema declares any non-core field, and give every schema field its own `FIELDS` directive. Import **rejects** mixing generic extractors (`trafilatura`/`newspaper`) with a non-core schema — `["custom", "trafilatura", "newspaper"]` alongside non-core fields will fail validation.
 
 Can use main sitemap URL or specific sub-sitemap URL.
 
@@ -124,11 +126,15 @@ Supported relative formats:
 - Entries with `lastmod` before the cutoff date are skipped
 - Entries **without** `lastmod` are always included (safe default — better to crawl extra than miss content)
 - Log output shows how many entries were filtered vs scheduled
-- Works with all other settings (Cloudflare, DeltaFetch, custom selectors, etc.)
+- Works with all other settings (Cloudflare, DeltaFetch, `FIELDS`, etc.)
+
+## PDFs in sitemaps
+
+By default PDFs are **collected**, not skipped. With `PDF_MODE: "links_only"` (the default), any `.pdf` URLs in the sitemap are recorded as URL-only items — no download. Set `PDF_MODE: "extract"` to follow each PDF, download it, and extract its text (born-digital only; scanned/image PDFs stay URL-only). Only add a `deny` pattern if you genuinely want to drop them.
 
 ## Excluding URLs with `deny`
 
-Sitemap spiders honor `deny` patterns on rules, the same way rule-based crawls do. Use this to skip PDFs, images, or any URL pattern you don't want sent to the parser (e.g. crawl the sitemap but drop `*.pdf`).
+Sitemap spiders honor `deny` patterns on rules, the same way rule-based crawls do. Use this to drop any URL pattern you don't want sent to the parser (e.g. a `/tag/` index, or PDFs if you don't want them collected at all).
 
 ```json
 {
@@ -137,7 +143,7 @@ Sitemap spiders honor `deny` patterns on rules, the same way rule-based crawls d
   "start_urls": ["https://example.com/sitemap.xml"],
   "settings": { "USE_SITEMAP": true, "EXTRACTOR_ORDER": ["trafilatura", "newspaper"] },
   "rules": [
-    { "allow": ["/article/.*"], "deny": ["\\.pdf$", "/tag/"] }
+    { "allow": ["/article/.*"], "deny": ["/tag/"] }
   ]
 }
 ```
@@ -167,9 +173,9 @@ Some sitemaps use non-conformant root-relative (`<loc>/blog/post-1</loc>`) or pr
 { "USE_SITEMAP": true, "DELTAFETCH_ENABLED": true }
 ```
 
-**Sitemap + Custom Extractors:**
+**Sitemap + Custom Extractors (pure-CSS):**
 ```json
-{ "USE_SITEMAP": true, "EXTRACTOR_ORDER": ["custom", "trafilatura", "newspaper"], "CUSTOM_SELECTORS": { ... } }
+{ "USE_SITEMAP": true, "EXTRACTOR_ORDER": ["custom"], "FIELDS": { "title": {"css": "h1::text"} } }
 ```
 
 ## Common Sitemap Locations
@@ -181,9 +187,9 @@ Some sitemaps use non-conformant root-relative (`<loc>/blog/post-1</loc>`) or pr
 
 ## Nested Sitemap Analysis
 
-When sitemap index detected, inspect each sub-sitemap individually. Categorize which contain articles (extract) vs static pages (will fail extraction — this is expected and normal). Report URL counts and sample patterns to user before creating spider.
+When sitemap index detected, inspect each sub-sitemap individually. Categorize what each one holds (articles, plus peripheral content pages like about/contact — include those where they hold content). Report URL counts and sample patterns to user before creating spider.
 
-Non-article URLs failing extraction is expected. Only article URLs need to extract successfully.
+Collect every sub-sitemap that holds content; only leave out infinite non-content traps. A peripheral page that extracts thinly is fine — it's intentionally included where it carries content, and unwanted items are dropped later in post-processing.
 
 ## Troubleshooting
 

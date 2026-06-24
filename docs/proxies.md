@@ -16,7 +16,8 @@ All proxy URLs come from one place — `core/proxy.py`, driven entirely by `.env
 Proxies are referenced **by name** (`datacenter`, `residential`, or any name you
 define — `isp`, `mobile`, `residential_us`, …). Each spider picks its proxy with
 the `PROXY_TYPE` setting (or `--proxy-type`), so different sites can use different
-proxies.
+proxies. Pass `--proxy-type none` to disable the proxy entirely (direct
+connections only).
 
 **Smart cost control:**
 - Direct connections are faster and free
@@ -151,6 +152,12 @@ Since our SmartProxyMiddleware uses a single proxy connection, **use rotating po
 ./scrapai crawl spider_name --project proj --limit 10 --proxy-type isp
 ```
 
+**No proxy (direct only):**
+```bash
+# Disable the proxy entirely - direct connections only, no escalation
+./scrapai crawl spider_name --project proj --limit 10 --proxy-type none
+```
+
 **Per-spider (the usual way — the agent bakes it in):** set `PROXY_TYPE` in the
 spider's `settings`, so each site uses its own proxy without a CLI flag:
 ```json
@@ -158,7 +165,8 @@ spider's `settings`, so each site uses its own proxy without a CLI flag:
 ```
 The agent can also probe which proxy works during analysis:
 `./scrapai inspect <url> --proxy-type residential` (inspect routes its fetch
-through that proxy and reports whether it got through).
+through that proxy and reports whether it got through). `--proxy-type none` works
+here too, forcing a direct fetch.
 
 **All modes follow smart strategy:**
 - ✅ Start with direct connections (fast, free)

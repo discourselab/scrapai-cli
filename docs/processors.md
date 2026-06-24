@@ -269,7 +269,7 @@ Parse datetime string into ISO format.
 
 **Returns None if parsing fails.**
 
-**Note on fuzzy fragments:** Strings like `"Published on March 15, 2024"` may still fail because the leading text trips both parsers. Either pre-strip the prefix with a `regex` processor, or keep a raw-text fallback field (see [feedback_no_regex_chains.md] practice — don't grow date regexes; capture the raw value alongside).
+**Note on fuzzy fragments:** Strings like `"Published on March 15, 2024"` may still fail because the leading text trips both parsers. Either pre-strip the prefix with a `regex` processor, or keep a raw-text fallback field — don't grow date regexes; capture the raw value alongside.
 
 **Works on:** Strings only
 

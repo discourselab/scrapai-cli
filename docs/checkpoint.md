@@ -164,7 +164,7 @@ rm -rf ./data/myproject/myspider/checkpoint/
 When you get an expert-in-the-loop prompt and switch proxy types:
 
 ```bash
-# Initial crawl with auto mode (uses datacenter)
+# Initial crawl with auto mode (direct connections first, escalates to a proxy only when blocked)
 ./scrapai crawl myspider --project proj
 
 # Datacenter fails → expert prompt appears

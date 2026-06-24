@@ -48,7 +48,7 @@ Both flip on CloakBrowser — use the one that documents intent.
 ```json
 { "CLOUDFLARE_ENABLED": true, "PROXY_TYPE": "residential" }
 ```
-Values: `"auto"` (default, escalates direct → dc → residential), `"residential"`, `"datacenter"`.
+Values: `"auto"` (default, escalates direct → dc → residential), `"none"` to disable proxying, or **any proxy name configured in `.env`** — `"datacenter"`, `"residential"`, plus any extra tiers you've added (`"isp"`, `"mobile"`, `"residential_us"`, …). An unknown name (no matching `<NAME>_PROXY_URL`/`<NAME>_PROXY_*` in `.env`) errors out.
 
 **Advanced (if hybrid fails — rare):**
 ```json
@@ -112,6 +112,20 @@ Clear cache and re-crawl:
 ```bash
 ./scrapai crawl spider --project proj --reset-deltafetch
 ```
+
+## PDFs (`PDF_MODE`)
+
+Controls what happens when the crawl encounters a `.pdf` link. Default is `links_only`.
+
+```json
+{ "PDF_MODE": "links_only" }
+```
+`links_only` (default) records each linked PDF URL as a URL-only item (title from the filename, empty content, `metadata_json.content_type = "pdf"`) without downloading the file.
+
+```json
+{ "PDF_MODE": "extract" }
+```
+`extract` follows each `.pdf` link, downloads it, and extracts its text via `pypdfium2`. Born-digital PDFs only — there is no OCR, so a scanned/image-only PDF (no text layer) gracefully falls back to a URL-only item with empty content, as do unparseable bytes or a missing `pypdfium2`.
 
 ## Infinite scroll
 

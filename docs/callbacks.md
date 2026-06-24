@@ -200,7 +200,7 @@ For extracting data from AJAX endpoints (e.g., AJAX-loaded comments). Makes HTTP
 - `post_id_css` — CSS selector to extract post ID from the page
 - `post_id_regex` — regex to extract ID from the selector value (e.g., `"postid-(\\d+)"`)
 - `response_json_field` — dot-path to HTML content in JSON response (e.g., `"data.comment_list"`)
-- `response_type` — `json_html` (default, HTML inside JSON) or `json_array` (JSON array of objects)
+- `response_type` — `json_html` (default, HTML inside JSON), `json_array` (JSON array of objects), or `json_object` (single JSON object — extracts `json_path` fields and stores the result as one dict rather than a list)
 - `ajax_per_page` — items per page for pagination (0 = no pagination)
 - `selector` / `extract` — same as `nested_list` for HTML responses
 - For `json_array` responses, use `json_path` in extract fields instead of CSS/XPath:

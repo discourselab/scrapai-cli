@@ -21,6 +21,43 @@ Use `--browser` for JavaScript-rendered sites and Cloudflare-protected sites. sc
 
 ---
 
+## Try Lighter Transports First
+
+The browser is the heaviest, slowest transport — reach for it last. `inspect`
+auto-escalates through a transport ladder (HTTP → curl_cffi → browser) and
+reports the **lightest** transport that worked, plus the spider setting to match
+it. Before enabling the browser, try **curl_cffi** (TLS fingerprint
+impersonation, no JS):
+
+```json
+{
+  "CURL_CFFI_ENABLED": true
+}
+```
+
+curl_cffi defeats TLS-fingerprint blocks (the common cause of 403s) without
+launching a browser, so it's far faster. Only enable browser mode
+(`CLOUDFLARE_ENABLED` / `BROWSER_ENABLED`) when curl_cffi is still blocked or the
+content genuinely needs JavaScript rendering. `CURL_CFFI_ENABLED` and the browser
+settings are mutually exclusive — curl_cffi takes precedence when both are set.
+
+---
+
+## Browser Mode: Two Names, One Behavior
+
+Two settings enable browser mode, and the code treats them identically (both
+start CloakBrowser):
+
+| Setting | Use when |
+|---------|----------|
+| `CLOUDFLARE_ENABLED` | Site is behind a Cloudflare (or similar) challenge |
+| `BROWSER_ENABLED` | Site is plain JavaScript-rendered (no challenge, just needs JS) |
+
+Pick the one that documents your intent. The `--browser` CLI flag enables the
+same path. Setting both is harmless — they are aliases.
+
+---
+
 ## How It Works
 
 **Hybrid mode (automatic):**
@@ -100,7 +137,9 @@ Only use if hybrid mode fails. **Slow** - keeps browser open for every request.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `CLOUDFLARE_ENABLED` | false | Enable browser mode |
+| `CLOUDFLARE_ENABLED` | false | Enable browser mode (Cloudflare intent) |
+| `BROWSER_ENABLED` | false | Enable browser mode (plain JS-render intent); alias of `CLOUDFLARE_ENABLED` |
+| `CURL_CFFI_ENABLED` | false | Use curl_cffi TLS impersonation instead of the browser (try first; takes precedence over browser settings) |
 | `CLOUDFLARE_STRATEGY` | "hybrid" | "hybrid" (fast) or "browser_only" (slow) |
 | `CLOUDFLARE_HEADLESS` | false | Headless mode (true = no GUI, worse stealth) |
 | `CLOUDFLARE_COOKIE_REFRESH_THRESHOLD` | 600 | Seconds before cookie refresh |
@@ -158,3 +197,21 @@ This captures HTML before related content loads.
 2. **Only use browser-only if hybrid fails** - fallback for tough sites
 3. **Use --limit for testing** - verify extraction works before full crawl
 4. **Monitor logs** - "Cached N cookies" = hybrid working
+
+---
+
+## Faster Inspects: Persistent Browser Service
+
+When a session does **many browser inspects** — repeated `inspect --screenshot`
+across a site, or several parallel agents each inspecting a different
+Cloudflare/JS site — start the persistent browser service first. It keeps one
+warm browser running so the Cloudflare challenge is solved **once** per site and
+reused across `inspect` calls (and across parallel agents), instead of
+cold-starting a fresh browser (~10-15s) every time:
+
+```bash
+./scrapai browser start
+```
+
+`inspect` routes through it automatically when it's running; `./scrapai browser
+stop` when done. See [browser-service.md](browser-service.md) for details.
