@@ -87,14 +87,14 @@ After collecting answers, show the user the proposed JSON for confirmation befor
 }
 ```
 
-- `core: true` → maps to a typed column on `items` (title, content, author, published_date). Generic extractors (trafilatura, newspaper) fill these natively.
-- `core: false` (or omitted) → lands in `metadata_json`. Populate via `FIELDS` directives or named callbacks.
-- `required: true` → `spiders import` rejects spiders that have no source for the field; Phase 4 rejects items where the value is null.
+- `core: true` → maps to a typed column on `items` (title, content, author, published_date). These are the only fields `"auto"` can fill.
+- `core: false` (or omitted) → lands in `metadata_json`. Give it a selector in a section's `extract` (it can't be `"auto"`).
+- `required: true` → `spiders import` rejects spiders that have no source for the field (a section `extract` or `auto` section in the `sections` format; a generic extractor, `FIELDS` directive, or callback in the older format); Phase 4 rejects items where the value is null.
 
 ### How the schema flows into Phase 1-4
 
-- **Phase 2** — read `data/<project>/project.json`. If schema is core-only → `EXTRACTOR_ORDER: ["trafilatura", "newspaper"]`. If non-core fields exist → use `FIELDS` (overlay mode for a few extras, or pure-CSS mode with `EXTRACTOR_ORDER: ["custom"]` when most fields are non-core). For non-article structured data use named callbacks.
-- **`spiders import`** — rejects the spider if any `required: true` field has no source (no generic extractor in `EXTRACTOR_ORDER` AND no `FIELDS` directive). Add the missing directives and re-import. Use `--skip-validation` only if you know what you're doing.
+- **Phase 2** — read `data/<project>/project.json`, then author the spider. Every required field must be **sourced by some section**: each field in a section's `extract` is either `"auto"` (core fields only — `title`/`content`/`author`/`published_date`) or a selector (everything else). `url` is always populated automatically. Keep `"auto"` for the fields the reader gets right; only the extras need selectors.
+- **`spiders import`** — rejects the spider if any `required: true` field has no source (not in any section's `extract`, and not covered by an `"auto"` section). Add the missing source and re-import. `--skip-validation` bypasses the check.
 - **Phase 4** — after the 5-item test crawl, verify every `required: true` field has a non-null value on every item (import already covered "can it populate"; this covers "did it actually populate"). On failure → `queue fail <id> -m "schema validation failed: <field>"`.
 - **Conflict rule** — project schema always wins over queue item `custom_instruction`. The instruction can refine *how* to extract, but cannot remove or rename schema fields.
 

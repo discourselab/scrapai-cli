@@ -3,20 +3,10 @@
   "source_url": "https://shop.example.com",
   "allowed_domains": ["shop.example.com"],
   "start_urls": ["https://shop.example.com/products"],
-  "rules": [
+  "sections": [
     {
-      "allow": ["/product/[^/]+$"],
-      "callback": "parse_product",
-      "follow": false
-    },
-    {
-      "allow": ["/products", "/category/"],
-      "callback": null,
-      "follow": true
-    }
-  ],
-  "callbacks": {
-    "parse_product": {
+      "match": ["/product/[^/]+$"],
+      "follow": false,
       "extract": {
         "name": {
           "css": "h1.product-name::text",
@@ -77,6 +67,10 @@
           "get_all": true
         }
       }
+    },
+    {
+      "match": ["/products", "/category/"],
+      "follow": true
     }
-  }
+  ]
 }

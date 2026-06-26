@@ -75,21 +75,51 @@ DATA_DIR/<project>/<spider>/
 
 ---
 
-## Phase 2: Rule Generation
+## Phase 2: Section & Extraction Authoring
 
-### Step 2A: Decide the extraction strategy — read `project.json` FIRST
+### Step 2A: Write one section per kind of page — read `project.json` FIRST
 
-Before writing any rules, read `data/<project>/project.json` and route on its field schema:
+The recommended authoring format is top-level **`sections`**: a list where each entry is one **kind of page** the crawl meets (one article layout, one product layout, the listing pages that just link onward). A section says *which URLs it matches* and *how to extract from them* — and that single list replaces hand-writing `rules` + `callbacks` + `settings.FIELDS`. (`sections` is desugared into exactly that older shape at import — see Step 2E. The legacy format is still fully supported; it is simply what `sections` compiles to.)
 
-- **Core-only schema** (only `title` / `content` / `author` / `published_date`) → `EXTRACTOR_ORDER: ["trafilatura", "newspaper"]`; add `FIELDS` directives only to fix wrong guesses.
-- **Schema with ANY non-core field** (required or optional) → pure-CSS: `EXTRACTOR_ORDER: ["custom"]` plus one `FIELDS` directive per schema field. Mixing generic extractors (newspaper/trafilatura) with a non-core schema is **REJECTED on import** (enforced in `core/schema_validator.py`).
-- **Products / jobs / listings / forums** → named callbacks, one per section layout (see Step 2E).
+Before writing sections, read `data/<project>/project.json`. Every field marked `required: true` in its schema must be sourced by some section, and one repeating concept gets one section.
 
-### Step 2B: Create Rules from sections.md
+A section is an object:
 
-For each section, create rule files based on discovered URL patterns.
+```json
+{ "match": ["/articles/.*"], "extract": <spec>, "follow": true, "priority": 100 }
+```
 
-**A spider is not one function.** Write as many rules and callbacks as the site's sections need — never force structurally-different sections through a single callback. Same article layout everywhere → one `parse_article` is right. Sections that differ in structure or fields → give each its own rule and callback. You are free to split as finely as the site demands. **Different layouts per section?** One spider holds many rules — route each section to its own named callback (one `{"allow": ["/blog/.*"], "callback": "parse_blog"}` per section, each with its own `extract`).
+- **`match`** — list of URL regexes the section applies to (absent = match all).
+- **`follow`** — whether to follow links found on these pages (default `true`).
+- **`priority`** — optional `0`–`1000`; higher is evaluated first.
+- Optional link-extractor knobs carried straight onto the rule: **`deny`**, **`restrict_xpaths`**, **`restrict_css`**, **`tags`**.
+
+**`extract` is exactly one of three things:**
+
+1. **Absent** → follow-only navigation. The page is crawled for links but nothing is extracted from it. This is the listing/index section.
+2. **`"auto"`** → the built-in article reader fills the four core fields (`title`, `content`, `author`, `published_date`). Use this for ordinary article/blog pages.
+3. **A per-field dict** `{ field: value }` → one entry per schema field. Each value is either:
+   - **`"auto"`** — valid **only** for the four core fields (`title`, `content`, `author`, `published_date`); and
+   - a **directive** `{ "css" | "xpath": "...", "get_all"?, "to_text"?, "to_markdown"?, "processors"? }` for any field, core or not.
+
+**The rule:** keep `"auto"` for the core fields the reader gets right; add a selector only for fields it can't produce (anything non-core) or gets wrong. A non-core field like `images` does **not** mean hand-write `content` — keep `content` on `"auto"` and just add the `images` selector.
+
+- **Article / blog page** → `"extract": "auto"` (all four core fields).
+- **Article that also needs extras** (images, a pdf link, a stubborn author) → keep the core fields on `"auto"` and add a selector per extra: `{ "title": "auto", "content": "auto", "images": {"css": "…"} }`.
+- **Non-article page** (product, job — there's no article body for the reader to find) → a directive per field.
+- **Listing / index / navigation page** → omit `extract` (follow-only).
+
+**Mixing `"auto"` with an override:** a section may pair `"auto"` core fields with a selector override for a specific field (e.g. a stubborn `author`). That override path is **spider-wide** (it writes the global `FIELDS`), so **at most one section per spider** may mix `"auto"` with overrides. Other sections must give explicit selectors for every field.
+
+**Validation (enforced at import):** `"auto"` on a non-core field is rejected — give it a selector. Every `required: true` schema field must be sourced by some section.
+
+**Sitemaps work with `sections`:** add `"USE_SITEMAP": true` to `settings` and the sitemap enumerates the URLs while your sections do the extraction — you get sitemap completeness *and* the generic reader + custom fields together. (Keep a `match` per content type; you don't need follow-only navigation sections in sitemap mode.)
+
+**Still authored the legacy way (not yet expressible as `sections`):** listing→detail (`iterate`), `ajax_nested_list`, and JS `PAGINATED_LISTINGS`. For these, write `rules` + `callbacks`/`settings` directly as documented below. Transport, throughput, `PDF_MODE`, DeltaFetch, `USE_SITEMAP` all stay in top-level `settings`, never per-section.
+
+### Step 2B: Map each section from sections.md
+
+**A spider is not one function.** Write as many sections as the site has kinds of pages — never force structurally-different pages through one extract spec. Same article layout everywhere → one `"extract": "auto"` section is right. Pages that differ in structure or fields → give each its own section with its own `match` and `extract`. You are free to split as finely as the site demands.
 
 ### Step 2C: Test Generic Extractors
 
@@ -126,59 +156,78 @@ See [extractors.md](extractors.md) for selector documentation.
 
 **Naming gate:** the spider `name` MUST equal the domain with dots → underscores (`imn.org` → `imn_org`, `bbc.co.uk` → `bbc_co_uk`). A mismatch silently routes crawls to the wrong `data/<project>/<spider>/` folder.
 
-**Core-only schema (generic extractors):**
+**The shape — a `sections` list.** Each kind of page from `sections.md` becomes one section; transport/throughput stay in top-level `settings`:
+
 ```json
 {
   "name": "domain_com",
   "allowed_domains": ["domain.com"],
-  "start_urls": ["https://domain.com/blog"],
-  "rules": [
-    { "allow": ["/blog/[^/]+$"], "callback": "parse_article", "follow": false, "priority": 100 },
-    { "allow": ["/blog$"], "callback": null, "follow": true, "priority": 50 }
+  "start_urls": ["https://domain.com/articles"],
+  "sections": [
+    { "match": ["/articles/.*"], "extract": { "title": "auto", "content": "auto", "author": { "css": ".byline a::text" } } },
+    { "match": ["/products/.*"], "extract": { "name": { "css": "h1::text" }, "price": { "css": ".price::text" } } },
+    { "match": [".*"], "follow": true }
   ],
   "settings": {
     "DOWNLOAD_DELAY": 0,
     "CONCURRENT_REQUESTS": 32,
     "CONCURRENT_REQUESTS_PER_DOMAIN": 16,
-    "AUTOTHROTTLE_ENABLED": false,
-    "EXTRACTOR_ORDER": ["trafilatura", "newspaper"]
+    "AUTOTHROTTLE_ENABLED": false
   }
 }
 ```
-(Lower these throughput numbers only if the site is fragile.) Add `FIELDS` directives only to fix fields the generic extractors get wrong.
 
-**Schema with a non-core field (pure-CSS):** Generic extractors are not allowed here — use `["custom"]` plus one `FIELDS` directive per schema field:
+Reading it top to bottom: the article section reads core fields with `"auto"` but pins `author` with a selector (the one allowed `auto` + override section); the product section gives one directive per non-core field; the final `{ "match": [".*"], "follow": true }` is the follow-only listing/navigation section. (Lower the throughput numbers only if the site is fragile.)
+
+**Plain article site (core fields only):** one `"auto"` article section plus a follow-only navigation section:
 ```json
 {
-  "EXTRACTOR_ORDER": ["custom"],
-  "FIELDS": {
-    "title": { "css": "h1.article-title::text" },
-    "content": { "css": "div.article-body" },
-    "author": { "css": "span.author-name::text" },
-    "published_date": { "css": "time.published-date::attr(datetime)" }
-  }
+  "sections": [
+    { "match": ["/blog/[^/]+$"], "extract": "auto", "follow": false, "priority": 100 },
+    { "match": ["/blog$"], "follow": true, "priority": 50 }
+  ]
 }
 ```
 
-**Non-article structured data (products / jobs / listings / forums):** route each section to its own named callback, each with its own `extract` block:
+**Non-article structured data (products / jobs / listings / forums):** one section per layout, each a per-field dict. A directive may carry `get_all`, `to_text`, `to_markdown`, and `processors`:
+```json
+{
+  "sections": [
+    { "match": ["/product/.*"], "extract": { "name": { "css": "h1.title::text" }, "price": { "css": "span.price::text" } } },
+    { "match": ["/review/.*"],  "extract": { "title": { "css": "h1.review-title::text" }, "rating": { "css": "span.stars::attr(data-score)" } } }
+  ]
+}
+```
+
+**Section knobs:**
+- Extraction sections: `"extract": "auto"` or a per-field dict, usually `"follow": false` — content pages
+- Navigation sections: omit `extract`, `"follow": true` — for discovering links
+- Block unwanted pages: `"deny": [...]` on a section
+- Higher `"priority"` evaluated first
+
+**Legacy format (still supported).** `sections` is desugared at import (`core/sections.py`) into the older `rules` + `callbacks` + `settings.FIELDS` shape, which still imports and crawls identically. You author that shape directly only for the features `sections` does not yet cover (`iterate`, `ajax_nested_list`, JS `PAGINATED_LISTINGS`). It routes by `project.json` schema:
+
+- **Core-only schema** → `"EXTRACTOR_ORDER": ["trafilatura", "newspaper"]`; add `FIELDS` only to fix wrong guesses.
+- **Schema with ANY non-core field** → `"EXTRACTOR_ORDER": ["custom"]` plus one `FIELDS` directive per schema field. Mixing generic extractors with a non-core schema is **REJECTED on import** (`core/schema_validator.py`).
+- **Products / jobs / listings / forums** → named `rules` + `callbacks`, one callback per layout.
+
 ```json
 {
   "rules": [
-    { "allow": ["/product/.*"], "callback": "parse_product" },
-    { "allow": ["/review/.*"], "callback": "parse_review" }
+    { "allow": ["/blog/[^/]+$"], "callback": "parse_article", "follow": false, "priority": 100 },
+    { "allow": ["/blog$"], "callback": null, "follow": true, "priority": 50 }
   ],
-  "callbacks": {
-    "parse_product": { "extract": { "name": { "css": "h1.title::text" }, "price": { "css": "span.price::text" } } },
-    "parse_review":  { "extract": { "title": { "css": "h1.review-title::text" }, "rating": { "css": "span.stars::attr(data-score)" } } }
+  "settings": {
+    "EXTRACTOR_ORDER": ["custom"],
+    "FIELDS": {
+      "title": { "css": "h1.article-title::text" },
+      "content": { "css": "div.article-body" },
+      "author": { "css": "span.author-name::text" },
+      "published_date": { "css": "time.published-date::attr(datetime)" }
+    }
   }
 }
 ```
-
-**Rule types:**
-- Extraction rules: `callback: "parse_article"`, `follow: false` — content pages
-- Navigation rules: `follow: true` — for discovering links
-- Block rules: `deny: [...]` — prevent unwanted pages
-- Higher priority evaluated first
 
 ---
 
@@ -192,16 +241,19 @@ Create `test_spider.json` and `final_spider.json`. Do NOT import yet — importi
 
 ### Step 4A: Test Extraction (5 articles)
 
-Create `test_spider.json` with 5 article URLs (`name` MUST be the domain with dots → underscores):
+Create `test_spider.json` with 5 article URLs (`name` MUST be the domain with dots → underscores). Reuse the same `sections` you wrote for the final spider, but add a leading follow-only `deny: [".*"]` section so the test extracts the 5 start URLs without crawling outward:
 ```json
 {
   "name": "example_com",
   "allowed_domains": ["example.com"],
   "start_urls": ["https://example.com/article-1", "...4 more..."],
-  "rules": [{ "deny": [".*"], "callback": null, "follow": false, "priority": 100 }],
-  "settings": { "DOWNLOAD_DELAY": 0, "CONCURRENT_REQUESTS": 32, "CONCURRENT_REQUESTS_PER_DOMAIN": 16, "AUTOTHROTTLE_ENABLED": false, "EXTRACTOR_ORDER": ["trafilatura", "newspaper"] }
+  "sections": [
+    { "match": [".*"], "extract": "auto", "follow": false, "deny": [".*"], "priority": 100 }
+  ],
+  "settings": { "DOWNLOAD_DELAY": 0, "CONCURRENT_REQUESTS": 32, "CONCURRENT_REQUESTS_PER_DOMAIN": 16, "AUTOTHROTTLE_ENABLED": false }
 }
 ```
+(Swap `"extract": "auto"` for the same per-field dict your final spider uses, so the test exercises the real selectors.)
 
 ```bash
 ./scrapai spiders import data/proj/spider/analysis/test_spider.json --project proj
@@ -226,7 +278,7 @@ Test data from 4A is preserved. Spider ready for production.
 
 Verify ALL phases passed:
 - Phase 1: `sections.md` complete
-- Phase 2: Rules consolidated in `final_spider.json`
+- Phase 2: Sections consolidated in `final_spider.json` (one per kind of page)
 - Phase 3: Both JSON files prepared
 - Phase 4A: Extraction quality verified (every `required: true` field non-null on every item)
 - Phase 4B: Final spider imported

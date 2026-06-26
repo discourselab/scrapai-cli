@@ -3,15 +3,10 @@
   "source_url": "https://realestate.example.com",
   "allowed_domains": ["realestate.example.com"],
   "start_urls": ["https://realestate.example.com/listings"],
-  "rules": [
+  "sections": [
     {
-      "allow": ["/property/\\d+"],
-      "callback": "parse_property",
-      "follow": false
-    }
-  ],
-  "callbacks": {
-    "parse_property": {
+      "match": ["/property/\\d+"],
+      "follow": false,
       "extract": {
         "address": {
           "css": "h1.address::text",
@@ -80,5 +75,5 @@
         }
       }
     }
-  }
+  ]
 }

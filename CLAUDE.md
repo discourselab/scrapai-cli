@@ -62,7 +62,7 @@ You build every spider by walking the **4-phase path in §5**. That path is the 
 
 Non-negotiable. Everything else in this file assumes these.
 
-1. **Always pass `--project <name>`** on spider, queue, crawl, show, and export commands.
+1. **Always pass `--project <name>`** on `inspect`, spider, queue, crawl, show, and export commands. `inspect` silently defaults to `default` — omit `--project` and every `page.html`/`page.png` scatters into `data/default/`, away from your spider's folder.
 2. **Never run `crawl` without `--limit`.** Production crawls take hours/days and nothing in the code stops you — *you* are the guard. You only ever run `--limit 5` test crawls; the user runs production themselves (§6.4).
 3. **Never read HTML files with Read/Grep.** See a page only through `inspect`, `analyze`, `extract-urls`, `try`. *Only exception:* `page.png` screenshots from `inspect --screenshot` — Read those to *see* the page.
 4. **Never skip phases.** Walk §5 in order, 1 → 2 → 3 → 4; each phase's "Done when" is the gate into the next.
@@ -131,9 +131,9 @@ Walk them in order (rule 4). Only mark a queue item complete when **all four** p
 
 **Do:**
 - **Start the browser service first.** Phase 1 requires screenshots (below), which force the browser — so before inspecting, `browser status`; if it's not running, `browser start`. Every inspect/screenshot then reuses one warm browser (Cloudflare solved once) instead of cold-starting per call. If you started it, `browser stop` when the build is done; leave it running if it was already up (§6.3).
-- **Sitemap URL?** → follow [docs/sitemap.md](docs/sitemap.md) instead of the below.
-- Otherwise: `inspect` the homepage → `extract-urls` → categorize → drill into each section **and its subsections**, one at a time (the inspector overwrites files), until the structure is fully mapped. Record it all in `sections.md`.
-- **Use the screenshot to map structure (required).** `inspect <url> --screenshot` the homepage and each section/listing page, then **Read the `page.png`** and read off the sections, subsections, content types, and navigation from what you SEE. Vision surfaces subsections the DOM can bury — this is how you avoid missing content areas.
+- **Sitemap available? It's only a URL source — never a shortcut past inspection.** A sitemap lists URLs; it tells you nothing about sections, content types, or selectors, and it's a poor place to understand the site. Do the full structure mapping below **regardless**, and discover selectors on real pages in Phase 2. A sitemap changes only URL *enumeration* (set `USE_SITEMAP`; see [docs/sitemap.md](docs/sitemap.md) for filtering) — not whether you inspect and understand the site.
+- `inspect --project <p>` the homepage → `extract-urls --file <page.html> --output <all_urls.txt>` → **Read the whole `all_urls.txt`** (it's a text list, not HTML — Read it in full and categorize every URL by eye) → drill into each section **and its subsections**, one at a time (the inspector overwrites files), until the structure is fully mapped. Record it all in `sections.md`. **Never `grep`/filter the URL list** — read the full file (rule: shell `grep` is forbidden; the list is short enough to read). **Every `inspect` in this phase needs `--project <p>`** (rule 1) or the files land in `data/default/`.
+- **Use the screenshot to map structure (required).** `inspect <url> --project <p> --screenshot` the homepage and each section/listing page, then **Read the `page.png`** and read off the sections, subsections, content types, and navigation from what you SEE. Vision surfaces subsections the DOM can bury — this is how you avoid missing content areas.
 - **Transport ladder.** `inspect` auto-escalates HTTP → curl_cffi → browser and reports the lightest that worked. Set the matching flag in Phase 3: curl_cffi → `"CURL_CFFI_ENABLED": true`; browser → `"CLOUDFLARE_ENABLED": true` (or `"BROWSER_ENABLED": true` for JS-only). Never force the browser when curl_cffi worked; it's far slower.
 
 **Done when:** `sections.md` lists **every section and subsection** — none parked as "out of scope," "different layout," or "later" — each with a URL pattern and ≥3 example URLs (for Phase 2); structure reviewed in `page.png`. The only thing absent is any infinite-trap pattern.
@@ -144,26 +144,29 @@ Walk them in order (rule 4). Only mark a queue item complete when **all four** p
 **Start when:** Phase 1 is done (`sections.md` with 3+ URLs per section).
 **Goal:** URL-matching rules + a chosen way to extract each field.
 
-**Decide the extraction strategy first — read `project.json`, then route:**
+**Write one `section` per kind of page**, each `{ "match": [url patterns], "extract": … }`. In `extract`, **every field is one of two things:**
+
+- **`"auto"`** — let the built-in reader fill it. Works only for the 4 core fields: `title`, `content`, `author`, `published_date`.
+- **a selector** — `{ "css": "…" }` (or `xpath`; plus `get_all` / `to_text` / `processors`). Needed for any other field, and for a core field the reader gets wrong.
+
+Keep `"auto"` for whatever the reader gets right; hand-write a selector only for fields it can't produce or gets wrong. **A non-core field like `images` does NOT mean drop `"auto"` for `content`** — keep `content` on `"auto"` and just add the `images` selector.
 
 ```
-schema is core-only (title / content / author / published_date)
-        → EXTRACTOR_ORDER ["trafilatura","newspaper"]; add FIELDS only to fix wrong guesses
-schema has ANY non-core field (required or optional)
-        → pure-CSS: EXTRACTOR_ORDER ["custom"] + one FIELDS directive per schema field
-          (mixing generic extractors with a non-core schema is REJECTED on import)   → docs/extractors.md
-content is products / jobs / listings / forums
-        → named callbacks, one per section layout                                     → §7 callbacks
+plain article      "extract": "auto"                                          (all four core fields)
+article + extras   "extract": { "title": "auto", "content": "auto", "images": {"css": "…"} }
+product / job      "extract": { "name": {"css": "…"}, "price": {"css": "…"} }
+navigation page    no "extract", just "follow": true
 ```
 
-**Then build and test the rules:**
-- **A spider is not one function.** Write as many rules and callbacks as the site's sections need — never force structurally-different sections through a single callback. Same article layout everywhere → one `parse_article` is right. Sections that differ in structure or fields → give each its own rule and callback. You are free to split as finely as the site demands.
-- Write URL rules covering **every section and subsection** from `sections.md`. Err toward **broad** patterns that catch all the content you mapped — missing a content area is the costly mistake; you can tighten later. **Different layouts per section?** One spider holds many rules — route each section to its own named callback (one `{"allow": ["/blog/.*"], "callback": "parse_blog"}` per section, each with its own `extract`).
-- Sanity-check generic extraction: `./scrapai try <page.html>` — clean → generic extractors; messy or non-core fields → `FIELDS`.
+→ full reference: [docs/analysis-workflow.md](docs/analysis-workflow.md), [docs/callbacks.md](docs/callbacks.md). **Sitemaps work with `sections`** — add `"USE_SITEMAP": true` to `settings`. *(Legacy `rules`+`callbacks`+`FIELDS`+`EXTRACTOR_ORDER` still import — sections is what they compile to. Only `iterate`, `ajax_nested_list`, and JS paginated listings still need the legacy format.)*
+
+**Then build and test:**
+- Cover **every section and subsection** from `sections.md` — one `section` per kind of page. Err toward **broad** `match` patterns; missing a content area is the costly mistake. Read `project.json`: every `required: true` field must be sourced by some section (a selector, or `"auto"` for a core field) — import rejects a config that leaves one unsourced.
+- Sanity-check the reader: `./scrapai try <page.html>` — if `title`/`content` come out clean, keep them on `"auto"`; give a selector only to fields that come out wrong or that the reader can't produce (anything non-core).
 - **Write field selectors from the screenshot (the fast path) — your judgment, not every page.** If `try`/`analyze` already extract cleanly, **skip the screenshot** (it forces a browser launch — don't do it by reflex). When extraction is shaky or fields (especially **date/author**) come out wrong: read the `page.png` of a sample content page and read off the values you SEE — title, author "John Smith", date "June 20, 2026" — then pin each selector by reverse-searching the HTML: `./scrapai analyze <html> --find-text "John Smith"` returns the element + selector holding it (even obfuscated `time.css-1a2b3c` classes), tightest first. (`--find` matches class/id keywords; `--find-text` matches the value you saw.) Confirm with `analyze --test "<selector>"`. This is faster and more reliable than guessing from class names — especially for date/author. Doing many? Run the browser service (§6.3) so screenshots stay warm.
-- **Building callbacks (non-article)?** Assemble the callback config with processors, then test it on **2-3 example pages** to confirm the selectors generalize across items before moving on.
+- **Non-article section?** Build its `extract` with processors, then test on **2-3 example pages** to confirm the selectors generalize across items before moving on.
 
-**Done when:** `final_spider.json` has all rules; a strategy is chosen per the router above; every `required: true` field has a source; transport/browser settings noted.
+**Done when:** `final_spider.json` has a `section` for every content area; every `required: true` field is sourced by a section; transport/browser settings noted.
 **Next →** Phase 3.
 
 ### Phase 3 — Build the spider config
@@ -173,13 +176,18 @@ content is products / jobs / listings / forums
 
 **Naming gate:** the spider `name` MUST equal the domain with dots → underscores (`imn.org` → `imn_org`, `bbc.co.uk` → `bbc_co_uk`; multi-domain → primary; archived URLs like `web.archive.org/web/.../example.com` → `example_com`). A mismatch silently routes crawls to the wrong `data/<project>/<spider>/` folder.
 
-Minimum shape (include `source_url` when processing from the queue):
+Minimum shape (include `source_url` when processing from the queue) — a `sections` config:
 ```json
 { "name": "example_com", "source_url": "https://example.com",
-  "allowed_domains": ["example.com"], "start_urls": ["https://example.com/articles"] }
+  "allowed_domains": ["example.com"], "start_urls": ["https://example.com/articles"],
+  "sections": [
+    { "match": ["/articles/.*"], "extract": "auto" },
+    { "match": ["/products/.*"], "extract": { "name": {"css": "h1::text"}, "price": {"css": ".price::text"} } },
+    { "match": [".*"], "follow": true }
+  ] }
 ```
 
-**Done when:** `test_spider.json` (5 article URLs, `follow: false`) and `final_spider.json` (all start_urls, rules, settings) exist; `source_url` present if from the queue.
+**Done when:** `test_spider.json` (5 article URLs, `follow: false`) and `final_spider.json` (all start_urls, `sections`, settings) exist; `source_url` present if from the queue.
 **Next →** Phase 4.
 
 ### Phase 4 — Test and import
@@ -196,15 +204,15 @@ Minimum shape (include `source_url` when processing from the queue):
 
 ## 6. CLI reference
 
-Look these up as you reach each step. Always pass `--project <name>` on spider/queue/crawl/show/export.
+Look these up as you reach each step. Always pass `--project <name>` on inspect/spider/queue/crawl/show/export.
 
 ### 6.1 Setup & spiders
 `setup` · `verify` · `--version` · `projects list` · `spiders list [--project]` · `spiders import <file> --project` · `spiders delete <name> --project`
 
 ### 6.2 Inspect & analyze (the only ways to see a page)
-- `inspect <url>` — fetch + save HTML; auto-escalates HTTP → curl_cffi → browser and reports which worked + the flag to set. `--browser` forces it; `--screenshot` saves `page.png` (top ~2 screens; `--screenshot-screens N`; forces browser) — Read it; `--proxy-type <name>` (any proxy in `.env`).
+- `inspect <url> --project <name>` — fetch + save HTML to `data/<project>/<spider>/analysis/`. **Always pass `--project`** (rule 1): it defaults to `default` and scatters files otherwise. Auto-escalates HTTP → curl_cffi → browser and reports which worked + the flag to set. `--browser` forces it; `--screenshot` saves `page.png` (top ~2 screens; `--screenshot-screens N`; forces browser) — Read it; `--proxy-type <name>` (any proxy in `.env`).
 - `analyze <html>` — `--test "<css>"` checks a selector · `--find "<keyword>"` matches class/id · `--find-text "<value>"` finds the element holding a value (the date/author technique, §5 Phase 2).
-- `extract-urls --file <html>` — URLs from saved HTML · `try <html>` — newspaper + trafilatura compared.
+- `extract-urls --file <html> --output <all_urls.txt>` — pulls every URL from saved HTML (or a sitemap's `<loc>` entries) into a text file. **Read the whole file to categorize; never `grep`/filter it.** · `try <html>` — newspaper + trafilatura compared.
 
 ### 6.3 Browser service (manage its lifecycle)
 `browser start` keeps one warm browser; `inspect` then auto-routes through it (one tab per site, Cloudflare solved once) instead of cold-starting per call. `--pool N` caps concurrent sites (default 5). `browser status` reports up/down; `browser stop` tears it down. Cold-starts on its own if not running, but a per-call cold start re-solves Cloudflare every time — so manage the lifecycle yourself:
@@ -250,6 +258,8 @@ Report back: status, spider name, queue item ID, summary.
 
 ## 7. Configuration reference
 
+**The authoring format is `sections`** (§5 Phase 2) — a list of `{ "match", "extract" }` records, one per kind of page, desugared into the `rules` / `callbacks` / `FIELDS` below at import. Write `sections`; you rarely hand-write those now. The **settings** below stay top-level (spider-wide, never per-section). The legacy `rules`+`callbacks` format remains supported and is still required for the deferred cases (`iterate`, `ajax_nested_list`, JS paginated listings). Sitemaps are **not** deferred — set `"USE_SITEMAP": true` in a `sections` config's `settings`.
+
 ### 7.1 Settings (spider JSON)
 
 Full reference: [docs/settings.md](docs/settings.md).
@@ -257,7 +267,7 @@ Full reference: [docs/settings.md](docs/settings.md).
 - **Throughput** (add to every new spider unless the site is fragile): `{ "DOWNLOAD_DELAY": 0, "CONCURRENT_REQUESTS": 32, "CONCURRENT_REQUESTS_PER_DOMAIN": 16, "AUTOTHROTTLE_ENABLED": false }`
 - **Extractor (default):** `"EXTRACTOR_ORDER": ["trafilatura", "newspaper"]` → [docs/extractors.md](docs/extractors.md).
 - **Transport** (set the one `inspect` reported in Phase 1): `CURL_CFFI_ENABLED` (TLS-blocked, no JS — try before browser) · `CLOUDFLARE_ENABLED` (Cloudflare) · `BROWSER_ENABLED` (JS-only). The last two both start CloakBrowser; use the one that documents intent. → [docs/cloudflare.md](docs/cloudflare.md).
-- **Sitemap:** `"USE_SITEMAP": true` (callbacks + `SITEMAP_SINCE`) → [docs/sitemap.md](docs/sitemap.md). **DeltaFetch:** on by default; `--reset-deltafetch` to re-crawl → [docs/deltafetch.md](docs/deltafetch.md).
+- **Sitemap:** `"USE_SITEMAP": true` in a `sections` (or legacy) config — the sitemap enumerates URLs; your sections/rules still do extraction. `SITEMAP_SINCE` bounds by date → [docs/sitemap.md](docs/sitemap.md). **DeltaFetch:** on by default; `--reset-deltafetch` to re-crawl → [docs/deltafetch.md](docs/deltafetch.md).
 - **Pagination:** `<link rel="next">` (WordPress/Yoast) → `"tags": ["a","area","link"]` on the pagination rule; JS/hash → `PAGINATED_LISTINGS` ([docs/settings.md#paginated-listings-js-click-through](docs/settings.md#paginated-listings-js-click-through)).
 - **PDFs:** `"PDF_MODE": "links_only"` (default) records linked PDF URLs as URL-only items without downloading; `"PDF_MODE": "extract"` follows each PDF, downloads it, and extracts its text (born-digital only — scanned/image PDFs stay URL-only, no OCR).
 
@@ -265,7 +275,7 @@ Full reference: [docs/settings.md](docs/settings.md).
 
 Full reference: [docs/callbacks.md](docs/callbacks.md).
 
-For non-article structured data (products, jobs, real estate, forums). Templates: `templates/spider-ecommerce.json`, `spider-jobs.json`, `spider-realestate.json`. Route each section to its own callback:
+Named callbacks are **what a selector `section` compiles to** — for everyday products/jobs/forums, just write a `section` with a per-field `extract` (§5 Phase 2) and let import generate the callback. Write callbacks **explicitly** (the block below) only for the deferred features `sections` can't yet express: `iterate` (listing→detail) and `ajax_nested_list`. Templates: `templates/spider-ecommerce.json`, `spider-jobs.json`, `spider-realestate.json`. The explicit form routes each rule to its own callback:
 ```json
 {
   "rules": [

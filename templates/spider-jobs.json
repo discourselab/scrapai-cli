@@ -3,15 +3,10 @@
   "source_url": "https://jobs.example.com",
   "allowed_domains": ["jobs.example.com"],
   "start_urls": ["https://jobs.example.com/listings"],
-  "rules": [
+  "sections": [
     {
-      "allow": ["/job/\\d+"],
-      "callback": "parse_job",
-      "follow": false
-    }
-  ],
-  "callbacks": {
-    "parse_job": {
+      "match": ["/job/\\d+"],
+      "follow": false,
       "extract": {
         "title": {
           "css": "h1.job-title::text",
@@ -73,5 +68,5 @@
         }
       }
     }
-  }
+  ]
 }

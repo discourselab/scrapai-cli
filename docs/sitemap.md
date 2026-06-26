@@ -2,6 +2,8 @@
 
 Agent must explicitly set `"USE_SITEMAP": true` — no auto-detection.
 
+> **A sitemap is a URL source, not a substitute for analysis.** It changes only how URLs are *enumerated* — it tells you nothing about the site's sections, content types, or selectors. Even when you use a sitemap, still run the **full Phase 1 structure mapping** (homepage + each section `inspect --project <p> --screenshot`, read the `page.png`, record every section in `sections.md`) and **Phase 2 selector discovery on real content pages**. Do NOT jump straight to sitemap mode and skip inspection — the sitemap is a poor place to understand patterns. The steps below cover only the sitemap-specific URL enumeration and filtering; they assume that analysis is done.
+
 ## Workflow
 
 ### Step 1: Inspect Sitemap
@@ -30,6 +32,24 @@ If generic extractors work (core schema: title/content/author/published_date) �
 If the schema has any non-core field, or generic extraction is wrong → pure-CSS mode: `EXTRACTOR_ORDER: ["custom"]` + one `FIELDS` directive per field (see [extractors.md](extractors.md))
 
 ### Step 3: Create Spider JSON
+
+**Recommended — a `sections` config with `USE_SITEMAP`.** Author the spider exactly as you would without a sitemap (one `section` per content type), and just add `"USE_SITEMAP": true` to `settings`. The sitemap enumerates the URLs; your sections do the extraction — so you keep the generic article reader *and* custom fields while getting sitemap completeness. (No follow-only navigation sections are needed in sitemap mode; the sitemap provides the URLs directly.)
+
+```json
+{
+  "name": "example_sitemap",
+  "source_url": "https://example.com",
+  "allowed_domains": ["example.com"],
+  "start_urls": ["https://example.com/sitemap.xml"],
+  "settings": { "USE_SITEMAP": true },
+  "sections": [
+    { "match": ["/blog/.*"], "extract": "auto" },
+    { "match": ["/report/.*"], "extract": { "title": "auto", "pdf_url": { "css": "a.download::attr(href)" } } }
+  ]
+}
+```
+
+**Legacy form** (still supported — what `sections` compiles to):
 
 ```json
 {

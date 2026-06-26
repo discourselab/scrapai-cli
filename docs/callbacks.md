@@ -1,21 +1,101 @@
-# Named Callbacks & Custom Fields
+# Custom Field Extraction (sections & named callbacks)
 
 Extract custom fields from any structured data - products, jobs, listings, forums. Not limited to articles.
 
+The recommended authoring format is **`sections`**: one section per kind of page, each with its own `match` and `extract`. Sections are desugared into named callbacks at import (`core/sections.py`) — a section whose `extract` is an all-selector dict compiles to exactly one `parse_section_N` callback. **Named callbacks remain fully supported** (sections are what they compile to), and a handful of advanced features — `iterate` (listing-to-detail) and `ajax_nested_list` — are still authored with the explicit `callbacks` block (see [Deferred features](#deferred-features-still-authored-with-callbacks)).
+
 ## When to Use
 
-**Use callbacks for:**
+**Use a per-field `extract` (selectors) for:**
 - E-commerce (products, prices, ratings)
 - Job boards (titles, companies, salaries)
 - Real estate (properties, prices, features)
 - Forums (posts, authors, replies)
 - Any non-article structured data
 
-**Use parse_article for:**
+**Use `extract: "auto"` for:**
 - News, blogs, documentation
 - Content with title/content/author/date structure
 
-## Basic Structure
+## Sections: one section per layout
+
+Route each kind of page to its own section. Products and reviews live on different layouts, so each gets its own section with its own selectors:
+
+```json
+{
+  "sections": [
+    {
+      "match": ["/product/.*"],
+      "extract": {
+        "name": {"css": "h1::text"},
+        "price": {
+          "css": "span.price::text",
+          "processors": [
+            {"type": "strip"},
+            {"type": "regex", "pattern": "\\$([\\d.]+)"},
+            {"type": "cast", "to": "float"}
+          ]
+        }
+      }
+    },
+    {
+      "match": ["/review/.*"],
+      "extract": {
+        "title": {"css": "h1.review-title::text"},
+        "rating": {"css": "span.stars::attr(data-score)"},
+        "body": {"css": "div.review-body p::text", "get_all": true}
+      }
+    },
+    { "match": [".*"], "follow": true }
+  ]
+}
+```
+
+A section is `{ "match": [regex...], "extract": <spec>, "follow": bool (default true), "priority": int? (0-1000), "deny"?, "restrict_xpaths"?, "restrict_css"?, "tags"? }`. The `extract` spec is exactly one of:
+
+- **absent** — follow-only navigation (no extraction); the trailing `{"match": [".*"], "follow": true}` above is a navigation section that just discovers links.
+- **`"auto"`** — the built-in article reader (fills title/content/author/published_date).
+- **a per-field dict** `{ field: value }` — each value is either `"auto"` (allowed **only** for the four core fields: `title`, `content`, `author`, `published_date`) or a directive `{ "css"|"xpath": "...", "get_all"?, "to_text"?, "to_markdown"?, "processors"? }`.
+
+For non-article structured pages (products, jobs, forums), give every field a selector — `"auto"` is article-only and is rejected on a non-core field at import. Every `required: true` field in the project schema must be sourced by some section.
+
+### auto + one override
+
+A section may mix `"auto"` core fields with a selector override on a specific core field (e.g. fix a wrong author guess while letting the reader handle the rest):
+
+```json
+{
+  "sections": [
+    {
+      "match": ["/articles/.*"],
+      "extract": {
+        "title": "auto",
+        "content": "auto",
+        "author": { "css": ".byline a::text" }
+      }
+    }
+  ]
+}
+```
+
+**Constraint:** at most **one** section per spider may mix `"auto"` with overrides. That override path compiles to a spider-wide global `FIELDS` dict (plus the single article extractor), so it is not per-section — give other sections explicit selectors for every field instead. A second such section is rejected at import.
+
+### What sections compile to
+
+`expand_sections` (`core/sections.py`) translates each section into the legacy shape at import:
+
+| Section `extract` | Compiles to |
+|---|---|
+| absent | a rule with `callback: null` (follow-only) |
+| `"auto"` | a rule with `callback: "parse_article"` |
+| all selectors | a rule + a generated `parse_section_N` callback holding the `extract` |
+| `"auto"` + overrides | a rule with `callback: "parse_article"` + the override merged into global `settings.FIELDS` |
+
+Transport, throughput, `PDF_MODE`, DeltaFetch, and sitemap settings stay in the top-level `settings` block — they are not per-section.
+
+## Still-supported: explicit named callbacks
+
+The format below is what `sections` compiles to, and it imports and runs unchanged. Author it directly when you need a feature not yet covered by `sections` (see [Deferred features](#deferred-features-still-authored-with-callbacks)).
 
 ```json
 {
@@ -39,6 +119,8 @@ Extract custom fields from any structured data - products, jobs, listings, forum
 ```
 
 ## Field Extraction
+
+These directives are the same whether a field lives in a section's `extract` or a named callback's `extract`.
 
 **Selectors:**
 - CSS: `{"css": "h1::text"}`, `{"css": "img::attr(src)"}`
@@ -88,7 +170,11 @@ Max depth: 3 levels.
 ]}
 ```
 
-## Iterate: Listing-to-Detail Workflows
+## Deferred features (still authored with `callbacks`)
+
+The following two features are not yet expressible in `sections` — author them with the explicit `rules` + `callbacks` block. (JS `PAGINATED_LISTINGS` is likewise still authored the legacy way; see [settings.md](settings.md). Sitemaps, by contrast, **do** work with `sections` — just set `"USE_SITEMAP": true` in `settings`; see [sitemap.md](sitemap.md).)
+
+### Iterate: Listing-to-Detail Workflows
 
 For sites where data spans two pages — e.g., a ranking table (listing) links to individual detail pages — use `iterate` to loop over rows, extract per-row fields, and follow links to detail pages with that data passed along.
 
@@ -97,7 +183,7 @@ For sites where data spans two pages — e.g., a ranking table (listing) links t
 - Search results where you need data from both the result snippet and the full page
 - Any listing → detail pattern where you need fields from both pages
 
-### Structure
+#### Structure
 
 ```json
 {
@@ -125,7 +211,7 @@ For sites where data spans two pages — e.g., a ranking table (listing) links t
 }
 ```
 
-### How it works
+#### How it works
 
 1. `parse_listing` loops over each row matching `selector`
 2. For each row, `extract` fields are pulled from the **row element** (not full page)
@@ -136,7 +222,7 @@ For sites where data spans two pages — e.g., a ranking table (listing) links t
 
 The final item contains fields from **both** pages (listing + detail) at the top level.
 
-### Optional: url_context
+#### Optional: url_context
 
 Extract fields from the **page URL** using regex (useful when URL contains data like country codes):
 
@@ -158,7 +244,7 @@ Extract fields from the **page URL** using regex (useful when URL contains data 
 
 `url_context` fields are extracted once per page and included in every row's `listing_data`.
 
-### Key details
+#### Key details
 
 - `extract` in iterate mode uses the **row** as scope (not full response)
 - `url_context` regex must have exactly **one capture group**
@@ -167,7 +253,7 @@ Extract fields from the **page URL** using regex (useful when URL contains data 
 - Items are only counted when the detail callback yields (not the iterate callback)
 - `extract` is optional in iterate callbacks (you can follow without extracting row fields)
 
-## AJAX Nested List (`ajax_nested_list`)
+### AJAX Nested List (`ajax_nested_list`)
 
 For extracting data from AJAX endpoints (e.g., AJAX-loaded comments). Makes HTTP requests to fetch additional data not in the main page HTML.
 
@@ -208,7 +294,7 @@ For extracting data from AJAX endpoints (e.g., AJAX-loaded comments). Makes HTTP
   {"json_path": "author_name", "processors": [{"type": "strip"}]}
   ```
 
-### Nesting replies (threaded comments)
+#### Nesting replies (threaded comments)
 
 When comments have parent-child relationships (e.g., WP REST API returns flat list with `parent` field):
 ```json
@@ -221,7 +307,7 @@ When comments have parent-child relationships (e.g., WP REST API returns flat li
 ```
 Builds a tree structure where replies are nested inside their parent comment's `replies` array.
 
-### Common patterns
+#### Common patterns
 
 *wpDiscuz AJAX comments (POST):*
 ```json
@@ -285,7 +371,7 @@ Never use: `parse_article`, `parse_start_url`, `start_requests`, `from_crawler`,
 
 1. Analyze sample page: `./scrapai analyze page.html`
 2. Identify fields and discover selectors: `./scrapai analyze page.html --test "h1::text"`
-3. Build callback config with processors
+3. Build a section per layout (one `match` + `extract` each), with processors
 4. Test on multiple pages to verify selectors work
 5. Import and test: `./scrapai crawl spider --limit 5 --project proj`
 

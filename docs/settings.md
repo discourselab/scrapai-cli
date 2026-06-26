@@ -2,6 +2,88 @@
 
 Settings go into the spider JSON. Project defaults in `settings.py` are conservative; every new spider JSON should explicitly override throughput unless the site actively rate-limits.
 
+## Authoring format: `sections` (recommended)
+
+Write a spider as a top-level `sections` list — one section per kind of page. Each section says *which URLs to match* and *how to extract them*. At import, `sections` is desugared into the classic `rules` + `callbacks` + `settings.FIELDS` shape (see `core/sections.py:expand_sections`), so the runtime is unchanged — `sections` is purely the authoring surface. The old format still imports and runs identically (documented below under [Legacy format](#legacy-format-rules--callbacks--fields)); `sections` is what it compiles to.
+
+A section:
+
+```json
+{
+  "match": ["/articles/.*"],
+  "extract": { "title": "auto", "content": "auto", "author": "auto", "published_date": "auto" },
+  "follow": true,
+  "priority": 100
+}
+```
+
+Section keys:
+- `match` — list of URL regex patterns. Absent means match all.
+- `extract` — exactly one of:
+  - **absent** → follow-only navigation (no extraction; just discover links).
+  - **`"auto"`** → the built-in article reader (fills `title`, `content`, `author`, `published_date`).
+  - **a per-field dict** `{ field: value }`, where each value is either:
+    - `"auto"` — valid **only** for the four core fields (`title`, `content`, `author`, `published_date`).
+    - a directive `{ "css" | "xpath": "...", "get_all"?, "to_text"?, "to_markdown"?, "processors"? }`.
+- `follow` — whether to follow matched links (default `true`).
+- `priority` — optional int, 0-1000 (higher rule wins when several match).
+- `deny`, `restrict_xpaths`, `restrict_css`, `tags` — optional per-rule LinkExtractor knobs, passed straight through.
+
+**One repeating concept: one section per kind of page.** `extract: "auto"` is article-only; non-article pages (products, jobs, listings) need one selector per field.
+
+**Mixing `"auto"` with an override.** A section may set core fields to `"auto"` and override just one or two with a selector — useful when the article reader guesses `author`/`published_date` wrong:
+
+```json
+{ "match": ["/articles/.*"],
+  "extract": { "title": "auto", "content": "auto", "author": { "css": ".byline a::text" } } }
+```
+
+Constraint: at most **one** section per spider may mix `"auto"` with selector overrides. That override compiles to a single spider-wide `FIELDS` dict, so it is global. Other sections must give explicit selectors for every field.
+
+**Validation at import:**
+- `"auto"` on a non-core field is rejected — give it a selector.
+- Every `required: true` field in the project schema must be sourced by some section.
+
+### Canonical example
+
+```json
+{
+  "sections": [
+    { "match": ["/articles/.*"], "extract": { "title": "auto", "content": "auto", "author": { "css": ".byline a::text" } } },
+    { "match": ["/products/.*"], "extract": { "name": { "css": "h1::text" }, "price": { "css": ".price::text" } } },
+    { "match": [".*"], "follow": true }
+  ]
+}
+```
+
+The first section reads articles (with an `author` override), the second extracts products field-by-field, and the third is follow-only navigation that crawls everything else to discover links.
+
+### Settings still live at the top level (NOT per-section)
+
+`sections` covers URL matching and extraction. Everything else — transport, throughput, PDF handling, DeltaFetch, sitemap — stays in a top-level `settings` block, exactly as below. These are spider-wide and have no per-section form:
+
+```json
+{
+  "sections": [ ... ],
+  "settings": {
+    "CONCURRENT_REQUESTS": 32,
+    "CURL_CFFI_ENABLED": true,
+    "PDF_MODE": "links_only"
+  }
+}
+```
+
+### Still authored the legacy way (not yet in `sections`)
+
+A few capabilities are not expressible as sections yet — author these with the legacy `rules` + `callbacks` + `settings` format (below):
+- Listing → detail (`iterate`)
+- AJAX nested lists (`ajax_nested_list`)
+- JS click-through pagination (`PAGINATED_LISTINGS`)
+
+Sitemap mode is **not** on this list — `"USE_SITEMAP": true` works in a `sections` config (it just enumerates URLs; your sections still extract).
+
+---
+
 ## Throughput (include in every new spider JSON)
 
 ```json
@@ -13,13 +95,19 @@ Settings go into the spider JSON. Project defaults in `settings.py` are conserva
 }
 ```
 
+## Legacy format (rules + callbacks + FIELDS)
+
+The format below is still fully supported — it is exactly what `sections` compiles to. Prefer `sections` for new spiders (above); reach for the legacy format directly only for the deferred cases (`iterate`, `ajax_nested_list`, `PAGINATED_LISTINGS`) or when editing existing legacy spiders.
+
+With `sections`, `EXTRACTOR_ORDER` and `FIELDS` are usually no longer hand-written — `extract: "auto"` selects the article reader and per-field directives generate `FIELDS` for you. The settings below still apply to legacy configs and to the deferred cases.
+
 ## Extractor order
 
 ```json
 { "EXTRACTOR_ORDER": ["trafilatura", "newspaper"] }
 ```
 
-See [extractors.md](extractors.md) for the directive-driven options (`["custom"]` + `FIELDS`).
+See [extractors.md](extractors.md) for the directive-driven options (`["custom"]` + `FIELDS`). Authoring with `sections`? You normally don't set this by hand — a section's `extract` chooses the path.
 
 ## Pagination via `<link rel="next">`
 
@@ -27,6 +115,8 @@ See [extractors.md](extractors.md) for the directive-driven options (`["custom"]
 { "allow": ["/page/\\d+/"], "tags": ["a", "area", "link"], "follow": true }
 ```
 Scrapy's LinkExtractor by default only scans `<a>` and `<area>` tags. Many WordPress/Yoast sites expose pagination via `<link rel="next">` in `<head>`. Omit for normal sites.
+
+In `sections`, set `tags` on the section instead: `{ "match": ["/page/\\d+/"], "tags": ["a", "area", "link"], "follow": true }`.
 
 ## Browser mode (JS + Cloudflare)
 
@@ -80,7 +170,7 @@ Optional:
 
 ## Sitemap spider
 
-See [sitemap.md](sitemap.md). Basic:
+Sitemap mode works with **either** format: add `"USE_SITEMAP": true` to a `sections` config's `settings` (recommended), or to a legacy `rules` + `callbacks` config. The sitemap enumerates URLs; your sections/rules still do the extraction. See [sitemap.md](sitemap.md). Basic (legacy form shown):
 ```json
 { "USE_SITEMAP": true, "EXTRACTOR_ORDER": ["trafilatura", "newspaper"] }
 ```
@@ -135,7 +225,7 @@ Controls what happens when the crawl encounters a `.pdf` link. Default is `links
 
 ## Paginated listings (JS click-through)
 
-For listing pages whose "Next" button is JS-driven (no URL change, no `<link rel=next>`, article URLs aren't discoverable via LinkExtractor on a single page load). The spider opens the listing in a browser at crawl start, clicks Next through all pages, collects article hrefs, and yields a request for each one into the regular `parse_article` pipeline.
+`PAGINATED_LISTINGS` is a deferred case — keep it in the top-level `settings` block, not `sections`. For listing pages whose "Next" button is JS-driven (no URL change, no `<link rel=next>`, article URLs aren't discoverable via LinkExtractor on a single page load). The spider opens the listing in a browser at crawl start, clicks Next through all pages, collects article hrefs, and yields a request for each one into the regular `parse_article` pipeline.
 
 ```json
 {

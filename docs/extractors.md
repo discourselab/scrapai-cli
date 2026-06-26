@@ -1,8 +1,12 @@
 # Extractors
 
-How to get fields out of HTML — discovery workflow, extractor order, and the schema-driven `FIELDS` directives.
+How to get fields out of HTML — discovery workflow, and how to declare extraction per section.
 
-Test generic extractors (trafilatura, newspaper) first. Reach for `FIELDS` when the schema declares non-core fields or generic extractors get the core fields wrong.
+The recommended authoring format is **`sections`** (below): one section per kind of page, each with an `extract` that is either `"auto"` (the built-in article reader) or a per-field dict of selectors. The directive keys you write inside a per-field `extract` (`css`/`xpath`/`get_all`/`to_text`/`to_markdown`/`processors`) are the same directives documented under [`FIELDS`](#schema-driven-extraction-fields-legacy) — `sections` is just where you now write them.
+
+Test generic extractors (trafilatura, newspaper) first with `try`. Use `"auto"` when generic extraction is clean; reach for per-field selectors when the schema declares non-core fields or generic extractors get the core fields wrong.
+
+The legacy `EXTRACTOR_ORDER` + `FIELDS` / `CUSTOM_SELECTORS` format is still fully supported — `sections` desugars into exactly that at import (`core/sections.py`). See [Schema-driven Extraction (`FIELDS`)](#schema-driven-extraction-fields-legacy) below.
 
 ---
 
@@ -55,7 +59,73 @@ When `try`/`analyze` come back shaky — especially wrong **date** or **author**
 
 ---
 
-## Extractor Order Options
+## Declaring extraction in `sections` (recommended)
+
+A spider is a list of `sections`. Each section matches some URLs and says how to pull fields from those pages — one section per kind of page. The `extract` of a section is exactly one of:
+
+- **absent** — follow-only navigation (no extraction).
+- **`"auto"`** — the built-in article reader; fills the four core fields `title` / `content` / `author` / `published_date`.
+- **a per-field dict** `{ field: value }` — each value is either:
+  - `"auto"` — only for the four core fields, or
+  - a **directive** `{ "css"|"xpath": "...", "get_all"?, "to_text"?, "to_markdown"?, "processors"? }` (the same directive shape documented under [`FIELDS`](#directive-shape)).
+
+```json
+{
+  "sections": [
+    { "match": ["/articles/.*"],
+      "extract": { "title": "auto", "content": "auto", "author": { "css": ".byline a::text" } } },
+    { "match": ["/products/.*"],
+      "extract": { "name": { "css": "h1::text" }, "price": { "css": ".price::text" } } },
+    { "match": [".*"], "follow": true }
+  ]
+}
+```
+
+**Three extraction shapes, by page type:**
+
+- **Clean article page** → `"extract": "auto"`. Skip `try`-passing core fields entirely; the article reader fills them.
+  ```json
+  { "match": ["/blog/.*"], "extract": "auto" }
+  ```
+- **Article + fix one core field** → mix `"auto"` core fields with a selector override for the field generic extraction gets wrong (usually `author` or `published_date`):
+  ```json
+  { "match": ["/news/.*"],
+    "extract": {
+      "title": "auto", "content": "auto", "published_date": "auto",
+      "author": { "css": "span.byline a::text", "processors": [{ "type": "strip" }] }
+    } }
+  ```
+  Constraint: at most **one** section per spider may mix `"auto"` with overrides — that override path is spider-wide (it compiles to the global `FIELDS` dict feeding the single article extractor). Other sections must give every field an explicit selector.
+- **Non-article / structured page** (products, jobs, listings) → every field gets its own selector; `"auto"` is rejected on non-core fields:
+  ```json
+  { "match": ["/product/.*"],
+    "extract": {
+      "name":  { "css": "h1.title::text" },
+      "price": { "css": "span.price::text",
+        "processors": [{ "type": "regex", "pattern": "\\$([\\d.]+)" }, { "type": "cast", "to": "float" }] },
+      "tags":  { "css": "a.tag::text", "get_all": true }
+    } }
+  ```
+
+The full directive key reference (`css`, `xpath`, `get_all`, `to_text`, `to_markdown`, `processors`) is under [Directive shape](#directive-shape) below — those keys mean the same thing inside a section's `extract` as they did inside `FIELDS`.
+
+**Validation at import:**
+- `"auto"` on a non-core field is rejected — give it a selector.
+- Every `required: true` field in the project schema must be sourced by some section.
+
+**Sitemaps work with `sections`:** set `"USE_SITEMAP": true` in `settings` — the sitemap enumerates URLs and your sections still extract. **Still authored the old way (not yet in `sections`):** listing→detail (`iterate`), `ajax_nested_list`, and JS `PAGINATED_LISTINGS` keep using the rules + callbacks / settings format documented in [callbacks.md](callbacks.md) and [settings.md](settings.md).
+
+**What stays top-level:** transport, throughput, `PDF_MODE`, DeltaFetch, and sitemap settings stay in top-level `settings` — they are per-spider, never per-section.
+
+For non-article structured data (products, jobs, forums) with reusable layouts you can also still write **named callbacks** directly — see [callbacks.md](callbacks.md).
+
+---
+
+## Legacy: `EXTRACTOR_ORDER` + `FIELDS`
+
+The format below is still fully supported — `sections` compiles down to it (`core/sections.py`). Reach for it directly when you need a feature `sections` does not yet cover (see "Still authored the old way" above), or when maintaining an existing spider.
+
+### Extractor Order Options
 
 | Config | When to use |
 |---|---|
@@ -69,11 +139,13 @@ For non-article structured data (products, jobs, forums) use **named callbacks**
 
 ---
 
-## Schema-driven Extraction (`FIELDS`)
+## Schema-driven Extraction (`FIELDS`) (legacy)
+
+Still supported — and what `sections` compiles to. `sections` is the recommended way to author the same thing; this is the underlying format.
 
 When a project declares a schema in `project.json`, the schema is the contract: every field in `schema.fields` is guaranteed to appear as a top-level key in every exported row, populated or `null`. Extractor side-channels (newspaper's `markdown`/`top_image`/`videos`, newspaper's wrong author guesses, etc.) are pruned before storage — only schema fields make it through.
 
-`FIELDS` is the per-spider directive set that tells the framework how to populate each schema field. Keyed by schema field name.
+`FIELDS` is the per-spider directive set that tells the framework how to populate each schema field. Keyed by schema field name. A section's `"auto" + override` mix compiles to exactly this global `FIELDS` dict; a section's all-selector `extract` compiles to a per-section callback instead.
 
 ### Two modes
 
@@ -117,6 +189,8 @@ Newspaper runs first; any field with a directive overrides newspaper's value. `f
 - **One-off ad-hoc scrape, no schema** → omit `FIELDS`; generic `EXTRACTOR_ORDER` is enough.
 
 ### Directive shape
+
+These keys are identical whether the directive lives in a section's per-field `extract` (recommended) or in a legacy `FIELDS` entry. (`from:` is the one exception — it only applies to overlay `FIELDS`, not to `sections`.)
 
 | Key | Effect |
 |---|---|
