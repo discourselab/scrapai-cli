@@ -10,12 +10,23 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _looks_like_sitemap(content: str) -> bool:
+    """True for a sitemap or sitemap-index document (keyed on the root tags,
+    not the substring 'loc', so pages mentioning e.g. 'geolocation' don't trip)."""
+    head = content[:4000].lower()
+    return "<urlset" in head or "<sitemapindex" in head
+
+
 def extract_urls_from_html(html_file: str, output_file: str = None) -> List[str]:
     """
-    Extract all href URLs from an HTML file.
+    Extract all URLs from a saved page or sitemap.
+
+    - HTML pages: every `<a href>`.
+    - Sitemaps / sitemap indexes: every `<loc>` (page URLs from a `<urlset>`,
+      sub-sitemap URLs from a `<sitemapindex>`).
 
     Args:
-        html_file: Path to the HTML file to parse
+        html_file: Path to the HTML/XML file to parse
         output_file: Optional path to save the extracted URLs
 
     Returns:
@@ -26,17 +37,26 @@ def extract_urls_from_html(html_file: str, output_file: str = None) -> List[str]
     if not html_path.exists():
         raise FileNotFoundError(f"HTML file not found: {html_file}")
 
-    logger.info(f"Reading HTML from {html_file}")
+    logger.info(f"Reading {html_file}")
 
     with open(html_path, "r", encoding="utf-8") as f:
-        soup = BeautifulSoup(f, "html.parser")
+        content = f.read()
 
-    # Extract all href attributes from <a> tags
     urls: Set[str] = set()
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        if href:  # Skip empty hrefs
-            urls.add(href)
+    if _looks_like_sitemap(content):
+        # <loc> holds the URL in both <urlset> (page URLs) and <sitemapindex>
+        # (sub-sitemap URLs); find_all("loc") catches either.
+        soup = BeautifulSoup(content, "xml")
+        for loc in soup.find_all("loc"):
+            url = loc.get_text(strip=True)
+            if url:
+                urls.add(url)
+    else:
+        soup = BeautifulSoup(content, "html.parser")
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if href:  # Skip empty hrefs
+                urls.add(href)
 
     # Sort URLs
     sorted_urls = sorted(urls)
