@@ -173,28 +173,37 @@ def _analyze_html(html_path):
     click.echo("\n" + "=" * 60)
 
 
-def _test_selector(html_path, selector):
-    from bs4 import BeautifulSoup
+def _select_values(html, selector):
+    """Return exactly what a CSS selector extracts, using the crawler's own
+    engine (parsel/Scrapy). So `::text` and `::attr(...)` work here the same way
+    they do inside a section's `extract` — letting you verify the real selector.
+    """
+    from parsel import Selector
 
+    return Selector(text=html).css(selector).getall()
+
+
+def _test_selector(html_path, selector):
     with open(html_path, "r", encoding="utf-8") as f:
         html = f.read()
-
-    soup = BeautifulSoup(html, "lxml")
 
     click.echo(f"\n🔍 Testing selector: {selector}")
     click.echo("=" * 60)
 
-    elements = soup.select(selector)
-    if not elements:
-        click.echo("❌ No elements found!")
+    try:
+        values = _select_values(html, selector)
+    except Exception as e:
+        click.echo(f"❌ Invalid selector: {e}")
         return
 
-    click.echo(f"✓ Found {len(elements)} element(s)\n")
-    for i, el in enumerate(elements[:3], 1):
-        text = el.get_text(strip=True)
-        click.echo(f"[{i}] {el.name}")
-        click.echo(f"    Classes: {el.get('class', [])}")
-        click.echo(f"    Text ({len(text)} chars): {text[:150]}...")
+    if not values:
+        click.echo("❌ No matches found!")
+        return
+
+    click.echo(f"✓ Found {len(values)} match(es)\n")
+    for i, value in enumerate(values[:3], 1):
+        shown = value.strip() if isinstance(value, str) else value
+        click.echo(f"[{i}] {shown[:200]}")
         click.echo()
 
 
