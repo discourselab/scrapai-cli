@@ -490,7 +490,14 @@ class BaseDBSpiderMixin:
                 except Exception as e:
                     logger.warning(f"FIELDS processor failed for '{field_name}': {e}")
 
-            item[field_name] = value
+            # The selector is primary; the reader is the backup. A selector that
+            # comes back null must NOT wipe what the reader already produced for a
+            # core field (a broken selector can never destroy content). Non-core
+            # fields have nothing to fall back to, so they stay null.
+            if value is not None:
+                item[field_name] = value
+            elif field_name not in self._CORE_SCHEMA_FIELDS:
+                item.setdefault(field_name, None)
 
         # Prune intermediate extractor state. The project schema is the
         # whitelist — anything not in it (e.g. extractor-side `markdown`,
