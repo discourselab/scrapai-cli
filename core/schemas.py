@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union, Literal
 from datetime import datetime, timezone
 import ipaddress
 import re
@@ -88,6 +88,35 @@ class SpiderRuleSchema(BaseModel):
                     f"Invalid callback name: {v}. Must be a valid Python identifier."
                 )
         return v
+
+
+class SectionSchema(BaseModel):
+    """One section: match these URLs, extract this way.
+
+    The single repeating concept an author writes. Desugared into the existing
+    rules + callbacks + settings shape at import time (see core.sections).
+
+        extract absent          -> follow-only (navigation)
+        extract == "auto"       -> the built-in article reader
+        extract == {field: ...} -> per-field selectors; each field is "auto"
+                                   (core fields only) or a {css/xpath/...} directive
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    match: Optional[List[str]] = Field(
+        default=None, description="URL patterns (regex); absent = match all"
+    )
+    extract: Optional[Union[Literal["auto"], Dict[str, Any]]] = Field(
+        default=None,
+        description="'auto', a {field: directive} dict, or absent (follow-only)",
+    )
+    follow: bool = Field(default=True, description="Whether to follow matched links")
+    priority: Optional[int] = Field(default=None, ge=0, le=1000)
+    deny: Optional[List[str]] = Field(default=None)
+    restrict_xpaths: Optional[List[str]] = Field(default=None)
+    restrict_css: Optional[List[str]] = Field(default=None)
+    tags: Optional[List[str]] = Field(default=None)
 
 
 class PaginatedListingSchema(BaseModel):

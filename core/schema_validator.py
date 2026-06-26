@@ -28,6 +28,51 @@ def load_project_schema(project: str, data_dir: str) -> Optional[dict]:
         return None
 
 
+ARTICLE_CORE_FIELDS = {"title", "content", "author", "published_date"}
+
+
+def check_sections_coverage(
+    project: str,
+    sections: List[dict],
+    data_dir: str = "./data",
+) -> List[str]:
+    """Coverage check for the `sections` authoring format.
+
+    A required schema field must be provided by at least one section: listed in
+    some section's `extract`, or covered by an `extract: "auto"` section (which
+    yields the core article fields). `url` is always populated automatically.
+
+    Empty list = full coverage (or no `project.json` to enforce).
+    """
+    schema = load_project_schema(project, data_dir)
+    if not schema:
+        return []
+
+    provided = set()
+    for section in sections or []:
+        if not isinstance(section, dict):
+            continue
+        extract = section.get("extract")
+        if extract == "auto":
+            provided |= ARTICLE_CORE_FIELDS
+        elif isinstance(extract, dict):
+            provided |= set(extract.keys())
+
+    problems: List[str] = []
+    for f in schema.get("schema", {}).get("fields", []):
+        if not f.get("required"):
+            continue
+        name = f.get("name")
+        if name == "url":
+            continue
+        if name not in provided:
+            problems.append(
+                f"required field '{name}' has no source in any section — "
+                "add it to a section's extract"
+            )
+    return problems
+
+
 def check_schema_coverage(
     project: str,
     settings: Dict,

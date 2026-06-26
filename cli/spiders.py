@@ -75,6 +75,18 @@ def import_spider(file, project, skip_validation):
                 with open(file, "r") as f:
                     data = json.load(f)
 
+            # Desugar the `sections` authoring format into the existing
+            # rules + callbacks + settings shape before anything else
+            # (no-op for legacy configs that have no `sections` key).
+            from core.sections import expand_sections
+
+            raw_sections = data.get("sections")
+            try:
+                data = expand_sections(data)
+            except ValueError as e:
+                click.echo(f"Invalid 'sections' config: {e}")
+                return
+
             # Validate with Pydantic schema (unless --skip-validation)
             if skip_validation:
                 click.echo("⚠️  Skipping validation (--skip-validation flag)")
@@ -121,14 +133,26 @@ def import_spider(file, project, skip_validation):
             # when the project has no project.json, or when callbacks are used.
             if not skip_validation:
                 from core.config import DATA_DIR
-                from core.schema_validator import check_schema_coverage
 
-                problems = check_schema_coverage(
-                    project=project,
-                    settings=settings_dict,
-                    callbacks_config=callbacks_dict,
-                    data_dir=DATA_DIR,
-                )
+                if raw_sections is not None:
+                    # Native `sections` configs get a section-aware coverage
+                    # check (a required field must be sourced by some section).
+                    from core.schema_validator import check_sections_coverage
+
+                    problems = check_sections_coverage(
+                        project=project,
+                        sections=raw_sections,
+                        data_dir=DATA_DIR,
+                    )
+                else:
+                    from core.schema_validator import check_schema_coverage
+
+                    problems = check_schema_coverage(
+                        project=project,
+                        settings=settings_dict,
+                        callbacks_config=callbacks_dict,
+                        data_dir=DATA_DIR,
+                    )
                 if problems:
                     click.echo(f"❌ Spider does not cover project '{project}' schema:")
                     for p in problems:
