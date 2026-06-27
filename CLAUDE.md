@@ -41,6 +41,7 @@ file; never put a rule or command there (it will drift).
   - [6.5 Show, health, export](#65-show-health-export)
   - [6.6 Queue & parallel processing](#66-queue--parallel-processing)
   - [6.7 Database](#67-database)
+  - [6.8 Sessions (authenticated sites)](#68-sessions-authenticated-sites)
 - [7. Configuration reference](#7-configuration-reference)
   - [7.1 Settings](#71-settings-spider-json)
   - [7.2 Named callbacks and custom fields](#72-named-callbacks-and-custom-fields)
@@ -135,6 +136,7 @@ Walk them in order (rule 4). Only mark a queue item complete when **all four** p
 - `inspect --project <p>` the homepage → `extract-urls --file <page.html> --output <all_urls.txt>` → **Read the whole `all_urls.txt`** (it's a text list, not HTML — Read it in full and categorize every URL by eye) → drill into each section **and its subsections**, one at a time (the inspector overwrites files), until the structure is fully mapped. Record it all in `sections.md`. **Never `grep`/filter the URL list** — read the full file (rule: shell `grep` is forbidden; the list is short enough to read). **Every `inspect` in this phase needs `--project <p>`** (rule 1) or the files land in `data/default/`.
 - **Use the screenshot to map structure (required).** `inspect <url> --project <p> --screenshot` the homepage and each section/listing page, then **Read the `page.png`** and read off the sections, subsections, content types, and navigation from what you SEE. Vision surfaces subsections the DOM can bury — this is how you avoid missing content areas.
 - **Transport ladder.** `inspect` auto-escalates HTTP → curl_cffi → browser and reports the lightest that worked. Set the matching flag in Phase 3: curl_cffi → `"CURL_CFFI_ENABLED": true`; browser → `"CLOUDFLARE_ENABLED": true` (or `"BROWSER_ENABLED": true` for JS-only). Never force the browser when curl_cffi worked; it's far slower.
+- **Login wall / paywall?** If the content is gated behind a login, scraping anonymously gets you the login page, not the content. Use a saved session (§6.8): run `session login <domain>`, **ask the user to log in by hand and close the window**, then `inspect --session <domain>` and set `"SESSION": "<domain>"` on the spider. You can't log in for them — orchestrate the one-time human login, then proceed.
 
 **Done when:** `sections.md` lists **every section and subsection** — none parked as "out of scope," "different layout," or "later" — each with a URL pattern and ≥3 example URLs (for Phase 2); structure reviewed in `page.png`. The only thing absent is any infinite-trap pattern.
 **Next →** Phase 2.
@@ -254,6 +256,15 @@ Report back: status, spider name, queue item ID, summary.
 ### 6.7 Database
 `db migrate` · `db current` · `db transfer sqlite:///scrapai.db [--skip-items]` (SQLite → PostgreSQL) · `db stats` · `db tables` · `db inspect <table>` · `db query "SELECT ..." [--format table|json|csv]` (read-only).
 
+### 6.8 Sessions (authenticated sites)
+For content behind a login (paywalls, members-only, social). **scrapai never types a password — the human logs in by hand once, and the session is reused.** A session is a saved browser login (cookies + localStorage) at `~/.scrapai/sessions/<name>.json`, **global and per-site** (one NYT login serves every spider/project). → [docs/sessions.md](docs/sessions.md).
+
+- `session login <name> [url]` — opens a browser; the **user** logs in by hand and **closes the window** to save (no password typed, no Enter — works headless/remote too). **Name it after the domain, like a spider** (`nytimes_com`).
+- `session check <name> <url>` — loads the session, opens a gated URL, saves a confirmation PNG — **Read it** to verify you're logged in. JS-heavy SPAs (e.g. x.com) render slowly: add `--wait 8` so the screenshot isn't a loading spinner.
+- `session list` · `session remove <name>` (delete) · re-run `session login <name>` to **refresh** an expired one.
+- **Use it:** `inspect <url> --session <name>` (Phase 1, gated pages) and set `"SESSION": "<name>"` in the spider so the crawl runs logged in (§7.1). Only that one session is ever loaded — never all of them.
+- **You cannot log in for the user.** When a site needs auth: run `session login <domain>`, then **tell the user to log in and close the window**, then proceed. (Server with no display → the remote-login flow is not built yet; the user logs in on a machine with a display and the file is reused.)
+
 ---
 
 ## 7. Configuration reference
@@ -270,6 +281,7 @@ Full reference: [docs/settings.md](docs/settings.md).
 - **Sitemap:** `"USE_SITEMAP": true` in a `sections` (or legacy) config — the sitemap enumerates URLs; your sections/rules still do extraction. `SITEMAP_SINCE` bounds by date → [docs/sitemap.md](docs/sitemap.md). **DeltaFetch:** on by default; `--reset-deltafetch` to re-crawl → [docs/deltafetch.md](docs/deltafetch.md).
 - **Pagination:** `<link rel="next">` (WordPress/Yoast) → `"tags": ["a","area","link"]` on the pagination rule; JS/hash → `PAGINATED_LISTINGS` ([docs/settings.md#paginated-listings-js-click-through](docs/settings.md#paginated-listings-js-click-through)).
 - **PDFs:** `"PDF_MODE": "links_only"` (default) records linked PDF URLs as URL-only items without downloading; `"PDF_MODE": "extract"` follows each PDF, downloads it, and extracts its text (born-digital only — scanned/image PDFs stay URL-only, no OCR).
+- **Login:** `"SESSION": "<name>"` runs the crawl with a saved login (the human captured it via `session login` — §6.8). The browser starts already authenticated. → [docs/sessions.md](docs/sessions.md).
 
 ### 7.2 Named callbacks and custom fields
 

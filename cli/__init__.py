@@ -22,6 +22,7 @@ from .projects import projects  # noqa: E402
 from .health import health  # noqa: E402
 from .try_cmd import try_cmd  # noqa: E402
 from .browser_cmd import browser  # noqa: E402
+from .session_cmd import session  # noqa: E402
 
 
 @click.group()
@@ -47,3 +48,4 @@ cli.add_command(projects)
 cli.add_command(health)
 cli.add_command(try_cmd)
 cli.add_command(browser)
+cli.add_command(session)
