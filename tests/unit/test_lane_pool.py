@@ -16,7 +16,7 @@ def _fakes():
     """Return (open_lane, close_lane, state) recording lane lifecycle."""
     state = {"opened": 0, "closed": []}
 
-    async def open_lane():
+    async def open_lane(session_file=None):
         state["opened"] += 1
         return {"id": state["opened"]}
 
@@ -81,3 +81,22 @@ async def test_close_closes_all_lanes():
     await pool.close()
     assert sorted(state["closed"]) == [1, 2]
     assert pool.domains() == []
+
+
+async def test_session_change_recreates_lane():
+    # A domain's lane is tied to its session_file: same session reuses, a
+    # different session (or none) tears it down and reopens.
+    open_lane, close_lane, state = _fakes()
+    pool = LanePool(open_lane, close_lane, max_lanes=5)
+
+    a = await pool.acquire("a.com", session_file="s1.json")
+    b = await pool.acquire("a.com", session_file="s1.json")  # same -> reuse
+    assert a is b
+    assert state["opened"] == 1
+
+    await pool.acquire("a.com", session_file="s2.json")  # changed -> recreate
+    assert state["opened"] == 2
+    assert state["closed"] == [1]
+
+    await pool.acquire("a.com")  # back to no session -> recreate again
+    assert state["opened"] == 3

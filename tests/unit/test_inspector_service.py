@@ -55,7 +55,7 @@ async def test_fetch_browser_does_not_call_service_when_down(monkeypatch):
 
 
 def _make_fake_cold():
-    async def _cold(url, proxy_type, screenshot_path, screenshot_screens):
+    async def _cold(url, proxy_type, screenshot_path, screenshot_screens, session=None):
         return "COLD"
 
     return _cold

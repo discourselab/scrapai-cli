@@ -25,23 +25,37 @@ class LanePool:
         self._close_lane = close_lane
         self.max_lanes = max_lanes
         self._lanes = {}  # domain -> lane
+        self._sessions = {}  # domain -> session_file the lane was opened with
         self._lru = []  # domains, least-recently-used first
         self._guard = asyncio.Lock()
 
-    async def acquire(self, domain):
-        """Return the lane for ``domain``, creating or evicting as needed."""
+    async def acquire(self, domain, session_file=None):
+        """Return the lane for ``domain``, creating or evicting as needed.
+
+        A lane is tied to the ``session_file`` it was opened with — if the same
+        domain is later requested with a different session (or none), the lane is
+        torn down and reopened, so a logged-in lane is never reused unlogged (or
+        vice versa).
+        """
         async with self._guard:
             if domain in self._lanes:
+                if self._sessions.get(domain) == session_file:
+                    self._lru.remove(domain)
+                    self._lru.append(domain)
+                    return self._lanes[domain]
+                # Session changed for this domain — recreate the lane.
                 self._lru.remove(domain)
-                self._lru.append(domain)
-                return self._lanes[domain]
+                await self._close_lane(self._lanes.pop(domain))
+                self._sessions.pop(domain, None)
 
             if len(self._lanes) >= self.max_lanes:
                 victim = self._lru.pop(0)
                 await self._close_lane(self._lanes.pop(victim))
+                self._sessions.pop(victim, None)
 
-            lane = await self._open_lane()
+            lane = await self._open_lane(session_file)
             self._lanes[domain] = lane
+            self._sessions[domain] = session_file
             self._lru.append(domain)
             return lane
 
@@ -51,6 +65,7 @@ class LanePool:
             for lane in list(self._lanes.values()):
                 await self._close_lane(lane)
             self._lanes.clear()
+            self._sessions.clear()
             self._lru.clear()
 
     def domains(self):

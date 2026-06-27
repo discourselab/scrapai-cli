@@ -6,6 +6,11 @@ import logging
 @click.command()
 @click.argument("url")
 @click.option("--project", default="default", help="Project name")
+@click.option(
+    "--session",
+    default=None,
+    help="Reuse a saved login session (see `scrapai session login`)",
+)
 @click.option("--output-dir", default=None, help="Directory to save analysis")
 @click.option(
     "--proxy-type",
@@ -42,6 +47,7 @@ import logging
 def inspect_cmd(
     url,
     project,
+    session,
     output_dir,
     proxy_type,
     no_save_html,
@@ -71,17 +77,26 @@ def inspect_cmd(
             no_save_html,
             screenshot,
             screenshot_screens,
+            session,
         )
     else:
         click.echo("⚡ Trying lightweight transports (HTTP → curl_cffi)")
         from utils.inspector import inspect_page
 
         result = inspect_page(
-            url, output_dir, proxy_type, not no_save_html, mode="http", project=project
+            url,
+            output_dir,
+            proxy_type,
+            not no_save_html,
+            mode="http",
+            project=project,
+            session=session,
         )
         if result and result.get("needs_browser"):
             click.echo("↑ Lightweight transports blocked — escalating to browser…")
-            _run_browser_inspect(url, project, output_dir, proxy_type, no_save_html)
+            _run_browser_inspect(
+                url, project, output_dir, proxy_type, no_save_html, session=session
+            )
 
     logger.info("Inspection complete")
 
@@ -94,6 +109,7 @@ def _run_browser_inspect(
     no_save_html,
     screenshot=False,
     screenshot_screens=2,
+    session=None,
 ):
     """Run browser inspection as subprocess (same pattern as crawl.py).
 
@@ -119,12 +135,15 @@ def _run_browser_inspect(
             project=project,
             screenshot=screenshot,
             screenshot_screens=screenshot_screens,
+            session=session,
         )
         return
 
     # Build subprocess command: python -m utils.inspector <url> --browser ...
     cmd = [sys.executable, "-m", "utils.inspector", url, "--browser"]
     cmd += ["--project", project]
+    if session:
+        cmd += ["--session", session]
     if screenshot:
         cmd += ["--screenshot", "--screenshot-screens", str(screenshot_screens)]
     if output_dir:

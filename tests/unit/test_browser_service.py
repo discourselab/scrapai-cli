@@ -23,7 +23,7 @@ class FakePool:
     def __init__(self):
         self.acquired = []
 
-    async def acquire(self, domain):
+    async def acquire(self, domain, session_file=None):
         self.acquired.append(domain)
         return FakeLane()
 

@@ -113,11 +113,27 @@ async def _capture_screenshot(page, path, screens=2):
     )
 
 
-async def _fetch_browser(url, proxy_type, screenshot_path=None, screenshot_screens=2):
+def _resolve_session_file(name):
+    """Map a session NAME to its storage_state file, or None if absent."""
+    if not name:
+        return None
+    from core.sessions import session_path
+
+    p = session_path(name)
+    if p.exists():
+        return str(p)
+    print(f"Session '{name}' not found at {p} — proceeding without it.")
+    return None
+
+
+async def _fetch_browser(
+    url, proxy_type, screenshot_path=None, screenshot_screens=2, session=None
+):
     """Fetch a rendered page, reusing the shared browser service if it is
     running, otherwise cold-starting a browser. Returns html or None.
 
     When ``screenshot_path`` is given, a PNG of the rendered page is saved too.
+    ``session`` is an optional saved-login session NAME (see core/sessions.py).
     """
     from utils import browser_client
 
@@ -128,6 +144,7 @@ async def _fetch_browser(url, proxy_type, screenshot_path=None, screenshot_scree
             url=url,
             path=screenshot_path,
             screens=screenshot_screens,
+            session=session,
             timeout=180,
         )
         if resp and resp.get("ok"):
@@ -138,12 +155,12 @@ async def _fetch_browser(url, proxy_type, screenshot_path=None, screenshot_scree
         return None
 
     return await _fetch_browser_cold(
-        url, proxy_type, screenshot_path, screenshot_screens
+        url, proxy_type, screenshot_path, screenshot_screens, session
     )
 
 
 async def _fetch_browser_cold(
-    url, proxy_type, screenshot_path=None, screenshot_screens=2
+    url, proxy_type, screenshot_path=None, screenshot_screens=2, session=None
 ):
     """CloakBrowser fetch (JS rendering + Cloudflare bypass). Returns html or None.
 
@@ -153,7 +170,9 @@ async def _fetch_browser_cold(
     from utils.cf_browser import CloudflareBrowserClient
 
     async with CloudflareBrowserClient(
-        headless=False, proxy_chain=proxy.chain(proxy_type)
+        headless=False,
+        proxy_chain=proxy.chain(proxy_type),
+        session_file=_resolve_session_file(session),
     ) as browser:
         html = await browser.fetch(url)
         if screenshot_path and html:
@@ -189,6 +208,7 @@ async def inspect_page_async(
     project="default",
     screenshot=False,
     screenshot_screens=2,
+    session=None,
 ):
     """Inspect a page, escalating transport as needed.
 
@@ -208,7 +228,9 @@ async def inspect_page_async(
     if mode == "browser":
         print("Using CloakBrowser (JS rendering + Cloudflare bypass)...")
         shot = os.path.join(output_dir, "page.png") if screenshot else None
-        html_content = await _fetch_browser(url, proxy_type, shot, screenshot_screens)
+        html_content = await _fetch_browser(
+            url, proxy_type, shot, screenshot_screens, session
+        )
         if not html_content:
             print(f"Failed to fetch page: {url}")
             return {"transport": None, "needs_browser": True}
@@ -261,6 +283,7 @@ def inspect_page(
     project="default",
     screenshot=False,
     screenshot_screens=2,
+    session=None,
 ):
     """Synchronous wrapper for inspect_page_async."""
     return asyncio.run(
@@ -273,6 +296,7 @@ def inspect_page(
             project,
             screenshot,
             screenshot_screens,
+            session,
         )
     )
 
@@ -308,6 +332,9 @@ def main():
         help="Screen-heights to capture from the top (default 2; 0 = full page)",
     )
     parser.add_argument("--project", type=str, default="default", help="Project name")
+    parser.add_argument(
+        "--session", type=str, default=None, help="Saved login session name"
+    )
 
     args = parser.parse_args()
 
@@ -322,6 +349,7 @@ def main():
         project=args.project,
         screenshot=args.screenshot,
         screenshot_screens=args.screenshot_screens,
+        session=args.session,
     )
 
 

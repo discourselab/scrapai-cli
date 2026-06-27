@@ -528,12 +528,30 @@ class CloudflareDownloadHandler:
                 else:
                     proxy_chain = [None]
 
+                # A saved login session (spider's SESSION setting) — the browser
+                # context is created already logged in. → core/sessions.py
+                session_file = None
+                session_name = spider_settings.get("SESSION")
+                if session_name:
+                    from core.sessions import session_path
+
+                    p = session_path(session_name)
+                    if p.exists():
+                        session_file = str(p)
+                        logger.info(f"Using login session '{session_name}'")
+                    else:
+                        logger.warning(
+                            f"SESSION '{session_name}' not found at {p} — "
+                            "crawling without it (run `scrapai session login`)"
+                        )
+
                 CloudflareDownloadHandler._shared_browser = CloudflareBrowserClient(
                     headless=cf_headless,
                     cf_max_retries=cf_max_retries,
                     cf_retry_interval=cf_retry_interval,
                     post_cf_delay=cf_post_delay,
                     proxy_chain=proxy_chain,
+                    session_file=session_file,
                 )
 
                 await CloudflareDownloadHandler._shared_browser.start()

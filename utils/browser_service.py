@@ -25,6 +25,17 @@ def _domain(url):
     return urlparse(url).netloc
 
 
+def _session_file(req):
+    """Resolve a request's session NAME to its storage_state file (or None)."""
+    name = req.get("session")
+    if not name:
+        return None
+    from core.sessions import session_path
+
+    p = session_path(name)
+    return str(p) if p.exists() else None
+
+
 async def handle_request(pool, req, stop):
     """Route one request to a lane and return the response dict.
 
@@ -40,12 +51,12 @@ async def handle_request(pool, req, stop):
         return {"ok": True}
 
     if action == "fetch":
-        lane = await pool.acquire(_domain(req["url"]))
+        lane = await pool.acquire(_domain(req["url"]), _session_file(req))
         html = await lane.fetch(req["url"])
         return {"ok": html is not None, "bytes": len(html or "")}
 
     if action == "screenshot":
-        lane = await pool.acquire(_domain(req["url"]))
+        lane = await pool.acquire(_domain(req["url"]), _session_file(req))
         html = await lane.fetch(req["url"])
         if html:
             await _capture_screenshot(lane.page, req["path"], req.get("screens", 2))
@@ -55,7 +66,7 @@ async def handle_request(pool, req, stop):
     if action == "inspect":
         # Like screenshot but returns the HTML so `inspect` can save page.html
         # and report the title. Screenshots only when a path is given.
-        lane = await pool.acquire(_domain(req["url"]))
+        lane = await pool.acquire(_domain(req["url"]), _session_file(req))
         html = await lane.fetch(req["url"])
         if html and req.get("path"):
             await _capture_screenshot(lane.page, req["path"], req.get("screens", 2))
@@ -72,14 +83,16 @@ async def _run(port, proxy_type, pool_size):
 
     parent_used = False
 
-    async def _open_lane():
+    async def _open_lane(session_file=None):
         # Reuse the browser's first tab as lane 0 so no idle tab is left over;
-        # every later lane is a new tab in the same (one-window) context.
+        # every later lane is a new tab in the same (one-window) context. A
+        # sessioned lane always goes through attach_lane (its own context with
+        # the saved login), never the shared parent.
         nonlocal parent_used
-        if not parent_used:
+        if not session_file and not parent_used:
             parent_used = True
             return parent
-        return await parent.attach_lane()
+        return await parent.attach_lane(session_file=session_file)
 
     async def _close_lane(lane):
         await lane.close_lane()

@@ -7,6 +7,7 @@ bot detection bypass (0.9 reCAPTCHA score, passes FingerprintJS, etc.).
 
 import asyncio
 import logging
+import os
 import random
 import threading
 from typing import List, Optional
@@ -54,6 +55,7 @@ class CloudflareBrowserClient:
         post_cf_delay: int = 5,
         proxy_url: Optional[str] = None,
         proxy_chain: Optional[List[Optional[str]]] = None,
+        session_file: Optional[str] = None,
     ):
         """Initialize CloakBrowser client.
 
@@ -70,6 +72,9 @@ class CloudflareBrowserClient:
         self.context = None
         self.page = None
         self.headless = headless
+        # Optional saved login session (a storage_state JSON file). When set, the
+        # browser context is created already logged in. See core/sessions.py.
+        self.session_file = session_file
         self.cf_verified = False
         self.post_cf_delay = post_cf_delay
         self.fetch_lock = None  # Created lazily on first fetch
@@ -116,7 +121,11 @@ class CloudflareBrowserClient:
                     True  # Match timezone/locale to proxy IP for CF bypass
                 )
             self.browser = await launch_async(**launch_kwargs)
-            self.context = await self.browser.new_context()
+            ctx_kwargs = {}
+            if self.session_file and os.path.exists(self.session_file):
+                ctx_kwargs["storage_state"] = self.session_file
+                logger.info(f"Loading saved session: {self.session_file}")
+            self.context = await self.browser.new_context(**ctx_kwargs)
             self.page = await self.context.new_page()
 
             # Compatibility aliases
@@ -622,7 +631,7 @@ class CloudflareBrowserClient:
             except Exception as e:
                 logger.warning(f"Error closing CloakBrowser: {e}")
 
-    async def attach_lane(self):
+    async def attach_lane(self, session_file=None):
         """Create a sibling client sharing this browser AND context but driving
         its own tab/page.
 
@@ -635,17 +644,27 @@ class CloudflareBrowserClient:
         lane = CloudflareBrowserClient(
             headless=self.headless,
             proxy_chain=list(self._proxy_chain),
+            session_file=session_file,
         )
         lane.browser = self.browser
         lane.driver = self.browser
-        lane.context = self.context  # shared context => one window, many tabs
-        lane.page = await self.context.new_page()
+        if session_file and os.path.exists(session_file):
+            # A logged-in site gets its OWN context so the saved session (cookies
+            # AND localStorage) applies in full and stays isolated from other
+            # sites' tabs in the shared context.
+            lane.context = await self.browser.new_context(storage_state=session_file)
+            lane._own_context = True
+            logger.info(f"Lane using saved session: {session_file}")
+        else:
+            lane.context = self.context  # shared context => one window, many tabs
+            lane._own_context = False
+        lane.page = await lane.context.new_page()
         lane.tab = lane.page
         return lane
 
     async def close_lane(self):
-        """Close just this lane's tab, leaving the shared context and browser
-        running (other lanes' tabs live in the same context)."""
+        """Close this lane's tab. A sessioned lane owns its context, so close
+        that too; a shared-context lane leaves the context/browser running."""
         if self.page:
             try:
                 await self.page.close()
@@ -653,6 +672,12 @@ class CloudflareBrowserClient:
                 logger.debug(f"Error closing lane tab: {e}")
             self.page = None
             self.tab = None
+        if getattr(self, "_own_context", False) and self.context:
+            try:
+                await self.context.close()
+            except Exception as e:
+                logger.debug(f"Error closing lane context: {e}")
+            self.context = None
 
     async def __aenter__(self):
         """Async context manager entry."""
