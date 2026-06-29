@@ -20,13 +20,24 @@ def test_omits_defaults():
 
 def test_passes_flags_through():
     cmd = _build_detached_cmd(
-        "/repo/scrapai", "bbc_com", "news",
-        proxy_type="residential", browser=True, reset_deltafetch=True,
-        save_html=True, timeout=3600, scrapy_args="-L DEBUG", output="out.jsonl",
+        "/repo/scrapai",
+        "bbc_com",
+        "news",
+        proxy_type="residential",
+        browser=True,
+        reset_deltafetch=True,
+        save_html=True,
+        timeout=3600,
+        scrapy_args="-L DEBUG",
+        output="out.jsonl",
     )
     for flag in ("--browser", "--reset-deltafetch", "--save-html", "--detached"):
         assert flag in cmd
-    for flag, val in [("--proxy-type", "residential"), ("--timeout", "3600"),
-                      ("--scrapy-args", "-L DEBUG"), ("--output", "out.jsonl")]:
+    for flag, val in [
+        ("--proxy-type", "residential"),
+        ("--timeout", "3600"),
+        ("--scrapy-args", "-L DEBUG"),
+        ("--output", "out.jsonl"),
+    ]:
         i = cmd.index(flag)
-        assert cmd[i:i + 2] == [flag, val]
+        assert cmd[i] == flag and cmd[i + 1] == val

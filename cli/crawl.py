@@ -10,9 +10,19 @@ from datetime import datetime
 from core.config import DATA_DIR
 
 
-def _build_detached_cmd(scrapai_path, spider, project, *, proxy_type="auto",
-                        browser=False, scrapy_args=None, reset_deltafetch=False,
-                        save_html=False, timeout=None, output=None):
+def _build_detached_cmd(
+    scrapai_path,
+    spider,
+    project,
+    *,
+    proxy_type="auto",
+    browser=False,
+    scrapy_args=None,
+    reset_deltafetch=False,
+    save_html=False,
+    timeout=None,
+    output=None,
+):
     """The `scrapai crawl ... --detached` invocation the Pueue task runs.
     --detached makes that inner run skip resubmission and crawl in foreground."""
     cmd = [scrapai_path, "crawl", spider, "--project", project, "--detached"]
@@ -66,7 +76,9 @@ def _build_detached_cmd(scrapai_path, spider, project, *, proxy_type="auto",
     "--save-html", is_flag=True, help="Save raw HTML in output (makes files larger)"
 )
 @click.option(
-    "--detached", is_flag=True, hidden=True,
+    "--detached",
+    is_flag=True,
+    hidden=True,
     help="Internal: run in the foreground of a Pueue task (no resubmit)",
 )
 def crawl(
@@ -174,21 +186,39 @@ def _run_spider(
     if not limit and not detached:
         if not shutil.which("pueue"):
             click.echo("Pueue not installed - needed to run full crawls detached.")
-            click.echo("Install it (README: 'Long-running crawls'), or test with --limit N.")
+            click.echo(
+                "Install it (README: 'Long-running crawls'), or test with --limit N."
+            )
             sys.exit(1)
         scrapai_path = str(Path(__file__).resolve().parent.parent / "scrapai")
         inner = _build_detached_cmd(
-            scrapai_path, spider_name, project_name, proxy_type=proxy_type,
-            browser=browser, scrapy_args=scrapy_args,
-            reset_deltafetch=reset_deltafetch, save_html=save_html,
-            timeout=timeout, output=output_file,
+            scrapai_path,
+            spider_name,
+            project_name,
+            proxy_type=proxy_type,
+            browser=browser,
+            scrapy_args=scrapy_args,
+            reset_deltafetch=reset_deltafetch,
+            save_html=save_html,
+            timeout=timeout,
+            output=output_file,
         )
         label = (
             f"scrapai:{project_name}:{spider_name}"
-            if project_name else f"scrapai:{spider_name}"
+            if project_name
+            else f"scrapai:{spider_name}"
         )
-        add = ["pueue", "add", "--label", label, "--working-directory",
-               os.getcwd(), "--print-task-id", "--", *inner]
+        add = [
+            "pueue",
+            "add",
+            "--label",
+            label,
+            "--working-directory",
+            os.getcwd(),
+            "--print-task-id",
+            "--",
+            *inner,
+        ]
         res = subprocess.run(add, capture_output=True, text=True)
         if res.returncode != 0:
             click.echo(f"Failed to queue crawl via Pueue: {res.stderr.strip()}")
@@ -198,7 +228,9 @@ def _run_spider(
             f"Production crawl '{spider_name}' queued in Pueue (task {tid}); "
             "survives SSH disconnect."
         )
-        click.echo(f"  progress: pueue log {tid}   all: pueue status   stop: pueue kill {tid}")
+        click.echo(
+            f"  progress: pueue log {tid}   all: pueue status   stop: pueue kill {tid}"
+        )
         return
 
     click.echo(f"🚀 Running DB spider: {spider_name}")
