@@ -166,6 +166,28 @@ cd scrapai-cli
 ./scrapai export myspider --project myproject --format csv
 ```
 
+### Long-running crawls that survive disconnect (Pueue)
+
+Production crawls can run for hours or days. To run them **detached** — so they survive an SSH disconnect, run several concurrently, and report through one status view — scrapai uses [Pueue](https://github.com/Nukesor/pueue), a background command queue. This is optional: short test crawls (`--limit`) don't need it. Pueue and `tmux` are alternatives; you don't need both.
+
+**Install** (one-time per machine — no `sudo` for the core):
+
+- macOS: `brew install pueue`
+- Linux without root: download the binary from the [releases page](https://github.com/Nukesor/pueue/releases) into `~/.local/bin`, or `cargo install --locked pueue`
+- Linux with root: `sudo apt install pueue` / `sudo pacman -S pueue`
+
+**Start the daemon** so the queue survives logout *and* reboot (the proper, no-shortcut setup):
+
+```bash
+systemctl --user enable --now pueued    # start now + on every boot, auto-restart on crash
+loginctl enable-linger $USER            # keep your services running with no active login
+pueue status                            # verify — prints an empty queue table
+```
+
+`systemctl --user` needs no `sudo`; `enable-linger` for your own user is usually allowed without it (a hardened box may require admin). Quick non-persistent alternative: `pueued -d` (survives disconnect but not reboot).
+
+Once it's installed, you don't run `pueue` commands to start a crawl — scrapai submits full crawls (those without `--limit`) to Pueue for you. Monitor with `pueue status` / `pueue log <id>`, stop with `pueue kill <id>`.
+
 ### Using with AI Agents
 
 scrapai is designed to work with AI coding agents. The agent reads the workflow instructions, analyzes websites, and produces JSON configs through the CLI.

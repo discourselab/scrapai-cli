@@ -64,7 +64,7 @@ You build every spider by walking the **4-phase path in §5**. That path is the 
 Non-negotiable. Everything else in this file assumes these.
 
 1. **Always pass `--project <name>`** on `inspect`, spider, queue, crawl, show, and export commands. `inspect` silently defaults to `default` — omit `--project` and every `page.html`/`page.png` scatters into `data/default/`, away from your spider's folder.
-2. **Never run `crawl` without `--limit`.** Production crawls take hours/days and nothing in the code stops you — *you* are the guard. You only ever run `--limit 5` test crawls; the user runs production themselves (§6.4).
+2. **`crawl` without `--limit` is a production crawl** — it auto-detaches via Pueue (§6.4), runs for hours/days, and hammers the site. Use `--limit 5` for your own quick tests. Launch a production (no-`--limit`) crawl **only after the Phase 4 test passes and the user confirms** — detaching makes it non-blocking, not free.
 3. **Never read HTML files with Read/Grep.** See a page only through `inspect`, `analyze`, `extract-urls`, `try`. *Only exception:* `page.png` screenshots from `inspect --screenshot` — Read those to *see* the page.
 4. **Never skip phases.** Walk §5 in order, 1 → 2 → 3 → 4; each phase's "Done when" is the gate into the next.
 5. **Run commands one at a time.** Never chain with `&&`; read each output before the next command.
@@ -118,6 +118,8 @@ Phase 4  Verify      → test-crawl 5, check fields, then import
 ```
 
 Walk them in order (rule 4). Only mark a queue item complete when **all four** pass; on failure → `./scrapai queue fail <id> -m "reason"`. Deep walkthrough for any phase: [docs/analysis-workflow.md](docs/analysis-workflow.md).
+
+**Track the build with a task list (mandatory).** Before Phase 1, create a task list with one item per phase (1–4). In Phase 1, **add one item per section/subsection** you record in `sections.md` — so a content area physically cannot be dropped without an unchecked box showing it. Mark an item complete **only** when its gate passes; never strike one you haven't verified. The task list is your evidence the build was walked end-to-end: it stays visible as you work, and its final state is what you report when done (queue/parallel agents must include it in their report-back — §6.6). Use the native task list, not a file.
 
 ### Phase 1 — Analyze structure and sections
 
@@ -227,9 +229,9 @@ Look these up as you reach each step. Always pass `--project <name>` on inspect/
 → [docs/browser-service.md](docs/browser-service.md).
 
 ### 6.4 Crawl
-**[STOP] Never run without `--limit` (rule 2).** Nothing in the code blocks an unbounded crawl.
-- **You (testing only):** `crawl <name> --project <p> --limit 5`.
-- **User (production):** `crawl <name> --project <p>` — output to `crawls/crawl_DDMMYYYY.jsonl` (date-based, same-day appends); checkpoint auto-enabled (Ctrl+C pauses, rerun resumes); DeltaFetch skips seen URLs. **If asked to run a full crawl:** explain it can take hours/days and would block the session; hand the user that exact command; tell them the output path + Ctrl+C/resume.
+**[STOP] No `--limit` = production crawl (rule 2).** It auto-detaches via Pueue and runs for hours/days — launch only after the Phase 4 test passes **and the user confirms.**
+- **Test (you):** `crawl <name> --project <p> --limit 5` — foreground, quick, for verifying extraction.
+- **Production:** `crawl <name> --project <p>` (no `--limit`) submits itself to Pueue and returns immediately (survives SSH disconnect; you never prefix `pueue add`). Output → `crawls/crawl_DDMMYYYY.jsonl` (date-based, same-day appends); checkpoint + DeltaFetch auto. Monitor: `pueue status` / `pueue log <id>` (**never `pueue follow` — it blocks the agent**); items so far: `wc -l <crawls jsonl>`; stop: `pueue kill <id>`. Needs Pueue installed — if `pueue status` errors, give the user the install steps (README → "Long-running crawls").
 - **Flags:** `--browser` (JS + Cloudflare; Xvfb auto on headless — never run `xvfb-run` yourself) · `--save-html` (default off) · `--reset-deltafetch` (also clears checkpoint) · `--scrapy-args "..."`.
 
 ### 6.5 Show, health, export
@@ -248,9 +250,9 @@ queue cleanup --completed|--failed|--all --force --project
 ```
 Process website from queue:
 Queue Item ID: <id> | URL: <url> | Project: <project> | Instructions: <custom_instruction>
-Complete Phases 1-4 per CLAUDE.md.
+Complete Phases 1-4 per CLAUDE.md. Keep a task list (phases 1-4 + one item per section) and mark each done at its gate.
 On success: run `queue complete <id>`. On failure: run `queue fail <id> -m "reason"`.
-Report back: status, spider name, queue item ID, summary.
+Report back: status, spider name, queue item ID, summary, and the final task-list state (phases done, sections done X/Y).
 ```
 
 ### 6.7 Database

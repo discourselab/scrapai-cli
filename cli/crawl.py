@@ -10,6 +10,29 @@ from datetime import datetime
 from core.config import DATA_DIR
 
 
+def _build_detached_cmd(scrapai_path, spider, project, *, proxy_type="auto",
+                        browser=False, scrapy_args=None, reset_deltafetch=False,
+                        save_html=False, timeout=None, output=None):
+    """The `scrapai crawl ... --detached` invocation the Pueue task runs.
+    --detached makes that inner run skip resubmission and crawl in foreground."""
+    cmd = [scrapai_path, "crawl", spider, "--project", project, "--detached"]
+    if proxy_type and proxy_type != "auto":
+        cmd += ["--proxy-type", proxy_type]
+    if browser:
+        cmd.append("--browser")
+    if reset_deltafetch:
+        cmd.append("--reset-deltafetch")
+    if save_html:
+        cmd.append("--save-html")
+    if timeout:
+        cmd += ["--timeout", str(timeout)]
+    if output:
+        cmd += ["--output", output]
+    if scrapy_args:
+        cmd += ["--scrapy-args", scrapy_args]
+    return cmd
+
+
 @click.command()
 @click.argument("spider")
 @click.option("--project", required=True, help="Project name")
@@ -42,6 +65,10 @@ from core.config import DATA_DIR
 @click.option(
     "--save-html", is_flag=True, help="Save raw HTML in output (makes files larger)"
 )
+@click.option(
+    "--detached", is_flag=True, hidden=True,
+    help="Internal: run in the foreground of a Pueue task (no resubmit)",
+)
 def crawl(
     spider,
     project,
@@ -53,6 +80,7 @@ def crawl(
     scrapy_args,
     reset_deltafetch,
     save_html,
+    detached,
 ):
     """Run a spider"""
     _run_spider(
@@ -66,6 +94,7 @@ def crawl(
         scrapy_args,
         reset_deltafetch,
         save_html,
+        detached,
     )
 
 
@@ -99,7 +128,10 @@ def crawl_all(project, limit):
         click.echo(f"\n{'='*50}")
         click.echo(f"Running: {name}")
         click.echo(f"{'='*50}")
-        _run_spider(project, name, None, limit, None, "auto", False, None, False, False)
+        # detached=True keeps crawl_all running each spider inline, unchanged.
+        _run_spider(
+            project, name, None, limit, None, "auto", False, None, False, False, True
+        )
 
 
 def _run_spider(
@@ -113,6 +145,7 @@ def _run_spider(
     scrapy_args=None,
     reset_deltafetch=False,
     save_html=False,
+    detached=False,
 ):
     """Run a Scrapy spider from database"""
     from core.db import get_db
@@ -134,6 +167,39 @@ def _run_spider(
         # Extract all needed info from db_spider before exiting the session
         # so the subprocess work below can run without a live DB connection.
         spider_settings = list(db_spider.settings) if db_spider.settings else []
+
+    # No --limit = production crawl: hand it to Pueue so it survives an SSH
+    # disconnect. The Pueue task re-runs this command with --detached, which
+    # falls through to the foreground crawl below instead of resubmitting.
+    if not limit and not detached:
+        if not shutil.which("pueue"):
+            click.echo("Pueue not installed - needed to run full crawls detached.")
+            click.echo("Install it (README: 'Long-running crawls'), or test with --limit N.")
+            sys.exit(1)
+        scrapai_path = str(Path(__file__).resolve().parent.parent / "scrapai")
+        inner = _build_detached_cmd(
+            scrapai_path, spider_name, project_name, proxy_type=proxy_type,
+            browser=browser, scrapy_args=scrapy_args,
+            reset_deltafetch=reset_deltafetch, save_html=save_html,
+            timeout=timeout, output=output_file,
+        )
+        label = (
+            f"scrapai:{project_name}:{spider_name}"
+            if project_name else f"scrapai:{spider_name}"
+        )
+        add = ["pueue", "add", "--label", label, "--working-directory",
+               os.getcwd(), "--print-task-id", "--", *inner]
+        res = subprocess.run(add, capture_output=True, text=True)
+        if res.returncode != 0:
+            click.echo(f"Failed to queue crawl via Pueue: {res.stderr.strip()}")
+            sys.exit(1)
+        tid = res.stdout.strip()
+        click.echo(
+            f"Production crawl '{spider_name}' queued in Pueue (task {tid}); "
+            "survives SSH disconnect."
+        )
+        click.echo(f"  progress: pueue log {tid}   all: pueue status   stop: pueue kill {tid}")
+        return
 
     click.echo(f"🚀 Running DB spider: {spider_name}")
 
