@@ -47,6 +47,22 @@ def _pueue_state(status):
     return "failed"
 
 
+def _pueue_times(status):
+    """(start, end) ISO strings from a pueue status dict, or None where absent
+    (Running has start but no end; Queued has neither)."""
+    inner = next(iter(status.values()), {})
+    if not isinstance(inner, dict):
+        return (None, None)
+    return (inner.get("start"), inner.get("end"))
+
+
+def _short_ts(ts):
+    """Compact an ISO timestamp to 'MM-DD HH:MM' (string-sliced, tz-safe). '-' if None."""
+    if not ts:
+        return "-"
+    return f"{ts[5:10]} {ts[11:16]}"
+
+
 def _latest_crawl_file(project, spider):
     """Most recently modified crawl_*.jsonl for a spider, or None."""
     base = Path(DATA_DIR) / project / spider if project else Path(DATA_DIR) / spider
@@ -228,21 +244,27 @@ def crawl_status(project):
 
     rows = []
     for (proj, spider), (_tid, task) in latest.items():
-        state = _pueue_state(task.get("status") or {})
+        status = task.get("status") or {}
+        state = _pueue_state(status)
+        start, end = _pueue_times(status)
         f = _latest_crawl_file(proj, spider)
         downloaded, non_empty = _crawl_stats(str(f)) if f else (0, 0)
-        rows.append((spider, proj or "-", state, downloaded, non_empty))
+        rows.append((spider, proj or "-", state, downloaded, non_empty, start, end))
 
     if not rows:
         click.echo("No scrapai crawls found in Pueue.")
         return
 
     click.echo(
-        f"{'spider':<24} {'project':<12} {'state':<9} {'downloaded':>10} {'non-empty':>14}"
+        f"{'spider':<24} {'project':<12} {'state':<9} {'downloaded':>10} "
+        f"{'non-empty':>14}  {'start':<12} {'end':<12}"
     )
-    for spider, proj, state, downloaded, non_empty in sorted(rows):
+    for spider, proj, state, downloaded, non_empty, start, end in sorted(rows):
         pct = f"{non_empty} ({non_empty * 100 // downloaded}%)" if downloaded else "0"
-        click.echo(f"{spider:<24} {proj:<12} {state:<9} {downloaded:>10,} {pct:>14}")
+        click.echo(
+            f"{spider:<24} {proj:<12} {state:<9} {downloaded:>10,} {pct:>14}  "
+            f"{_short_ts(start):<12} {_short_ts(end):<12}"
+        )
 
 
 def _run_spider(
