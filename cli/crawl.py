@@ -255,16 +255,47 @@ def crawl_status(project):
         click.echo("No scrapai crawls found in Pueue.")
         return
 
-    click.echo(
-        f"{'spider':<24} {'project':<12} {'state':<9} {'downloaded':>10} "
-        f"{'with-content':>14}  {'start':<14} {'end':<14}"
-    )
+    from rich import box
+    from rich.console import Console
+    from rich.table import Table
+
+    # Color is shown in a terminal; rich auto-strips it when output is captured
+    # (e.g. by the agent), so piped output stays clean plain text.
+    state_color = {
+        "running": "bold green",
+        "queued": "cyan",
+        "paused": "yellow",
+        "done": "green",
+        "killed": "yellow",
+        "failed": "red",
+    }
+
+    table = Table(box=box.SIMPLE)
+    table.add_column("spider")
+    table.add_column("project")
+    table.add_column("state")
+    table.add_column("downloaded", justify="right")
+    table.add_column("with-content", justify="right")
+    table.add_column("start")
+    table.add_column("end")
+
     for spider, proj, state, downloaded, non_empty, start, end in sorted(rows):
         pct = f"{non_empty} ({non_empty * 100 // downloaded}%)" if downloaded else "0"
-        click.echo(
-            f"{spider:<24} {proj:<12} {state:<9} {downloaded:>10,} {pct:>14}  "
-            f"{_short_ts(start):<14} {_short_ts(end):<14}"
+        color = state_color.get(state, "white")
+        table.add_row(
+            spider,
+            proj,
+            f"[{color}]{state}[/{color}]",
+            f"{downloaded:,}",
+            pct,
+            _short_ts(start),
+            _short_ts(end),
         )
+
+    # Interactive terminal: fit to its real width (with color). Captured/piped
+    # (e.g. the agent): force a wide width so columns aren't truncated to 80.
+    console = Console(width=None if sys.stdout.isatty() else 140)
+    console.print(table)
 
 
 def _run_spider(
