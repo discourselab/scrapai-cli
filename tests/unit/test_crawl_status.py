@@ -74,7 +74,7 @@ def test_pueue_times_queued_has_neither():
 
 
 def test_short_ts_compacts_iso():
-    assert _short_ts("2026-06-29T13:46:11.619180+01:00") == "06-29 13:46"
+    assert _short_ts("2026-06-29T13:46:11.619180+01:00") == "13:46 29-06-26"
 
 
 def test_short_ts_none():

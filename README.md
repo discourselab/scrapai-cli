@@ -192,8 +192,8 @@ For a quick overview of every detached crawl — run state plus how much each ha
 
 ```bash
 ./scrapai crawl-status [--project news]
-# spider          project   state     downloaded    non-empty    start         end
-# clarin_com       latinos   running        1,240    1,198 (97%)  06-29 13:53   -
+# spider          project   state     downloaded    non-empty    start           end
+# clarin_com       latinos   running        1,240    1,198 (97%)  13:53 29-06-26  -
 ```
 
 It joins Pueue's run state and start/end times with the crawl file: items downloaded and how many have non-empty content (i.e. extraction actually worked). Raw Pueue (`pueue status` / `pueue log <id>`) still works too.

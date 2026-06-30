@@ -57,10 +57,10 @@ def _pueue_times(status):
 
 
 def _short_ts(ts):
-    """Compact an ISO timestamp to 'MM-DD HH:MM' (string-sliced, tz-safe). '-' if None."""
+    """Compact an ISO timestamp to 'hh:mm dd-mm-yy' (string-sliced, tz-safe). '-' if None."""
     if not ts:
         return "-"
-    return f"{ts[5:10]} {ts[11:16]}"
+    return f"{ts[11:16]} {ts[8:10]}-{ts[5:7]}-{ts[2:4]}"
 
 
 def _latest_crawl_file(project, spider):
@@ -257,13 +257,13 @@ def crawl_status(project):
 
     click.echo(
         f"{'spider':<24} {'project':<12} {'state':<9} {'downloaded':>10} "
-        f"{'non-empty':>14}  {'start':<12} {'end':<12}"
+        f"{'non-empty':>14}  {'start':<14} {'end':<14}"
     )
     for spider, proj, state, downloaded, non_empty, start, end in sorted(rows):
         pct = f"{non_empty} ({non_empty * 100 // downloaded}%)" if downloaded else "0"
         click.echo(
             f"{spider:<24} {proj:<12} {state:<9} {downloaded:>10,} {pct:>14}  "
-            f"{_short_ts(start):<12} {_short_ts(end):<12}"
+            f"{_short_ts(start):<14} {_short_ts(end):<14}"
         )
 
 
