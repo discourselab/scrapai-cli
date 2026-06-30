@@ -12,26 +12,33 @@ from cli.crawl import _crawl_stats, _pueue_state, _pueue_times, _short_ts, _ago
 pytestmark = pytest.mark.unit
 
 
-def test_crawl_stats_counts_total_and_non_empty(tmp_path):
+def test_crawl_stats_counts_downloaded_with_content_and_eligible(tmp_path):
+    # PDF URLs (links_only mode has no content) are downloaded but NOT content-
+    # eligible, so they don't drag the with-content % down.
     f = tmp_path / "crawl.jsonl"
     f.write_text(
-        json.dumps({"url": "a", "content": "real text"})
+        json.dumps({"url": "https://x/a", "content": "real text"})
         + "\n"
-        + json.dumps({"url": "b", "content": ""})
+        + json.dumps({"url": "https://x/b", "content": ""})
         + "\n"
-        + json.dumps({"url": "c", "content": "   "})
+        + json.dumps({"url": "https://x/c", "content": "   "})
         + "\n"
-        + json.dumps({"url": "d"})
+        + json.dumps({"url": "https://x/d"})
         + "\n"
-        + json.dumps({"url": "e", "content": "more"})
+        + json.dumps({"url": "https://x/e", "content": "more"})
+        + "\n"
+        + json.dumps({"url": "https://x/doc.pdf", "content": ""})  # PDF, ignored
+        + "\n"
+        + json.dumps({"url": "https://x/report.pdf?v=2"})  # PDF w/ query, ignored
         + "\n"
         + "not json at all\n"
     )
-    assert _crawl_stats(str(f)) == (5, 2)
+    # downloaded=7 (incl 2 pdfs), with_content=2 (a,e), eligible=5 (non-pdf)
+    assert _crawl_stats(str(f)) == (7, 2, 5)
 
 
 def test_crawl_stats_missing_file_is_zero():
-    assert _crawl_stats("/no/such/file.jsonl") == (0, 0)
+    assert _crawl_stats("/no/such/file.jsonl") == (0, 0, 0)
 
 
 @pytest.mark.parametrize(

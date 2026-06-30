@@ -8,14 +8,19 @@ import shlex
 import json
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 from datetime import datetime
 from core.config import DATA_DIR
 
 
 def _crawl_stats(jsonl_path):
-    """(downloaded, non_empty) for a crawl jsonl: total items, and how many have
-    non-blank `content` (i.e. extraction actually produced text)."""
-    total = non_empty = 0
+    """(downloaded, with_content, content_eligible) for a crawl jsonl.
+
+    PDF URLs are collected (links_only mode) but have no content by design, so
+    they count as downloaded yet are NOT content-eligible — otherwise they'd
+    drag the with-content % down misleadingly. The % is taken over eligible.
+    """
+    total = with_content = eligible = 0
     try:
         with open(jsonl_path) as fh:
             for line in fh:
@@ -27,11 +32,14 @@ def _crawl_stats(jsonl_path):
                 except ValueError:
                     continue
                 total += 1
+                is_pdf = urlsplit(item.get("url") or "").path.lower().endswith(".pdf")
+                if not is_pdf:
+                    eligible += 1
                 if str(item.get("content") or "").strip():
-                    non_empty += 1
+                    with_content += 1
     except FileNotFoundError:
-        return (0, 0)
-    return (total, non_empty)
+        return (0, 0, 0)
+    return (total, with_content, eligible)
 
 
 def _pueue_state(status):
@@ -261,11 +269,21 @@ def crawl_status(project):
         state = _pueue_state(status)
         start, end = _pueue_times(status)
         f = _latest_crawl_file(proj, spider)
-        downloaded, non_empty = _crawl_stats(str(f)) if f else (0, 0)
+        downloaded, with_content, eligible = _crawl_stats(str(f)) if f else (0, 0, 0)
         # last-item: time since the crawl file was last written = liveness signal
         last = _ago(time.time() - f.stat().st_mtime) if f else "-"
         rows.append(
-            (spider, proj or "-", state, downloaded, non_empty, start, end, last)
+            (
+                spider,
+                proj or "-",
+                state,
+                downloaded,
+                with_content,
+                eligible,
+                start,
+                end,
+                last,
+            )
         )
 
     if not rows:
@@ -297,8 +315,15 @@ def crawl_status(project):
     table.add_column("end")
     table.add_column("last-item")
 
-    for spider, proj, state, downloaded, non_empty, start, end, last in sorted(rows):
-        pct = f"{non_empty} ({non_empty * 100 // downloaded}%)" if downloaded else "0"
+    for row in sorted(rows):
+        spider, proj, state, downloaded, with_content, eligible, start, end, last = row
+        # % is over content-eligible items (PDFs excluded), so links-only PDFs
+        # don't make a healthy crawl look like it's missing content.
+        pct = (
+            f"{with_content} ({with_content * 100 // eligible}%)"
+            if eligible
+            else str(with_content)
+        )
         color = state_color.get(state, "white")
         table.add_row(
             spider,
