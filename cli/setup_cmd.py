@@ -99,8 +99,6 @@ def setup(args):
     # owner-only (600) so other OS users on a shared host can't read it.
     if env_file.exists():
         try:
-            import os
-
             os.chmod(env_file, 0o600)
             click.echo("🔒 .env permissions set to 600 (owner-only)")
         except Exception as e:
