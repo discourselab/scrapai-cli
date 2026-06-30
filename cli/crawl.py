@@ -6,6 +6,7 @@ import shutil
 import pickle
 import shlex
 import json
+import time
 from pathlib import Path
 from datetime import datetime
 from core.config import DATA_DIR
@@ -61,6 +62,18 @@ def _short_ts(ts):
     if not ts:
         return "-"
     return f"{ts[11:16]} {ts[8:10]}-{ts[5:7]}-{ts[2:4]}"
+
+
+def _ago(seconds):
+    """A duration in seconds -> compact relative string: 4s / 5m / 2h / 1d."""
+    seconds = max(0, int(seconds))
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    if seconds < 86400:
+        return f"{seconds // 3600}h"
+    return f"{seconds // 86400}d"
 
 
 def _latest_crawl_file(project, spider):
@@ -249,7 +262,11 @@ def crawl_status(project):
         start, end = _pueue_times(status)
         f = _latest_crawl_file(proj, spider)
         downloaded, non_empty = _crawl_stats(str(f)) if f else (0, 0)
-        rows.append((spider, proj or "-", state, downloaded, non_empty, start, end))
+        # last-item: time since the crawl file was last written = liveness signal
+        last = _ago(time.time() - f.stat().st_mtime) if f else "-"
+        rows.append(
+            (spider, proj or "-", state, downloaded, non_empty, start, end, last)
+        )
 
     if not rows:
         click.echo("No scrapai crawls found in Pueue.")
@@ -278,8 +295,9 @@ def crawl_status(project):
     table.add_column("with-content", justify="right")
     table.add_column("start")
     table.add_column("end")
+    table.add_column("last-item")
 
-    for spider, proj, state, downloaded, non_empty, start, end in sorted(rows):
+    for spider, proj, state, downloaded, non_empty, start, end, last in sorted(rows):
         pct = f"{non_empty} ({non_empty * 100 // downloaded}%)" if downloaded else "0"
         color = state_color.get(state, "white")
         table.add_row(
@@ -290,6 +308,7 @@ def crawl_status(project):
             pct,
             _short_ts(start),
             _short_ts(end),
+            last,
         )
 
     # Interactive terminal: fit to its real width (with color). Captured/piped

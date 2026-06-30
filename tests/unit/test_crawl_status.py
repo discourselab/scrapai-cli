@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from cli.crawl import _crawl_stats, _pueue_state, _pueue_times, _short_ts
+from cli.crawl import _crawl_stats, _pueue_state, _pueue_times, _short_ts, _ago
 
 pytestmark = pytest.mark.unit
 
@@ -79,3 +79,21 @@ def test_short_ts_compacts_iso():
 
 def test_short_ts_none():
     assert _short_ts(None) == "-"
+
+
+@pytest.mark.parametrize(
+    "seconds,expected",
+    [
+        (-5, "0s"),  # clock skew -> clamp
+        (0, "0s"),
+        (4, "4s"),
+        (59, "59s"),
+        (60, "1m"),
+        (300, "5m"),
+        (3600, "1h"),
+        (7200, "2h"),
+        (86400, "1d"),
+    ],
+)
+def test_ago(seconds, expected):
+    assert _ago(seconds) == expected
