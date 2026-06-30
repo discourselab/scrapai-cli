@@ -87,3 +87,30 @@ def test_is_running_false_when_unreachable():
     # State points at a dead port → graceful False, not a crash.
     bc.write_state(1, bc.free_port())
     assert bc.is_running() is False
+
+
+def test_ensure_running_short_circuits_when_already_up(monkeypatch):
+    spawned = {"n": 0}
+    monkeypatch.setattr(bc, "is_running", lambda: True)
+    monkeypatch.setattr(bc, "_spawn_service", lambda *a, **k: spawned.update(n=1))
+    assert bc.ensure_running() is True
+    assert spawned["n"] == 0  # never spawned — already up
+
+
+def test_ensure_running_spawns_when_down(monkeypatch):
+    # down, then up after spawn (second is_running check)
+    states = iter([False, False, True])
+    monkeypatch.setattr(bc, "is_running", lambda: next(states))
+    spawned = {"n": 0}
+
+    class FakeProc:
+        def poll(self):
+            return None
+
+    def fake_spawn(*a, **k):
+        spawned["n"] += 1
+        return FakeProc()
+
+    monkeypatch.setattr(bc, "_spawn_service", fake_spawn)
+    assert bc.ensure_running(timeout=5) is True
+    assert spawned["n"] == 1

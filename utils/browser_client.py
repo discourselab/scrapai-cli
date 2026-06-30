@@ -10,6 +10,9 @@ stale, helpers fail gracefully so callers can fall back to spawning their own.
 import json
 import os
 import socket
+import subprocess
+import sys
+import time
 
 
 def _default_state_file():
@@ -88,3 +91,78 @@ def free_port():
     port = s.getsockname()[1]
     s.close()
     return port
+
+
+def _spawn_service(proxy_type="auto", pool=5):
+    """Launch the daemon process (detached) and record its state. Returns the
+    Popen handle. Raises RuntimeError if a display is needed but Xvfb is absent."""
+    clear_state()
+    port = free_port()
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cmd = [
+        sys.executable,
+        "-m",
+        "utils.browser_service",
+        "--port",
+        str(port),
+        "--proxy-type",
+        proxy_type,
+        "--pool",
+        str(pool),
+    ]
+    from utils.display_helper import needs_xvfb, has_xvfb
+
+    if needs_xvfb():
+        if not has_xvfb():
+            raise RuntimeError("browser needs a display but Xvfb is not installed")
+        cmd = ["xvfb-run", "-a"] + cmd
+
+    proc = subprocess.Popen(
+        cmd,
+        cwd=repo,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    write_state(proc.pid, port)
+    return proc
+
+
+def ensure_running(proxy_type="auto", pool=5, timeout=90):
+    """Make sure the service is up, starting it if a crawl finds it stopped.
+
+    A file lock serializes startup across processes so several concurrent crawls
+    can't each spawn their own daemon (which would defeat one-browser-for-all).
+    Returns True if the service is up, False if it couldn't be started."""
+    if is_running():
+        return True
+
+    lock_path = os.path.join(os.path.dirname(STATE_FILE), "browser_service.lock")
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+    lockf = None
+    try:
+        import fcntl
+
+        lockf = open(lock_path, "w")
+        fcntl.flock(lockf, fcntl.LOCK_EX)
+    except ImportError:
+        lockf = None  # no flock (e.g. Windows): best-effort, no cross-proc lock
+
+    try:
+        if is_running():  # another process started it while we waited for the lock
+            return True
+        try:
+            proc = _spawn_service(proxy_type, pool)
+        except RuntimeError:
+            return False
+        for _ in range(timeout):
+            if is_running():
+                return True
+            if proc.poll() is not None:
+                clear_state()
+                return False
+            time.sleep(1)
+        return False
+    finally:
+        if lockf is not None:
+            lockf.close()

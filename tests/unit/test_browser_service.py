@@ -103,6 +103,40 @@ async def test_inspect_returns_html_and_screenshots(monkeypatch):
     assert captured["shot"] == ("/tmp/c.png", 2)
 
 
+class FakeLaneWithCookies(FakeLane):
+    def __init__(self):
+        super().__init__()
+        self.context = Mock()
+
+        async def cookies(url=None):
+            self.context.cookies_url = url
+            return [{"name": "cf_clearance", "value": "tok"}]
+
+        self.context.cookies = cookies
+
+        async def evaluate(_js):
+            return "UA-1"
+
+        self.page.evaluate = evaluate
+
+
+async def test_cf_verify_returns_html_cookies_and_ua():
+    class P(FakePool):
+        async def acquire(self, domain, session_file=None):
+            self.acquired.append(domain)
+            return FakeLaneWithCookies()
+
+    pool = P()
+    resp = await handle_request(
+        pool, {"action": "cf_verify", "url": "https://e.com/x"}, asyncio.Event()
+    )
+    assert pool.acquired == ["e.com"]
+    assert resp["ok"] is True
+    assert "<html>" in resp["html"]
+    assert resp["cookies"] == {"cf_clearance": "tok"}
+    assert resp["user_agent"] == "UA-1"
+
+
 async def test_inspect_without_path_skips_screenshot(monkeypatch):
     calls = {"n": 0}
 

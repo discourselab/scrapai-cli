@@ -352,12 +352,19 @@ class CloudflareDownloadHandler:
                 return
 
             host = urlparse(url).hostname
-            logger.info(f"[{key}] Verifying CF for host {host} via browser")
-            await self._ensure_browser_started(spider)
-            html = await self._fetch_with_browser(url, spider)
-            if not html:
-                raise Exception(f"Failed to verify CF for {url}")
-            cookies, user_agent = await self._extract_cookies_from_browser(url)
+            # Prefer the ONE shared browser service (so N crawls share one
+            # browser); fall back to a local browser if it isn't running.
+            via_service = await self._verify_via_service(url, spider)
+            if via_service is not None:
+                logger.info(f"[{key}] Verified CF for {host} via browser service")
+                html, cookies, user_agent = via_service
+            else:
+                logger.info(f"[{key}] Verifying CF for {host} via local browser")
+                await self._ensure_browser_started(spider)
+                html = await self._fetch_with_browser(url, spider)
+                if not html:
+                    raise Exception(f"Failed to verify CF for {url}")
+                cookies, user_agent = await self._extract_cookies_from_browser(url)
 
             with CloudflareDownloadHandler._cookie_cache_lock:
                 CloudflareDownloadHandler._cookie_seq += 1
@@ -371,6 +378,35 @@ class CloudflareDownloadHandler:
                 }
             cookie_names = ", ".join(sorted(cookies.keys())) or "none"
             logger.info(f"[{key}] Cached {len(cookies)} cookies: {cookie_names}")
+
+    async def _verify_via_service(self, url, spider):
+        """Verify CF through the warm browser service (one browser shared by all
+        crawls). If the service was stopped, bring it back up and retry — so a
+        mistakenly-stopped service self-heals instead of every crawl spawning its
+        own browser. Returns (html, cookies, user_agent), or None if the service
+        still isn't reachable (caller then falls back to a local browser). The
+        blocking socket/startup work runs in an executor so the loop never stalls."""
+        from utils import browser_client
+
+        session_name = getattr(spider, "custom_settings", {}).get("SESSION")
+
+        def _call():
+            resp = browser_client.request("cf_verify", url=url, session=session_name)
+            if resp is None:
+                # Service down (e.g. someone ran `browser stop`) — restart + retry.
+                if browser_client.ensure_running():
+                    resp = browser_client.request(
+                        "cf_verify", url=url, session=session_name
+                    )
+            return resp
+
+        loop = asyncio.get_event_loop()
+        resp = await loop.run_in_executor(None, _call)
+        if resp is None:
+            return None  # couldn't reach or start the service -> local fallback
+        if not resp.get("ok"):
+            raise Exception(f"Browser service failed to verify CF for {url}")
+        return resp["html"], resp["cookies"], resp["user_agent"]
 
     async def _fetch_with_http(self, url: str, cached: Dict) -> Optional[str]:
         """Fetch URL with HTTP + cached cookies using curl_cffi for TLS stealth."""

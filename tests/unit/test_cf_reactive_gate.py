@@ -34,6 +34,15 @@ def test_cache_key_is_per_spider_and_host():
     )
 
 
+@pytest.fixture(autouse=True)
+def _service_down(monkeypatch):
+    # Default: no warm browser service, and don't try to start one -> _reverify
+    # uses the local browser path (which the gate tests mock). The service-routing
+    # tests override these.
+    monkeypatch.setattr("utils.browser_client.request", lambda *a, **k: None)
+    monkeypatch.setattr("utils.browser_client.ensure_running", lambda *a, **k: False)
+
+
 def _make_handler():
     h = CloudflareDownloadHandler({})
     CloudflareDownloadHandler._cookie_cache = {}
@@ -167,3 +176,72 @@ async def test_extract_cookies_scoped_to_verify_host():
 
     assert captured["url"] == "https://hemeroteca.larazon.bo/x"
     assert cookies == {"cf_clearance": "HEM"}  # host-scoped, not the www value
+
+
+async def test_reverify_uses_browser_service_when_available(monkeypatch):
+    """The central browser: a verify goes through the warm service (one browser
+    for all crawls) and its html+cookies+ua are cached — no local browser."""
+    h = _make_handler()
+
+    def fake_request(action, **kw):
+        assert action == "cf_verify"
+        assert kw["url"] == "https://www.larazon.bo/x"
+        return {
+            "ok": True,
+            "html": "<html>svc</html>",
+            "cookies": {"cf_clearance": "S"},
+            "user_agent": "UA-S",
+        }
+
+    monkeypatch.setattr("utils.browser_client.request", fake_request)
+    # if the local browser were used these would blow up (no real browser)
+    await h._reverify(
+        "larazon|www.larazon.bo", "https://www.larazon.bo/x", _spider(), used_seq=None
+    )
+    cached = CloudflareDownloadHandler._cookie_cache["larazon|www.larazon.bo"]
+    assert cached["cookies"] == {"cf_clearance": "S"}
+    assert cached["user_agent"] == "UA-S"
+
+
+async def test_reverify_restarts_service_when_stopped(monkeypatch):
+    """If the service was stopped, a crawl that needs it restarts it and retries
+    through the service — not a per-crawl local browser."""
+    h = _make_handler()
+    calls = {"n": 0}
+
+    def fake_request(action, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return None  # service down on first try
+        return {
+            "ok": True,
+            "html": "<html>svc</html>",
+            "cookies": {"cf_clearance": "S"},
+            "user_agent": "UA-S",
+        }
+
+    monkeypatch.setattr("utils.browser_client.request", fake_request)
+    monkeypatch.setattr("utils.browser_client.ensure_running", lambda *a, **k: True)
+    # local browser would blow up if used -> proves we went through the service
+    await h._reverify(
+        "larazon|www.larazon.bo", "https://www.larazon.bo/x", _spider(), used_seq=None
+    )
+    cached = CloudflareDownloadHandler._cookie_cache["larazon|www.larazon.bo"]
+    assert cached["cookies"] == {"cf_clearance": "S"}
+    assert calls["n"] == 2  # tried, restarted, retried
+
+
+async def test_reverify_falls_back_to_local_when_service_down(monkeypatch):
+    h = _make_handler()
+    monkeypatch.setattr("utils.browser_client.request", lambda *a, **k: None)
+    h._ensure_browser_started = AsyncMock()
+    h._fetch_with_browser = AsyncMock(return_value="<html>local</html>")
+    h._extract_cookies_from_browser = AsyncMock(
+        return_value=({"cf_clearance": "L"}, "UA-L")
+    )
+    await h._reverify(
+        "larazon|www.larazon.bo", "https://www.larazon.bo/x", _spider(), used_seq=None
+    )
+    cached = CloudflareDownloadHandler._cookie_cache["larazon|www.larazon.bo"]
+    assert cached["cookies"] == {"cf_clearance": "L"}
+    h._fetch_with_browser.assert_awaited_once()

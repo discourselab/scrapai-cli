@@ -19,10 +19,36 @@ from utils.cf_browser import CloudflareBrowserClient
 from utils.inspector import _capture_screenshot
 from utils.lane_pool import LanePool
 from core import proxy as proxy_mod
+from settings import USER_AGENT
 
 
 def _domain(url):
     return urlparse(url).netloc
+
+
+# Per-domain navigation locks: a lane has one page, so two requests for the same
+# domain (e.g. two crawls verifying the same host) must not page.goto at once.
+_nav_locks = {}
+
+
+def _nav_lock(domain):
+    lock = _nav_locks.get(domain)
+    if lock is None:
+        lock = _nav_locks[domain] = asyncio.Lock()
+    return lock
+
+
+async def _lane_cookies(lane, url):
+    """Cookies the lane's context holds for ``url``'s host (scoped, flat dict)."""
+    cookies_list = await lane.context.cookies(url)
+    return {c["name"]: c["value"] for c in cookies_list if c.get("name")}
+
+
+async def _lane_user_agent(lane):
+    try:
+        return await lane.page.evaluate("navigator.userAgent")
+    except Exception:
+        return USER_AGENT
 
 
 def _session_file(req):
@@ -51,9 +77,29 @@ async def handle_request(pool, req, stop):
         return {"ok": True}
 
     if action == "fetch":
-        lane = await pool.acquire(_domain(req["url"]), _session_file(req))
-        html = await lane.fetch(req["url"])
+        domain = _domain(req["url"])
+        lane = await pool.acquire(domain, _session_file(req))
+        async with _nav_lock(domain):
+            html = await lane.fetch(req["url"])
         return {"ok": html is not None, "bytes": len(html or "")}
+
+    if action == "cf_verify":
+        # Drive the central browser to clear CF for this host, then return the
+        # HTML + host-scoped cookies + UA so the crawl can do fast HTTP itself.
+        domain = _domain(req["url"])
+        lane = await pool.acquire(domain, _session_file(req))
+        async with _nav_lock(domain):
+            html = await lane.fetch(req["url"])
+            if not html:
+                return {"ok": False, "error": "verify failed"}
+            cookies = await _lane_cookies(lane, req["url"])
+            user_agent = await _lane_user_agent(lane)
+        return {
+            "ok": True,
+            "html": html,
+            "cookies": cookies,
+            "user_agent": user_agent,
+        }
 
     if action == "screenshot":
         lane = await pool.acquire(_domain(req["url"]), _session_file(req))
