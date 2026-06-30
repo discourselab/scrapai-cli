@@ -5,9 +5,57 @@ import os
 import shutil
 import pickle
 import shlex
+import json
 from pathlib import Path
 from datetime import datetime
 from core.config import DATA_DIR
+
+
+def _crawl_stats(jsonl_path):
+    """(downloaded, non_empty) for a crawl jsonl: total items, and how many have
+    non-blank `content` (i.e. extraction actually produced text)."""
+    total = non_empty = 0
+    try:
+        with open(jsonl_path) as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    item = json.loads(line)
+                except ValueError:
+                    continue
+                total += 1
+                if str(item.get("content") or "").strip():
+                    non_empty += 1
+    except FileNotFoundError:
+        return (0, 0)
+    return (total, non_empty)
+
+
+def _pueue_state(status):
+    """Pueue's nested status dict -> one lowercase word. `Done` unwraps to its
+    result (Success->done, Killed->killed, anything else->failed)."""
+    key = next(iter(status), "unknown")
+    if key != "Done":
+        return key.lower()
+    result = status["Done"].get("result")
+    if result == "Success":
+        return "done"
+    if result == "Killed":
+        return "killed"
+    return "failed"
+
+
+def _latest_crawl_file(project, spider):
+    """Most recently modified crawl_*.jsonl for a spider, or None."""
+    base = Path(DATA_DIR) / project / spider if project else Path(DATA_DIR) / spider
+    files = sorted(
+        (base / "crawls").glob("crawl_*.jsonl"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    return files[0] if files else None
 
 
 def _build_detached_cmd(
@@ -144,6 +192,57 @@ def crawl_all(project, limit):
         _run_spider(
             project, name, None, limit, None, "auto", False, None, False, False, True
         )
+
+
+@click.command("crawl-status")
+@click.option("--project", default=None, help="Only show crawls in this project")
+def crawl_status(project):
+    """Show each scrapai crawl's run state + how much it has downloaded.
+
+    Joins Pueue's run state (running/queued/done/...) with the crawl file:
+    items downloaded, and how many have non-empty content (extraction worked).
+    """
+    if not shutil.which("pueue"):
+        click.echo("Pueue not installed - no detached crawls to report.")
+        return
+    res = subprocess.run(["pueue", "status", "--json"], capture_output=True, text=True)
+    if res.returncode != 0:
+        click.echo(f"Could not read Pueue status: {res.stderr.strip()}")
+        return
+
+    tasks = json.loads(res.stdout).get("tasks", {})
+    # One row per spider: a spider may have several Pueue tasks (re-runs); keep
+    # the newest (highest task id) so "status" shows its current state.
+    latest = {}
+    for tid, task in tasks.items():
+        label = task.get("label") or ""
+        if not label.startswith("scrapai:"):
+            continue
+        parts = label.split(":")
+        proj, spider = (parts[1], parts[2]) if len(parts) == 3 else (None, parts[1])
+        if project and proj != project:
+            continue
+        key = (proj, spider)
+        if key not in latest or int(tid) > latest[key][0]:
+            latest[key] = (int(tid), task)
+
+    rows = []
+    for (proj, spider), (_tid, task) in latest.items():
+        state = _pueue_state(task.get("status") or {})
+        f = _latest_crawl_file(proj, spider)
+        downloaded, non_empty = _crawl_stats(str(f)) if f else (0, 0)
+        rows.append((spider, proj or "-", state, downloaded, non_empty))
+
+    if not rows:
+        click.echo("No scrapai crawls found in Pueue.")
+        return
+
+    click.echo(
+        f"{'spider':<24} {'project':<12} {'state':<9} {'downloaded':>10} {'non-empty':>14}"
+    )
+    for spider, proj, state, downloaded, non_empty in sorted(rows):
+        pct = f"{non_empty} ({non_empty * 100 // downloaded}%)" if downloaded else "0"
+        click.echo(f"{spider:<24} {proj:<12} {state:<9} {downloaded:>10,} {pct:>14}")
 
 
 def _run_spider(

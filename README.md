@@ -186,7 +186,17 @@ pueue status                            # verify — prints an empty queue table
 
 `systemctl --user` needs no `sudo`; `enable-linger` for your own user is usually allowed without it (a hardened box may require admin). Quick non-persistent alternative: `pueued -d` (survives disconnect but not reboot).
 
-Once it's installed, you don't run `pueue` commands to start a crawl — scrapai submits full crawls (those without `--limit`) to Pueue for you. Monitor with `pueue status` / `pueue log <id>`, stop with `pueue kill <id>`.
+Once it's installed, you don't run `pueue` commands to start a crawl — scrapai submits full crawls (those without `--limit`) to Pueue for you. Stop one with `pueue kill <id>`.
+
+For a quick overview of every detached crawl — run state plus how much each has downloaded — use:
+
+```bash
+./scrapai crawl-status [--project news]
+# spider          project   state     downloaded    non-empty
+# clarin_com       latinos   running        1,240    1,198 (97%)
+```
+
+It joins Pueue's run state with the crawl file: items downloaded and how many have non-empty content (i.e. extraction actually worked). Raw Pueue (`pueue status` / `pueue log <id>`) still works too.
 
 ### Using with AI Agents
 

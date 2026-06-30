@@ -12,7 +12,7 @@ from .spiders import spiders  # noqa: E402
 from .queue import queue  # noqa: E402
 from .show import show  # noqa: E402
 from .export import export  # noqa: E402
-from .crawl import crawl, crawl_all  # noqa: E402
+from .crawl import crawl, crawl_all, crawl_status  # noqa: E402
 from .db import db  # noqa: E402
 from .inspect_cmd import inspect_cmd  # noqa: E402
 from .analyze import analyze  # noqa: E402
@@ -38,6 +38,7 @@ cli.add_command(show)
 cli.add_command(export)
 cli.add_command(crawl)
 cli.add_command(crawl_all, "crawl-all")
+cli.add_command(crawl_status)
 cli.add_command(db)
 cli.add_command(inspect_cmd, "inspect")
 cli.add_command(analyze)
