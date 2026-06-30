@@ -216,7 +216,7 @@ def crawl_status(project):
     """Show each scrapai crawl's run state + how much it has downloaded.
 
     Joins Pueue's run state (running/queued/done/...) with the crawl file:
-    items downloaded, and how many have non-empty content (extraction worked).
+    items downloaded, and how many have content text (extraction worked).
     """
     if not shutil.which("pueue"):
         click.echo("Pueue not installed - no detached crawls to report.")
@@ -257,7 +257,7 @@ def crawl_status(project):
 
     click.echo(
         f"{'spider':<24} {'project':<12} {'state':<9} {'downloaded':>10} "
-        f"{'non-empty':>14}  {'start':<14} {'end':<14}"
+        f"{'with-content':>14}  {'start':<14} {'end':<14}"
     )
     for spider, proj, state, downloaded, non_empty, start, end in sorted(rows):
         pct = f"{non_empty} ({non_empty * 100 // downloaded}%)" if downloaded else "0"
