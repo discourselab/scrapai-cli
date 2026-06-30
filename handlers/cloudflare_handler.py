@@ -2,12 +2,17 @@
 Scrapy download handler for Cloudflare-protected sites.
 
 This handler uses a hybrid approach:
-1. Browser verification (once per 25 min) to get CF cookies
-2. Fast HTTP requests with cached cookies for subsequent requests
-3. Automatic fallback to browser if cookies become invalid
+1. A central browser verifies CF once per host (cookies are per-hostname) to get
+   the CF cookie. Verification is held at one gate, so concurrent requests never
+   drive the browser at the same time.
+2. Fast concurrent HTTP requests with the cached cookie for everything else.
+3. Reactive (not time-based) reverify: only when a host has no cookie yet, or an
+   HTTP response comes back blocked. On a block, all requests hold, ONE
+   reverifies, everyone retries with the fresh cookie — so a transient cookie
+   death pauses briefly instead of failing requests.
 
 Strategies:
-- 'hybrid': Browser once + HTTP with cookies (fast, default)
+- 'hybrid': Browser once per host + HTTP with cookies (fast, default)
 - 'browser_only': Browser for every request (slow, legacy)
 """
 
@@ -16,6 +21,7 @@ import logging
 import threading
 import time
 from typing import Dict, Optional
+from urllib.parse import urlparse
 
 from scrapy.http import HtmlResponse, Request, XmlResponse
 from twisted.internet import threads
@@ -58,13 +64,12 @@ class CloudflareDownloadHandler:
        - Most reliable, but slow
 
     Cookie Management:
-    - Cookies cached per spider
-    - Proactive refresh before expiry (25 min)
-    - Automatic fallback to browser on block
+    - Cookies cached per spider + host
+    - Reactive reverify (no timer): on first hit of a host, or on a blocked
+      response — held at one gate so the browser runs once
 
     Settings:
     - CLOUDFLARE_STRATEGY: 'hybrid' or 'browser_only' (default: 'hybrid')
-    - CLOUDFLARE_COOKIE_REFRESH_THRESHOLD: seconds before refresh (default: 1500)
     """
 
     lazy = True  # Scrapy lazy loading attribute
@@ -85,13 +90,18 @@ class CloudflareDownloadHandler:
     _event_loop_thread = None
     _event_loop_lock = threading.Lock()
 
-    # Cookie cache: {spider_name: {'cookies': {}, 'user_agent': str, 'timestamp': float}}
+    # Cookie cache keyed by "<spider>|<host>" — CF cookies are per-hostname, so
+    # each host (www., hemeroteca., …) verifies independently.
+    # Value: {'cookies': {}, 'user_agent': str, 'seq': int, ...}
     _cookie_cache: Dict[str, Dict] = {}
     _cookie_cache_lock = threading.Lock()
-    _refresh_lock = None  # Async lock for cookie refresh (created on event loop)
+    _refresh_lock = None  # Async lock: holds all requests during one reverify
+    _cookie_seq = 0  # monotonic; identifies a cookie generation for the gate
 
-    # Default: refresh cookies after 10 minutes
-    DEFAULT_COOKIE_REFRESH_THRESHOLD = 600  # seconds (10 minutes)
+    @staticmethod
+    def _cache_key(spider_name, url):
+        """Per-spider, per-host cookie key."""
+        return f"{spider_name}|{urlparse(url).hostname}"
 
     def __init__(self, settings, crawler=None):
         """Initialize the handler.
@@ -272,144 +282,95 @@ class CloudflareDownloadHandler:
             raise
 
     async def _hybrid_fetch_async(self, request: Request, spider):
-        """Async implementation of hybrid fetch."""
+        """Browser verifies a host once -> cached cookie -> fast concurrent HTTP.
+
+        No time-based reverify: the browser is touched only when a host has no
+        cookie yet, or an HTTP response comes back blocked. On a block, all
+        requests hold at one gate, ONE reverifies, everyone retries — so a
+        transient cookie death never fails a request, it just pauses briefly.
+        """
         spider_name = spider.name
+        key = self._cache_key(spider_name, request.url)
 
-        # Check if we need cookies (first request or expired)
-        need_refresh = await self._should_refresh_cookies(spider_name, spider)
+        # First hit for this host: verify (held at the gate so only one browser run).
+        if key not in CloudflareDownloadHandler._cookie_cache:
+            await self._reverify(key, request.url, spider, used_seq=None)
 
-        if need_refresh:
-            await self._refresh_cookies(spider_name, request.url, spider)
-
-        # Get cached cookies and check if we already have HTML for this URL
-        cached = CloudflareDownloadHandler._cookie_cache.get(spider_name)
+        cached = CloudflareDownloadHandler._cookie_cache.get(key)
         if not cached:
-            raise Exception("No cookies available after refresh")
+            raise Exception(f"No cookies available after verify for {request.url}")
 
-        # If we just fetched this same URL with browser during refresh, reuse that HTML
+        # Reuse the HTML the browser just fetched during a verify of this exact URL.
         if cached.get("last_browser_url") == request.url and cached.get(
             "last_browser_html"
         ):
-            logger.debug(f"[{spider_name}] Reusing browser HTML for {request.url}")
             html = cached["last_browser_html"]
-            # Clear cached HTML after using (one-time use to avoid stale data)
             with CloudflareDownloadHandler._cookie_cache_lock:
-                if (
-                    "last_browser_html"
-                    in CloudflareDownloadHandler._cookie_cache[spider_name]
-                ):
-                    CloudflareDownloadHandler._cookie_cache[spider_name][
-                        "last_browser_html"
-                    ] = None
-                    CloudflareDownloadHandler._cookie_cache[spider_name][
-                        "last_browser_url"
-                    ] = None
+                entry = CloudflareDownloadHandler._cookie_cache.get(key)
+                if entry:
+                    entry["last_browser_html"] = None
+                    entry["last_browser_url"] = None
             return html
 
-        # Otherwise fetch with HTTP + cookies
+        # Fast path: HTTP with the cached cookie.
         html = await self._fetch_with_http(request.url, cached)
 
-        # Skip blocking detection for robots.txt and other utility files
         is_utility_file = request.url.endswith(("robots.txt", "sitemap.xml", ".ico"))
-
-        # Check if blocked (skip for utility files to avoid false positives)
         if not is_utility_file and self._is_blocked(html):
-            logger.warning(f"[{spider_name}] Blocked despite cookies - re-verifying CF")
-            # Invalidate cache and retry
-            await self._invalidate_cookies(spider_name)
-            await self._refresh_cookies(spider_name, request.url, spider)
-            cached = CloudflareDownloadHandler._cookie_cache[spider_name]
+            # Blocked: hold + reverify once + retry with the fresh cookie.
+            logger.warning(
+                f"[{spider_name}] Blocked on {urlparse(request.url).hostname} "
+                "- holding to reverify"
+            )
+            await self._reverify(key, request.url, spider, used_seq=cached.get("seq"))
+            cached = CloudflareDownloadHandler._cookie_cache[key]
             html = await self._fetch_with_http(request.url, cached)
-
             if self._is_blocked(html):
-                # Still blocked - fallback to browser
-                logger.error(f"[{spider_name}] Still blocked - falling back to browser")
-                html = await self._fetch_with_browser(request.url, spider)
+                # Still blocked right after a fresh verify => a real block
+                # (IP/rate limit), not a stale cookie. Surface it.
+                raise Exception(f"Still blocked after reverify: {request.url}")
 
         return html
 
-    async def _should_refresh_cookies(self, spider_name: str, spider) -> bool:
-        """Check if cookies need refreshing."""
-        spider_settings = getattr(spider, "custom_settings", {})
-        threshold = spider_settings.get(
-            "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD", self.DEFAULT_COOKIE_REFRESH_THRESHOLD
-        )
-
-        with CloudflareDownloadHandler._cookie_cache_lock:
-            if spider_name not in CloudflareDownloadHandler._cookie_cache:
-                return True
-
-            cached = CloudflareDownloadHandler._cookie_cache[spider_name]
-            age = time.time() - cached["timestamp"]
-
-            if age > threshold:
-                logger.info(
-                    f"[{spider_name}] Cookies aging ({age/60:.1f} min) - refreshing proactively"
-                )
-                return True
-
-            return False
-
-    async def _refresh_cookies(self, spider_name: str, url: str, spider):
-        """Get fresh cookies via browser (thread-safe, only one refresh at a time)."""
-        # Lazy lock creation on correct event loop
+    async def _reverify(self, key: str, url: str, spider, used_seq):
+        """The gate: hold all callers, let ONE drive the browser, cache the host
+        cookie. `used_seq` is the cookie generation the caller already tried —
+        if the cache now holds a newer one, another caller already reverified
+        and we return so the caller retries HTTP instead of re-driving the
+        browser. `used_seq=None` is a first-hit (verify if no cookie exists)."""
         if CloudflareDownloadHandler._refresh_lock is None:
             CloudflareDownloadHandler._refresh_lock = asyncio.Lock()
 
-        # Use lock to prevent concurrent refresh operations
         async with CloudflareDownloadHandler._refresh_lock:
-            # Double-check if another request already refreshed while we waited
             with CloudflareDownloadHandler._cookie_cache_lock:
-                cached = CloudflareDownloadHandler._cookie_cache.get(spider_name)
-                if cached:
-                    age = time.time() - cached["timestamp"]
-                    spider_settings = getattr(spider, "custom_settings", {})
-                    threshold = spider_settings.get(
-                        "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD",
-                        self.DEFAULT_COOKIE_REFRESH_THRESHOLD,
-                    )
-                    if age < threshold:
-                        # Another request already refreshed, use those cookies
-                        logger.info(
-                            f"[{spider_name}] Cookies already refreshed by another request"
-                        )
-                        return
+                cached = CloudflareDownloadHandler._cookie_cache.get(key)
+                already = cached is not None and (
+                    used_seq is None or cached.get("seq", 0) > used_seq
+                )
+            if already:
+                logger.info(f"[{key}] Cookie already (re)verified by another request")
+                return
 
-            # Log AFTER acquiring lock (only winning thread logs this)
-            logger.info(f"[{spider_name}] Getting/refreshing CF cookies via browser")
-
+            host = urlparse(url).hostname
+            logger.info(f"[{key}] Verifying CF for host {host} via browser")
             await self._ensure_browser_started(spider)
-
-            # Fetch page with browser to get cookies
             html = await self._fetch_with_browser(url, spider)
-
             if not html:
                 raise Exception(f"Failed to verify CF for {url}")
+            cookies, user_agent = await self._extract_cookies_from_browser(url)
 
-            # Extract cookies from browser
-            cookies, user_agent = await self._extract_cookies_from_browser()
-
-            # Cache cookies and the HTML we just fetched
             with CloudflareDownloadHandler._cookie_cache_lock:
-                CloudflareDownloadHandler._cookie_cache[spider_name] = {
+                CloudflareDownloadHandler._cookie_seq += 1
+                CloudflareDownloadHandler._cookie_cache[key] = {
                     "cookies": cookies,
                     "user_agent": user_agent,
+                    "seq": CloudflareDownloadHandler._cookie_seq,
                     "timestamp": time.time(),
                     "last_browser_url": url,
                     "last_browser_html": html,
                 }
-
             cookie_names = ", ".join(sorted(cookies.keys())) or "none"
-            logger.info(
-                f"[{spider_name}] Cached {len(cookies)} cookies: {cookie_names}"
-            )
-
-    async def _invalidate_cookies(self, spider_name: str):
-        """Invalidate cached cookies."""
-        with CloudflareDownloadHandler._cookie_cache_lock:
-            if spider_name in CloudflareDownloadHandler._cookie_cache:
-                del CloudflareDownloadHandler._cookie_cache[spider_name]
-                logger.info(f"[{spider_name}] Cookie cache invalidated")
+            logger.info(f"[{key}] Cached {len(cookies)} cookies: {cookie_names}")
 
     async def _fetch_with_http(self, url: str, cached: Dict) -> Optional[str]:
         """Fetch URL with HTTP + cached cookies using curl_cffi for TLS stealth."""
@@ -593,8 +554,12 @@ class CloudflareDownloadHandler:
         logger.debug(f"Browser fetch: {url} -> {len(html) if html else 0} bytes")
         return html
 
-    async def _extract_cookies_from_browser(self):
-        """Extract cookies and user-agent from browser."""
+    async def _extract_cookies_from_browser(self, url=None):
+        """Extract cookies + user-agent from the browser, scoped to ``url``'s
+        host. The shared context accumulates cookies from every subdomain it
+        visits; passing the URL makes Playwright return only the cookies valid
+        for that host, so a host's cached entry can't pick up another
+        subdomain's per-host cf_clearance."""
         if not CloudflareDownloadHandler._shared_browser:
             raise Exception("Browser not started")
 
@@ -604,8 +569,8 @@ class CloudflareDownloadHandler:
         if not context or not page:
             raise Exception("No browser context/page available")
 
-        # Get cookies via Playwright API
-        cookies_list = await context.cookies()
+        # Scope to the URL's host (None -> all, for back-compat)
+        cookies_list = await context.cookies(url)
         cookies = {c["name"]: c["value"] for c in cookies_list if c.get("name")}
 
         # Get user agent

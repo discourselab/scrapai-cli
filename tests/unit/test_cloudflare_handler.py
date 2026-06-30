@@ -28,94 +28,9 @@ class TestCloudflareHandlerInit:
         assert handler.crawler == crawler
         assert handler.loop is None
 
-    @pytest.mark.unit
-    def test_default_cookie_refresh_threshold(self):
-        """Test default cookie refresh is 10 minutes (600 seconds)."""
-        assert CloudflareDownloadHandler.DEFAULT_COOKIE_REFRESH_THRESHOLD == 600
 
-
-class TestCookieRefreshLogic:
-    """Test cookie refresh timing and thresholds."""
-
-    @pytest.mark.unit
-    async def test_should_refresh_when_no_cookies(self):
-        """Test that handler refreshes cookies when cache is empty."""
-        handler = CloudflareDownloadHandler({})
-        spider = Mock()
-        spider.name = "test_spider"
-        spider.custom_settings = {}
-
-        # Clear cache
-        CloudflareDownloadHandler._cookie_cache = {}
-
-        should_refresh = await handler._should_refresh_cookies("test_spider", spider)
-
-        assert should_refresh is True
-
-    @pytest.mark.unit
-    async def test_should_not_refresh_when_cookies_fresh(self):
-        """Test that handler doesn't refresh fresh cookies."""
-        handler = CloudflareDownloadHandler({})
-        spider = Mock()
-        spider.name = "test_spider"
-        spider.custom_settings = {}
-
-        # Add fresh cookies (just created)
-        CloudflareDownloadHandler._cookie_cache = {
-            "test_spider": {
-                "cookies": {"cf_clearance": "test_token"},
-                "user_agent": "test_agent",
-                "timestamp": time.time(),  # Fresh
-            }
-        }
-
-        should_refresh = await handler._should_refresh_cookies("test_spider", spider)
-
-        assert should_refresh is False
-
-    @pytest.mark.unit
-    async def test_should_refresh_when_cookies_expired(self):
-        """Test that handler refreshes cookies after threshold."""
-        handler = CloudflareDownloadHandler({})
-        spider = Mock()
-        spider.name = "test_spider"
-        spider.custom_settings = {"CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 600}  # 10 min
-
-        # Add expired cookies (11 minutes old)
-        CloudflareDownloadHandler._cookie_cache = {
-            "test_spider": {
-                "cookies": {"cf_clearance": "old_token"},
-                "user_agent": "test_agent",
-                "timestamp": time.time() - 660,  # 11 minutes ago
-            }
-        }
-
-        should_refresh = await handler._should_refresh_cookies("test_spider", spider)
-
-        assert should_refresh is True
-
-    @pytest.mark.unit
-    async def test_custom_refresh_threshold(self):
-        """Test custom cookie refresh threshold."""
-        handler = CloudflareDownloadHandler({})
-        spider = Mock()
-        spider.name = "test_spider"
-        spider.custom_settings = {
-            "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 300
-        }  # 5 min custom
-
-        # Cookies 6 minutes old (should refresh with 5 min threshold)
-        CloudflareDownloadHandler._cookie_cache = {
-            "test_spider": {
-                "cookies": {"cf_clearance": "token"},
-                "user_agent": "agent",
-                "timestamp": time.time() - 360,  # 6 minutes ago
-            }
-        }
-
-        should_refresh = await handler._should_refresh_cookies("test_spider", spider)
-
-        assert should_refresh is True
+# Cookie verification is reactive + host-keyed now (no time-based refresh);
+# that behavior is covered by tests/unit/test_cf_reactive_gate.py.
 
 
 class TestBlockDetection:
@@ -239,27 +154,6 @@ class TestCookieCacheManagement:
         assert "timestamp" in cached
 
     @pytest.mark.unit
-    async def test_invalidate_cookies_removes_from_cache(self):
-        """Test that invalidating cookies removes them from cache."""
-        handler = CloudflareDownloadHandler({})
-        spider_name = "test_spider"
-
-        # Add cookies
-        CloudflareDownloadHandler._cookie_cache = {
-            spider_name: {
-                "cookies": {"cf_clearance": "token"},
-                "user_agent": "agent",
-                "timestamp": time.time(),
-            }
-        }
-
-        # Invalidate
-        await handler._invalidate_cookies(spider_name)
-
-        # Should be removed
-        assert spider_name not in CloudflareDownloadHandler._cookie_cache
-
-    @pytest.mark.unit
     def test_multiple_spiders_have_separate_cookies(self):
         """Test that different spiders have isolated cookie caches."""
         CloudflareDownloadHandler._cookie_cache = {
@@ -303,11 +197,12 @@ class TestHybridFetchLogic:
         request = Mock(spec=Request)
         request.url = "https://example.com/page"
 
-        # Mock fresh cookies
+        # Cached cookie for this host (key is "<spider>|<host>") -> skips verify
         CloudflareDownloadHandler._cookie_cache = {
-            "test_spider": {
+            "test_spider|example.com": {
                 "cookies": {"cf_clearance": "valid_token"},
                 "user_agent": "Mozilla/5.0",
+                "seq": 1,
                 "timestamp": time.time(),
             }
         }
@@ -364,19 +259,12 @@ class TestErrorHandling:
         request = Mock(spec=Request)
         request.url = "https://example.com"
 
-        # Mock: cookies needed, refresh succeeds, but cache still empty
-        with patch.object(
-            handler,
-            "_should_refresh_cookies",
-            new_callable=AsyncMock,
-            return_value=True,
-        ):
-            with patch.object(handler, "_refresh_cookies", new_callable=AsyncMock):
-                # Cache is empty after refresh (shouldn't happen, but test error handling)
-                CloudflareDownloadHandler._cookie_cache = {}
+        # Reverify is a no-op (cache stays empty) -> fetch must raise, not hang
+        with patch.object(handler, "_reverify", new_callable=AsyncMock):
+            CloudflareDownloadHandler._cookie_cache = {}
 
-                with pytest.raises(Exception, match="No cookies available"):
-                    handler._hybrid_fetch_sync(request, spider)
+            with pytest.raises(Exception, match="No cookies available"):
+                handler._hybrid_fetch_sync(request, spider)
 
 
 class TestHandlerLifecycle:
