@@ -147,6 +147,57 @@ class PaginatedListingSchema(BaseModel):
     )
 
 
+class GeneratedVarSchema(BaseModel):
+    """One enumerable variable -> a sequence of string values."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    type: Literal["range", "list", "date"]
+    from_: Optional[Union[int, str]] = Field(
+        default=None, alias="from"
+    )  # range:int, date:str
+    to: Optional[Union[int, str]] = None  # range:int, date:str
+    step: int = Field(default=1, ge=1)  # range
+    values: Optional[List[str]] = None  # list
+    format: str = "%Y-%m-%d"  # date
+    step_days: int = Field(default=1, ge=1)  # date
+
+    @model_validator(mode="after")
+    def _check(self):
+        if self.type == "range" and not (
+            isinstance(self.from_, int) and isinstance(self.to, int)
+        ):
+            raise ValueError("range var needs integer 'from' and 'to'")
+        if self.type == "list" and not self.values:
+            raise ValueError("list var needs non-empty 'values'")
+        if self.type == "date" and not (
+            isinstance(self.from_, str) and isinstance(self.to, str)
+        ):
+            raise ValueError("date var needs string 'from' and 'to'")
+        return self
+
+
+class GeneratedUrlSchema(BaseModel):
+    """A URL template + named vars; expands to the cartesian product of all vars."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    template: str = Field(..., description="URL with {name} placeholders")
+    vars: Dict[str, GeneratedVarSchema] = Field(
+        ..., description="placeholder name -> var spec"
+    )
+    callback: str = Field(
+        default="parse_article", description="spider method each URL routes to"
+    )
+
+    @model_validator(mode="after")
+    def _placeholders_match_vars(self):
+        ph = set(re.findall(r"\{(\w+)\}", self.template))
+        if ph != set(self.vars):
+            raise ValueError(f"template placeholders {ph} != vars {set(self.vars)}")
+        return self
+
+
 class ProcessorSchema(BaseModel):
     """Schema for field processors."""
 
@@ -248,6 +299,10 @@ class SpiderSettingsSchema(BaseModel):
     PAGINATED_LISTINGS: Optional[List[PaginatedListingSchema]] = Field(
         default=None,
         description="JS-paginated listings to enumerate via browser clicks at crawl start",
+    )
+    GENERATED_URLS: Optional[List[GeneratedUrlSchema]] = Field(
+        default=None,
+        description="Generated start URLs from enumerable vars, expanded lazily at crawl start",
     )
     FIELDS: Optional[Dict[str, FieldExtractDirective]] = Field(
         default=None,
@@ -503,7 +558,10 @@ class SpiderConfigSchema(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Spider name")
     source_url: str = Field(..., min_length=1, description="Original website URL")
     allowed_domains: List[str] = Field(..., min_items=1, description="Allowed domains")
-    start_urls: List[str] = Field(..., min_items=1, description="Starting URLs")
+    start_urls: List[str] = Field(
+        ...,
+        description="Starting URLs (may be empty if GENERATED_URLS/PAGINATED_LISTINGS seeds the crawl)",
+    )
     rules: List[SpiderRuleSchema] = Field(
         default_factory=list, description="URL matching rules"
     )
@@ -527,6 +585,22 @@ class SpiderConfigSchema(BaseModel):
         # (no spaces, quotes, semicolons, etc. allowed)
         # No need for additional keyword checking
         return v
+
+    @model_validator(mode="after")
+    def _has_a_seed_source(self):
+        """start_urls may be empty, but only if a generator seeds the crawl —
+        a spider with no start_urls and no GENERATED_URLS/PAGINATED_LISTINGS would
+        crawl nothing."""
+        if self.start_urls:
+            return self
+        if self.settings and (
+            self.settings.GENERATED_URLS or self.settings.PAGINATED_LISTINGS
+        ):
+            return self
+        raise ValueError(
+            "start_urls is empty and no GENERATED_URLS/PAGINATED_LISTINGS is set "
+            "- the crawl would have no seeds"
+        )
 
     @field_validator("source_url", "start_urls")
     @classmethod

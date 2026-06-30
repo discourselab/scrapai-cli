@@ -4,10 +4,74 @@ from scrapy.spiders import CrawlSpider, Rule
 from core.db import get_db
 from core.models import Spider
 from .base import BaseDBSpiderMixin, _pdf_links
+import datetime as _dt
+import itertools as _it
 import logging
 import re
 
 logger = logging.getLogger(__name__)
+
+
+def _expand_var(v):
+    """One GENERATED_URLS variable -> a list of string values.
+
+    `from` is a Python keyword, so the schema stores it under the field name
+    `from_` after model_dump; accept either (as-authored "from" or stored
+    "from_"), mirroring how FieldExtractDirective is read in base.py.
+    """
+    frm = v["from"] if "from" in v else v.get("from_")
+    if v["type"] == "range":
+        step = v.get("step", 1)
+        return [str(i) for i in range(frm, v["to"] + 1, step)]
+    if v["type"] == "list":
+        return [str(x) for x in v["values"]]
+    if v["type"] == "date":
+        fmt = v.get("format", "%Y-%m-%d")
+        step = _dt.timedelta(days=v.get("step_days", 1))
+        d = _dt.datetime.strptime(frm, fmt).date()
+        end = _dt.datetime.strptime(v["to"], fmt).date()
+        out = []
+        while d <= end:
+            out.append(d.strftime(fmt))
+            d += step
+        return out
+    raise ValueError(f"unknown GENERATED_URLS var type {v.get('type')!r}")
+
+
+def _generated_urls(cfg):
+    """Yield every URL from a GENERATED_URLS entry (cartesian product of vars).
+
+    The product streams lazily; each var's value pool is materialized by
+    `_expand_var` (fine at archive scale; chunk a single 10M+ var across runs).
+    """
+    names = list(cfg["vars"].keys())
+    seqs = [_expand_var(cfg["vars"][n]) for n in names]
+    template = cfg["template"]
+    for combo in _it.product(*seqs):
+        url = template
+        for n, val in zip(names, combo):
+            url = url.replace("{" + n + "}", val)
+        yield url
+
+
+def _generated_requests(spider, cfg):
+    """Yield a Request for each generated URL, routed to an EXPLICIT callback.
+
+    A missing/misspelled callback RAISES: a Request(callback=None) on a
+    CrawlSpider hits CrawlSpider.parse, which runs the rule engine and FOLLOWS
+    links — the opposite of "generate, don't follow", and it fails silently.
+    No dont_filter: generated URLs are unique, so the dupefilter dedups within a
+    run and (persisted in the checkpoint) lets a resume skip completed URLs.
+    """
+    cb_name = cfg.get("callback", "parse_article")
+    cb = getattr(spider, cb_name, None)
+    if cb is None:
+        raise ValueError(
+            f"GENERATED_URLS callback {cb_name!r} not found on spider "
+            "(callback=None would fall back to CrawlSpider.parse and FOLLOW links)"
+        )
+    for url in _generated_urls(cfg):
+        yield Request(url, callback=cb)
 
 
 class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
@@ -124,6 +188,11 @@ class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
         """
         for url in self.start_urls:
             yield Request(url, dont_filter=True)
+
+        # Generated start URLs from enumerable vars (date/page/id ranges).
+        for cfg in self.custom_settings.get("GENERATED_URLS") or []:
+            for req in _generated_requests(self, cfg):
+                yield req
 
         listings = self.custom_settings.get("PAGINATED_LISTINGS") or []
         if not listings:
