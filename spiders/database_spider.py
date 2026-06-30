@@ -1,4 +1,4 @@
-from scrapy import Request
+from scrapy import Request, FormRequest
 from scrapy.linkextractors import LinkExtractor, IGNORED_EXTENSIONS
 from scrapy.spiders import CrawlSpider, Rule
 from core.db import get_db
@@ -38,40 +38,62 @@ def _expand_var(v):
     raise ValueError(f"unknown GENERATED_URLS var type {v.get('type')!r}")
 
 
-def _generated_urls(cfg):
-    """Yield every URL from a GENERATED_URLS entry (cartesian product of vars).
+def _fill(template, subs):
+    """Substitute {name} placeholders in a string."""
+    for n, val in subs.items():
+        template = template.replace("{" + n + "}", val)
+    return template
 
-    The product streams lazily; each var's value pool is materialized by
-    `_expand_var` (fine at archive scale; chunk a single 10M+ var across runs).
+
+def _var_combos(cfg):
+    """Yield each {name: value} substitution (cartesian product of the vars).
+
+    Streams lazily; each var's value pool is materialized by `_expand_var` (fine
+    at archive scale; chunk a single 10M+ var across runs).
     """
     names = list(cfg["vars"].keys())
     seqs = [_expand_var(cfg["vars"][n]) for n in names]
-    template = cfg["template"]
     for combo in _it.product(*seqs):
-        url = template
-        for n, val in zip(names, combo):
-            url = url.replace("{" + n + "}", val)
-        yield url
+        yield dict(zip(names, combo))
+
+
+def _generated_urls(cfg):
+    """Yield every URL from a GENERATED_URLS entry (template substituted)."""
+    for subs in _var_combos(cfg):
+        yield _fill(cfg["template"], subs)
 
 
 def _generated_requests(spider, cfg):
-    """Yield a Request for each generated URL, routed to an EXPLICIT callback.
+    """Yield a Request/FormRequest per generated combo.
 
-    A missing/misspelled callback RAISES: a Request(callback=None) on a
-    CrawlSpider hits CrawlSpider.parse, which runs the rule engine and FOLLOWS
-    links — the opposite of "generate, don't follow", and it fails silently.
-    No dont_filter: generated URLs are unique, so the dupefilter dedups within a
-    run and (persisted in the checkpoint) lets a resume skip completed URLs.
+    follow=True routes the response through the rule engine (`_parse` — NOT the
+    public `parse`, which raises NotImplementedError on a CrawlSpider) so its
+    links are followed via the spider's rules. Otherwise each request goes to an
+    EXPLICIT terminal callback (missing -> raise; `parse_article` default).
+    POST requests use FormRequest with dont_filter (the body isn't in the URL
+    fingerprint, so without it every page would dedup to one); GET requests keep
+    no dont_filter so the dupefilter dedups and a checkpoint can resume.
     """
-    cb_name = cfg.get("callback", "parse_article")
-    cb = getattr(spider, cb_name, None)
-    if cb is None:
-        raise ValueError(
-            f"GENERATED_URLS callback {cb_name!r} not found on spider "
-            "(callback=None would fall back to CrawlSpider.parse and FOLLOW links)"
-        )
-    for url in _generated_urls(cfg):
-        yield Request(url, callback=cb)
+    if cfg.get("follow"):
+        cb = spider._parse  # rule engine: follow the response's links via rules
+    else:
+        cb_name = cfg.get("callback") or "parse_article"
+        cb = getattr(spider, cb_name, None)
+        if cb is None:
+            raise ValueError(
+                f"GENERATED_URLS callback {cb_name!r} not found on spider "
+                "(would otherwise route to the rule engine and FOLLOW links)"
+            )
+
+    is_post = cfg.get("method", "GET").upper() == "POST"
+    for subs in _var_combos(cfg):
+        if is_post:
+            fd = {k: _fill(v, subs) for k, v in (cfg.get("formdata") or {}).items()}
+            yield FormRequest(
+                cfg["template"], formdata=fd, dont_filter=True, callback=cb
+            )
+        else:
+            yield Request(_fill(cfg["template"], subs), callback=cb)
 
 
 class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):

@@ -1,10 +1,12 @@
 """GENERATED_URLS — lazy start-request generator from enumerable vars.
 
 A URL template with {name} placeholders + a vars map; emits the cartesian
-product of all vars. For enumerable archives (date/page/id ranges) with no
-followable links. No dont_filter -> the dupefilter dedups and the checkpoint can
-actually resume. A missing callback RAISES (a callback=None Request would hit
-CrawlSpider.parse and follow links — the opposite of this feature).
+product of all vars. GET generation routes each URL to a terminal callback (no
+dont_filter -> dedup + checkpoint resume). follow=True routes the response
+through the rule engine (`_parse`, not the public `parse` which raises) so its
+links are followed; POST uses FormRequest with dont_filter (the body isn't in
+the URL fingerprint). For enumerable archives / paginated search backends with
+no followable links.
 """
 
 import pytest
@@ -99,8 +101,54 @@ class _FakeSpider:
     async def parse_page(self, response):
         yield {}
 
+    async def parse_article(self, response):
+        yield {}
 
-def test_generated_requests_route_to_callback_without_dont_filter():
+    def _parse(self, response):  # CrawlSpider's rule engine (follow links)
+        pass
+
+
+def test_generated_requests_default_callback_is_parse_article():
+    spider = _FakeSpider()
+    cfg = {
+        "template": "https://s/{p}",
+        "vars": {"p": {"type": "range", "from": 1, "to": 1}},
+    }
+    reqs = list(_generated_requests(spider, cfg))
+    assert reqs[0].callback == spider.parse_article
+
+
+def test_post_generates_formrequest_with_filled_formdata():
+    spider = _FakeSpider()
+    cfg = {
+        "template": "https://s/buscador",
+        "method": "POST",
+        "formdata": {"query": "", "pagina": "{p}"},
+        "vars": {"p": {"type": "range", "from": 1, "to": 2}},
+        "follow": True,
+    }
+    reqs = list(_generated_requests(spider, cfg))
+    assert all(r.method == "POST" for r in reqs)
+    assert all(r.url == "https://s/buscador" for r in reqs)  # template not substituted
+    assert all(r.dont_filter for r in reqs)  # POST body not in the URL fingerprint
+    bodies = [r.body.decode() for r in reqs]
+    assert any("pagina=1" in b for b in bodies)
+    assert any("pagina=2" in b for b in bodies)
+
+
+def test_follow_routes_to_rule_engine_parse_not_public_parse():
+    spider = _FakeSpider()
+    cfg = {
+        "template": "https://s/{p}",
+        "vars": {"p": {"type": "range", "from": 1, "to": 1}},
+        "follow": True,
+    }
+    reqs = list(_generated_requests(spider, cfg))
+    # _parse is the rule engine; public parse raises NotImplementedError on CrawlSpider
+    assert reqs[0].callback == spider._parse
+
+
+def test_get_terminal_keeps_no_dont_filter():
     spider = _FakeSpider()
     cfg = {
         "template": "https://s/{p}",
@@ -128,11 +176,44 @@ def test_generated_requests_raise_on_missing_callback():
 # --- schema validation (at import) ----------------------------------------
 
 
-def test_schema_valid_defaults_callback():
+def test_schema_callback_optional():
+    # callback unset at schema level (runtime defaults a non-follow entry to
+    # parse_article); see test_generated_requests_default_callback_is_parse_article
     s = GeneratedUrlSchema(
         template="https://s/{p}", vars={"p": {"type": "range", "from": 1, "to": 2}}
     )
-    assert s.callback == "parse_article"
+    assert s.callback is None
+    assert s.method == "GET" and s.follow is False
+
+
+def test_schema_post_requires_formdata():
+    with pytest.raises(ValidationError):
+        GeneratedUrlSchema(
+            template="https://s/buscador",
+            method="POST",
+            vars={},
+        )
+
+
+def test_schema_post_placeholder_in_formdata_validates():
+    s = GeneratedUrlSchema(
+        template="https://s/buscador",
+        method="POST",
+        formdata={"query": "", "pagina": "{p}"},
+        vars={"p": {"type": "range", "from": 1, "to": 2}},
+        follow=True,
+    )
+    assert s.follow is True
+
+
+def test_schema_follow_and_callback_mutually_exclusive():
+    with pytest.raises(ValidationError):
+        GeneratedUrlSchema(
+            template="https://s/{p}",
+            vars={"p": {"type": "range", "from": 1, "to": 2}},
+            follow=True,
+            callback="parse_page",
+        )
 
 
 def test_schema_rejects_placeholder_var_mismatch():

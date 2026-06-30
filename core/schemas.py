@@ -186,15 +186,38 @@ class GeneratedUrlSchema(BaseModel):
     vars: Dict[str, GeneratedVarSchema] = Field(
         ..., description="placeholder name -> var spec"
     )
-    callback: str = Field(
-        default="parse_article", description="spider method each URL routes to"
+    callback: Optional[str] = Field(
+        default=None,
+        description="spider method each URL routes to (defaults to parse_article "
+        "at runtime; omit when follow=true)",
+    )
+    method: Literal["GET", "POST"] = Field(default="GET")
+    formdata: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="POST form fields; values may contain {name} placeholders",
+    )
+    follow: bool = Field(
+        default=False,
+        description="route the response through the rule engine (follow its links) "
+        "instead of a terminal callback; mutually exclusive with callback",
     )
 
     @model_validator(mode="after")
     def _placeholders_match_vars(self):
+        # Placeholders may live in the template (GET) or the formdata values (POST).
         ph = set(re.findall(r"\{(\w+)\}", self.template))
+        for val in (self.formdata or {}).values():
+            ph |= set(re.findall(r"\{(\w+)\}", val))
         if ph != set(self.vars):
-            raise ValueError(f"template placeholders {ph} != vars {set(self.vars)}")
+            raise ValueError(f"placeholders {ph} != vars {set(self.vars)}")
+        return self
+
+    @model_validator(mode="after")
+    def _check_method_and_routing(self):
+        if self.method == "POST" and not self.formdata:
+            raise ValueError("method=POST requires formdata")
+        if self.follow and self.callback:
+            raise ValueError("follow and callback are mutually exclusive")
         return self
 
 
