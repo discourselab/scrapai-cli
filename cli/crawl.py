@@ -232,12 +232,16 @@ def crawl_all(project, limit):
 
 
 @click.command("crawl-status")
+@click.argument("spider", required=False)
 @click.option("--project", default=None, help="Only show crawls in this project")
-def crawl_status(project):
+def crawl_status(spider, project):
     """Show each scrapai crawl's run state + how much it has downloaded.
 
     Joins Pueue's run state (running/queued/done/...) with the crawl file:
     items downloaded, and how many have content text (extraction worked).
+
+    No SPIDER: every spider (in the project, if given). Pass a SPIDER name to
+    report just that one - cheaper, since only its crawl file is read.
     """
     if not shutil.which("pueue"):
         click.echo("Pueue not installed - no detached crawls to report.")
@@ -256,10 +260,12 @@ def crawl_status(project):
         if not label.startswith("scrapai:"):
             continue
         parts = label.split(":")
-        proj, spider = (parts[1], parts[2]) if len(parts) == 3 else (None, parts[1])
+        proj, sp = (parts[1], parts[2]) if len(parts) == 3 else (None, parts[1])
         if project and proj != project:
             continue
-        key = (proj, spider)
+        if spider and sp != spider:
+            continue
+        key = (proj, sp)
         if key not in latest or int(tid) > latest[key][0]:
             latest[key] = (int(tid), task)
 
