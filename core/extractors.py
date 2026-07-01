@@ -3,13 +3,116 @@ import asyncio
 from abc import ABC, abstractmethod
 from typing import Optional, List, Dict
 
+import extruct
 import newspaper
 import trafilatura
 from bs4 import BeautifulSoup
+from dateutil import parser as _du_parser
 from markdownify import markdownify as _md
 from .schemas import ScrapedArticle
 
 logger = logging.getLogger(__name__)
+
+
+def _find_key(obj, key):
+    """First value for `key` anywhere in a nested structured-data object."""
+    if isinstance(obj, dict):
+        if obj.get(key):
+            return obj[key]
+        for v in obj.values():
+            found = _find_key(v, key)
+            if found:
+                return found
+    elif isinstance(obj, list):
+        for v in obj:
+            found = _find_key(v, key)
+            if found:
+                return found
+    return None
+
+
+def _og_property(og_items, name):
+    for og in og_items:
+        for k, v in og.get("properties", []):
+            if k == name and v:
+                return v
+    return None
+
+
+def extract_meta_date(html):
+    """Publish datetime from a page's STRUCTURED metadata (OG / JSON-LD /
+    microdata) via extruct, or None. Never the prose extractor's guess: it misses
+    dates and can return a wrong one (a comment/related timestamp) — a null is
+    refillable, a wrong date silently rots the corpus. It's ISO 8601, so dateutil
+    parses it (no dateparser needed)."""
+    if not html:
+        return None
+    try:
+        data = extruct.extract(
+            html, syntaxes=["opengraph", "json-ld", "microdata"], errors="ignore"
+        )
+    except Exception:
+        return None
+    raw = (
+        _og_property(data.get("opengraph", []), "article:published_time")
+        or _find_key(data.get("json-ld", []), "datePublished")
+        or _find_key(data.get("microdata", []), "datePublished")
+    )
+    if not raw:
+        # extruct covers OG/JSON-LD/microdata; a standalone itemprop meta or a
+        # bare <time datetime> is plain DOM — quick soup query for those.
+        soup = BeautifulSoup(html, "html.parser")
+        m = soup.find("meta", attrs={"itemprop": "datePublished"})
+        if m and m.get("content"):
+            raw = m["content"]
+        else:
+            t = soup.find("time", attrs={"datetime": True})
+            raw = t.get("datetime") if t else None
+    if not raw or not str(raw).strip():
+        return None
+    try:
+        return _du_parser.parse(str(raw).strip())
+    except (ValueError, OverflowError, TypeError):
+        return None
+
+
+def _author_names(value):
+    """Normalize a JSON-LD/microdata `author` value to a list of name strings.
+    Handles a plain string, a Person dict ({name: ...}), or a list of either."""
+    names = []
+    if isinstance(value, str):
+        if value.strip():
+            names.append(value.strip())
+    elif isinstance(value, dict):
+        n = value.get("name")
+        if isinstance(n, str) and n.strip():
+            names.append(n.strip())
+    elif isinstance(value, list):
+        for v in value:
+            names.extend(_author_names(v))
+    return names
+
+
+def extract_meta_author(html):
+    """Author(s) from a page's structured metadata (JSON-LD / microdata) via
+    extruct, or None. Comma-joined for multiple authors; URL-only values (OG
+    author is often a profile URL) are dropped."""
+    if not html:
+        return None
+    try:
+        data = extruct.extract(html, syntaxes=["json-ld", "microdata"], errors="ignore")
+    except Exception:
+        return None
+    raw = _find_key(data.get("json-ld", []), "author") or _find_key(
+        data.get("microdata", []), "author"
+    )
+    seen, out = set(), []
+    for name in _author_names(raw) if raw else []:
+        if name.startswith("http") or name in seen:
+            continue
+        seen.add(name)
+        out.append(name)
+    return ", ".join(out) if out else None
 
 
 def _extract_media(html: Optional[str]):
@@ -92,8 +195,13 @@ class NewspaperExtractor(BaseExtractor):
                 url=url,
                 title=title,
                 content=article.text,
-                author=", ".join(article.authors) if article.authors else None,
-                published_date=article.publish_date,
+                # author + date come from structured metadata (extruct), NEVER
+                # newspaper's heuristics — those miss values and return wrong
+                # ones. If metadata lacks them, an explicit selector (found by
+                # the agent) supplies them; otherwise null (a null is refillable,
+                # a wrong value silently rots the corpus).
+                author=extract_meta_author(html),
+                published_date=extract_meta_date(html),
                 source="newspaper4k",
                 metadata={
                     "keywords": article.keywords,
@@ -162,8 +270,10 @@ class TrafilaturaExtractor(BaseExtractor):
                 url=url,
                 title=title or "",
                 content=data.get("text"),
-                author=data.get("author"),
-                published_date=data.get("date"),
+                # author + date from structured metadata (extruct), never
+                # trafilatura's guess — same reasoning as NewspaperExtractor.
+                author=extract_meta_author(html),
+                published_date=extract_meta_date(html),
                 source="trafilatura",
                 metadata={
                     "description": data.get("description"),
@@ -223,6 +333,9 @@ class CustomExtractor(BaseExtractor):
             logger.debug(
                 f"Extracted author: '{author}' using selector '{self.selectors.get('author')}'"
             )
+            # No explicit author selector match -> structured metadata fallback.
+            if not author:
+                author = extract_meta_author(html)
 
             content = self._extract_text(soup, self.selectors.get("content"))
             content_len = len(content) if content else 0
@@ -244,7 +357,9 @@ class CustomExtractor(BaseExtractor):
                 )
                 return None
 
-            # Parse date if present
+            # Parse date if present (explicit selector wins); else fall back to
+            # structured metadata (OG/JSON-LD) so a config without a date
+            # selector still gets the date instead of null.
             published_date = None
             if date_str:
                 from dateutil import parser
@@ -256,6 +371,8 @@ class CustomExtractor(BaseExtractor):
                         published_date = parser.parse(date_str, fuzzy=True)
                     except Exception as e:
                         logger.debug(f"Failed to parse date '{date_str}': {e}")
+            if published_date is None:
+                published_date = extract_meta_date(html)
 
             # Extract custom fields into metadata
             metadata = {}

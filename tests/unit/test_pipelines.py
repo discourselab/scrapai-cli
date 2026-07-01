@@ -9,6 +9,8 @@ Covers two recently-fixed behaviors:
 """
 
 import logging
+from datetime import datetime, timezone, timedelta
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -16,7 +18,34 @@ from sqlalchemy.orm import sessionmaker
 import core.db as core_db
 from core.db import Base
 from core.models import Spider, ScrapedItem
-from pipelines import DatabasePipeline
+from pipelines import DatabasePipeline, _normalize_dt
+
+
+class TestNormalizeDt:
+    """published_date normalized to tz-aware UTC (matches scraped_at) so the
+    corpus never mixes timezones or naive/aware datetimes."""
+
+    @pytest.mark.unit
+    def test_none_passes_through(self):
+        assert _normalize_dt(None) is None
+
+    @pytest.mark.unit
+    def test_naive_assumed_utc(self):
+        d = _normalize_dt(datetime(2026, 6, 30, 11, 0))
+        assert d.tzinfo == timezone.utc and d.hour == 11
+
+    @pytest.mark.unit
+    def test_offset_converted_to_utc(self):
+        # 11:00 at -05:00 (Peru) == 16:00 UTC
+        d = _normalize_dt(
+            datetime(2026, 6, 30, 11, 0, tzinfo=timezone(timedelta(hours=-5)))
+        )
+        assert d.tzinfo == timezone.utc and d.hour == 16
+
+    @pytest.mark.unit
+    def test_utc_stays_utc(self):
+        d = _normalize_dt(datetime(2026, 6, 30, 11, 0, tzinfo=timezone.utc))
+        assert d.tzinfo == timezone.utc and d.hour == 11
 
 
 @pytest.fixture

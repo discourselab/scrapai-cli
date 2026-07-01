@@ -1,5 +1,20 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from itemadapter import ItemAdapter
+
+
+def _normalize_dt(dt):
+    """Normalize any publish datetime to tz-aware UTC (matching scraped_at).
+
+    Dates arrive parsed by different paths (extruct/dateutil in the site's own
+    offset, parse_datetime, custom selectors) — a mix of timezones and of
+    naive/aware. Storing one canonical form (UTC) keeps the corpus comparable
+    and sortable. A naive datetime is assumed to already be UTC.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def _serialize_datetime_recursive(obj):
@@ -172,7 +187,7 @@ class DatabasePipeline:
                 url=item["url"],
                 title=item.get("title"),
                 content=item.get("content"),
-                published_date=item.get("published_date"),
+                published_date=_normalize_dt(item.get("published_date")),
                 author=item.get("author"),
                 metadata_json=metadata,
             )
