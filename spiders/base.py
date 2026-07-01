@@ -7,6 +7,21 @@ import re
 logger = logging.getLogger(__name__)
 
 
+def _apply_meta_fallback(item, html):
+    """Fill published_date/author from structured metadata (extruct) when the
+    config's selectors didn't source them. The generic ('auto') path already
+    runs extruct via SmartExtractor; this covers the pure-CSS path, which skips
+    the generic extractor — so structured date/author works in both. Explicit
+    selector values are never overridden.
+    """
+    from core.extractors import extract_meta_date, extract_meta_author
+
+    if not item.get("published_date"):
+        item["published_date"] = extract_meta_date(html)
+    if not item.get("author"):
+        item["author"] = extract_meta_author(html)
+
+
 def with_scroll_fallback(strategies, custom_settings):
     """Ensure the playwright strategy is present when INFINITE_SCROLL is set.
 
@@ -368,6 +383,9 @@ class BaseDBSpiderMixin:
             "extracted_at": datetime.now(timezone.utc),
         }
         self._apply_field_extract(item, response)
+        # Pure-CSS mode skips the generic extractor (where extruct runs), so
+        # source date/author from structured metadata if selectors didn't.
+        _apply_meta_fallback(item, response.text)
         return item
 
     def _resolve_field_extract_config(self):
