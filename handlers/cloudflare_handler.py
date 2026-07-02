@@ -250,6 +250,7 @@ class CloudflareDownloadHandler:
                 self._browser_only_fetch_async(request, spider)
             )
 
+            self._stop_if_session_expired(html, spider)
             if html:
                 return _make_response(request.url, html, request)
             else:
@@ -272,6 +273,7 @@ class CloudflareDownloadHandler:
                 self._hybrid_fetch_async(request, spider)
             )
 
+            self._stop_if_session_expired(html, spider)
             if html:
                 return _make_response(request.url, html, request)
             else:
@@ -444,6 +446,33 @@ class CloudflareDownloadHandler:
         except Exception as e:
             logger.error(f"HTTP fetch failed for {url}: {e}")
             return None
+
+    def _session_expired(self, html, spider) -> bool:
+        """A SESSION crawl that gets its auth-wall page = the saved login died.
+        Only fires when the spider declares SESSION_EXPIRED_SIGNAL (off by
+        default). Unlike a CF block there's no auto-recovery: the human must
+        re-run `session login`."""
+        signal = getattr(spider, "custom_settings", {}).get("SESSION_EXPIRED_SIGNAL")
+        return bool(signal and html and signal in html)
+
+    def _stop_if_session_expired(self, html, spider):
+        """Stop the whole crawl on the first auth-wall hit — better than
+        silently quarantining every row (the paywall page has no date)."""
+        if not self._session_expired(html, spider):
+            return
+        from scrapy.exceptions import IgnoreRequest
+        from twisted.internet import reactor
+
+        name = getattr(spider, "custom_settings", {}).get("SESSION")
+        logger.error(
+            f"[{spider.name}] SESSION expired (auth-wall detected). Stopping crawl. "
+            f"Re-run: scrapai session login {name}"
+        )
+        # close_spider must run on the reactor thread; we're in a worker thread.
+        reactor.callFromThread(
+            spider.crawler.engine.close_spider, spider, "session_expired"
+        )
+        raise IgnoreRequest(f"session expired for {spider.name}")
 
     def _is_blocked(self, html: Optional[str]) -> bool:
         """Check if response indicates CF block or challenge."""

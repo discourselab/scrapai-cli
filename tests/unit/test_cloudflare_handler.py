@@ -33,6 +33,68 @@ class TestCloudflareHandlerInit:
 # that behavior is covered by tests/unit/test_cf_reactive_gate.py.
 
 
+class TestSessionExpiry:
+    """A SESSION crawl that gets its auth-wall page = the saved login expired.
+    Stop loudly on the first one instead of silently quarantining every row."""
+
+    def _spider(self, settings):
+        s = Mock()
+        s.name = "ladiaria_com_uy"
+        s.custom_settings = settings
+        return s
+
+    @pytest.mark.unit
+    def test_detected_when_signal_present(self):
+        h = CloudflareDownloadHandler({})
+        spider = self._spider(
+            {"SESSION": "ladiaria_com_uy", "SESSION_EXPIRED_SIGNAL": "Muro de pago"}
+        )
+        assert h._session_expired("<title>Muro de pago</title>", spider) is True
+
+    @pytest.mark.unit
+    def test_not_detected_when_signal_absent_from_page(self):
+        h = CloudflareDownloadHandler({})
+        spider = self._spider(
+            {"SESSION": "ladiaria_com_uy", "SESSION_EXPIRED_SIGNAL": "Muro de pago"}
+        )
+        assert h._session_expired("<title>Real article</title>", spider) is False
+
+    @pytest.mark.unit
+    def test_never_fires_without_signal_configured(self):
+        # No SESSION_EXPIRED_SIGNAL -> feature off, backward compatible.
+        h = CloudflareDownloadHandler({})
+        spider = self._spider({"SESSION": "ladiaria_com_uy"})
+        assert h._session_expired("<title>Muro de pago</title>", spider) is False
+
+    @pytest.mark.unit
+    def test_guard_stops_crawl_and_raises_on_expiry(self, monkeypatch):
+        from scrapy.exceptions import IgnoreRequest
+        from twisted.internet import reactor
+
+        h = CloudflareDownloadHandler({})
+        spider = self._spider(
+            {"SESSION": "ladiaria_com_uy", "SESSION_EXPIRED_SIGNAL": "Muro de pago"}
+        )
+        closed = {}
+        spider.crawler.engine.close_spider = lambda sp, reason: closed.update(
+            spider=sp, reason=reason
+        )
+        # run the scheduled reactor call inline so the test can observe it
+        monkeypatch.setattr(reactor, "callFromThread", lambda fn, *a, **k: fn(*a, **k))
+        with pytest.raises(IgnoreRequest):
+            h._stop_if_session_expired("<title>Muro de pago</title>", spider)
+        assert closed["reason"] == "session_expired"
+
+    @pytest.mark.unit
+    def test_guard_is_noop_on_healthy_page(self):
+        h = CloudflareDownloadHandler({})
+        spider = self._spider(
+            {"SESSION": "ladiaria_com_uy", "SESSION_EXPIRED_SIGNAL": "Muro de pago"}
+        )
+        # no raise, no crawler interaction needed
+        h._stop_if_session_expired("<title>Real article with content</title>", spider)
+
+
 class TestBlockDetection:
     """Test Cloudflare block detection."""
 

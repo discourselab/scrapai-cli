@@ -10,6 +10,14 @@ from utils.inspector import _fetch_browser
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture(autouse=True)
+def _force_cold_browser(monkeypatch):
+    # These tests exercise the cold direct-browser path and monkeypatch
+    # CloudflareBrowserClient. If a browser service happens to be running on the
+    # dev machine, _fetch_browser would route to it instead — so pin it off.
+    monkeypatch.setattr("utils.browser_client.is_running", lambda: False)
+
+
 def _fake_client(html="<html>ok</html>", scroll_height=9000, viewport_h=800):
     captured = {}
 
