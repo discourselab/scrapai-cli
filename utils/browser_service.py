@@ -26,6 +26,49 @@ def _domain(url):
     return urlparse(url).netloc
 
 
+def _orphaned_browser_pids(procs, cache_dir):
+    """Pids of CloakBrowser Chromes whose owner died without cleanup.
+
+    An orphan is a process running the binary from ``cache_dir`` whose parent
+    is gone (reparented to init/launchd, ppid 1) — left behind when whatever
+    launched it was SIGKILLed/OOMed, so ``browser.close()`` never ran. Only
+    our own binaries qualify; the user's Chrome is never touched.
+    ``procs``: [{"pid", "ppid", "cmdline"}] — injected so this is pure.
+    """
+    return [
+        p["pid"]
+        for p in procs
+        if p.get("ppid") == 1 and cache_dir in (p.get("cmdline") or "")
+    ]
+
+
+def _sweep_orphans():
+    """SIGTERM leftover CloakBrowser Chromes at service startup. Best-effort:
+    a failed sweep must never block the service from starting."""
+    import signal
+
+    try:
+        import psutil
+        from cloakbrowser.config import get_cache_dir
+
+        procs = [
+            {
+                "pid": p.info["pid"],
+                "ppid": p.info["ppid"],
+                "cmdline": " ".join(p.info["cmdline"] or []),
+            }
+            for p in psutil.process_iter(["pid", "ppid", "cmdline"])
+        ]
+        for pid in _orphaned_browser_pids(procs, str(get_cache_dir())):
+            try:
+                os.kill(pid, signal.SIGTERM)
+                print(f"Swept orphaned browser process {pid}")
+            except OSError:
+                pass
+    except Exception as e:
+        print(f"Orphan sweep skipped: {e}")
+
+
 # Per-domain navigation locks: a lane has one page, so two requests for the same
 # domain (e.g. two crawls verifying the same host) must not page.goto at once.
 _nav_locks = {}
@@ -122,6 +165,7 @@ async def handle_request(pool, req, stop):
 
 
 async def _run(port, proxy_type, pool_size):
+    _sweep_orphans()  # clean up Chromes a SIGKILLed/OOMed predecessor left behind
     parent = CloudflareBrowserClient(
         headless=False, proxy_chain=proxy_mod.chain(proxy_type)
     )

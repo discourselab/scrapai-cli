@@ -25,7 +25,6 @@ from urllib.parse import urlparse
 
 from scrapy.http import HtmlResponse, Request, XmlResponse
 from twisted.internet import threads
-from settings import USER_AGENT
 
 logger = logging.getLogger(__name__)
 
@@ -352,19 +351,19 @@ class CloudflareDownloadHandler:
                 return
 
             host = urlparse(url).hostname
-            # Prefer the ONE shared browser service (so N crawls share one
-            # browser); fall back to a local browser if it isn't running.
+            # Verification ALWAYS goes through the ONE shared browser service
+            # (N crawls share one browser). If it can't be reached or restarted,
+            # fail the request and let Scrapy retry it — never spawn a per-crawl
+            # browser: under load ("service busy" looks like "service down")
+            # that turned 40 crawls into 40 orphaned Chromes.
             via_service = await self._verify_via_service(url, spider)
-            if via_service is not None:
-                logger.info(f"[{key}] Verified CF for {host} via browser service")
-                html, cookies, user_agent = via_service
-            else:
-                logger.info(f"[{key}] Verifying CF for {host} via local browser")
-                await self._ensure_browser_started(spider)
-                html = await self._fetch_with_browser(url, spider)
-                if not html:
-                    raise Exception(f"Failed to verify CF for {url}")
-                cookies, user_agent = await self._extract_cookies_from_browser(url)
+            if via_service is None:
+                raise Exception(
+                    f"browser service unreachable while verifying CF for {url} "
+                    "(request will be retried)"
+                )
+            logger.info(f"[{key}] Verified CF for {host} via browser service")
+            html, cookies, user_agent = via_service
 
             with CloudflareDownloadHandler._cookie_cache_lock:
                 CloudflareDownloadHandler._cookie_seq += 1
@@ -590,29 +589,7 @@ class CloudflareDownloadHandler:
         logger.debug(f"Browser fetch: {url} -> {len(html) if html else 0} bytes")
         return html
 
-    async def _extract_cookies_from_browser(self, url=None):
-        """Extract cookies + user-agent from the browser, scoped to ``url``'s
-        host. The shared context accumulates cookies from every subdomain it
-        visits; passing the URL makes Playwright return only the cookies valid
-        for that host, so a host's cached entry can't pick up another
-        subdomain's per-host cf_clearance."""
-        if not CloudflareDownloadHandler._shared_browser:
-            raise Exception("Browser not started")
-
-        context = CloudflareDownloadHandler._shared_browser.context
-        page = CloudflareDownloadHandler._shared_browser.page
-
-        if not context or not page:
-            raise Exception("No browser context/page available")
-
-        # Scope to the URL's host (None -> all, for back-compat)
-        cookies_list = await context.cookies(url)
-        cookies = {c["name"]: c["value"] for c in cookies_list if c.get("name")}
-
-        # Get user agent
-        try:
-            user_agent = await page.evaluate("navigator.userAgent")
-        except Exception:
-            user_agent = USER_AGENT
-
-        return cookies, user_agent
+    # Cookie/UA extraction happens inside the browser service (_lane_cookies,
+    # host-scoped); nothing here drives a browser for CF verification anymore.
+    # The remaining browser machinery above serves only the legacy browser-only
+    # strategy (every page rendered in the crawl's own browser).

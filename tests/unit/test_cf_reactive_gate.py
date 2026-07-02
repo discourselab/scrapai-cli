@@ -67,9 +67,10 @@ async def _drive(handler, urls):
 
 
 def _patch_io(handler, verified_hosts):
-    """Fake the browser + HTTP + cookie extraction. HTTP returns a CF block page
-    for a host until that host has been verified by the browser; then good HTML.
-    Returns the browser AsyncMock so tests can count verifications."""
+    """Fake the browser service + HTTP. HTTP returns a CF block page for a host
+    until that host has been verified via the service; then good HTML. Returns
+    the service AsyncMock so tests can count verifications. (Verification only
+    ever goes through the service now — there is no per-crawl local browser.)"""
 
     async def fake_http(url, cached):
         host = urlparse(url).hostname
@@ -77,19 +78,15 @@ def _patch_io(handler, verified_hosts):
             return f"<html>content for {url}</html>"
         return "<title>Just a moment...</title>"  # _is_blocked() matches this
 
-    async def fake_browser(url, spider):
+    async def fake_service(url, spider):
         verified_hosts.add(urlparse(url).hostname)
         await asyncio.sleep(0.01)  # simulate browser work so requests overlap
-        return "<html>verified</html>"
+        return "<html>verified</html>", {"cf_clearance": "x"}, "UA"
 
-    browser = AsyncMock(side_effect=fake_browser)
+    service = AsyncMock(side_effect=fake_service)
     handler._fetch_with_http = AsyncMock(side_effect=fake_http)
-    handler._fetch_with_browser = browser
-    handler._ensure_browser_started = AsyncMock()
-    handler._extract_cookies_from_browser = AsyncMock(
-        return_value=({"cf_clearance": "x"}, "UA")
-    )
-    return browser
+    handler._verify_via_service = service
+    return service
 
 
 def _ok(r):
@@ -144,38 +141,8 @@ async def test_verified_host_skips_browser():
     assert browser.call_count == 1
 
 
-async def test_extract_cookies_scoped_to_verify_host():
-    """Extraction must pull only the verified host's cookies, not the whole
-    shared-context jar (cf_clearance is per-host; flattening by name across
-    subdomains would let one host's cf_clearance overwrite another's)."""
-    h = _make_handler()
-    captured = {}
-
-    class FakeCtx:
-        async def cookies(self, url=None):
-            captured["url"] = url
-            if url and "hemeroteca" in url:
-                return [{"name": "cf_clearance", "value": "HEM"}]
-            return [{"name": "cf_clearance", "value": "WWW"}]
-
-    class FakePage:
-        async def evaluate(self, _js):
-            return "UA"
-
-    class FakeBrowser:
-        context = FakeCtx()
-        page = FakePage()
-
-    CloudflareDownloadHandler._shared_browser = FakeBrowser()
-    try:
-        cookies, ua = await h._extract_cookies_from_browser(
-            "https://hemeroteca.larazon.bo/x"
-        )
-    finally:
-        CloudflareDownloadHandler._shared_browser = None
-
-    assert captured["url"] == "https://hemeroteca.larazon.bo/x"
-    assert cookies == {"cf_clearance": "HEM"}  # host-scoped, not the www value
+# Host-scoped cookie extraction now lives in the browser service
+# (_lane_cookies in utils/browser_service.py) — covered by its own tests.
 
 
 async def test_reverify_uses_browser_service_when_available(monkeypatch):
@@ -231,17 +198,20 @@ async def test_reverify_restarts_service_when_stopped(monkeypatch):
     assert calls["n"] == 2  # tried, restarted, retried
 
 
-async def test_reverify_falls_back_to_local_when_service_down(monkeypatch):
+async def test_reverify_raises_when_service_unreachable(monkeypatch):
+    """No per-crawl local browser, ever: if the service can't be reached or
+    restarted, the request fails (Scrapy retries it later) instead of every
+    crawl spawning its own Chrome — which is how 40 crawls under load used to
+    turn into 40 orphaned browsers."""
     h = _make_handler()
-    monkeypatch.setattr("utils.browser_client.request", lambda *a, **k: None)
-    h._ensure_browser_started = AsyncMock()
-    h._fetch_with_browser = AsyncMock(return_value="<html>local</html>")
-    h._extract_cookies_from_browser = AsyncMock(
-        return_value=({"cf_clearance": "L"}, "UA-L")
-    )
-    await h._reverify(
-        "larazon|www.larazon.bo", "https://www.larazon.bo/x", _spider(), used_seq=None
-    )
-    cached = CloudflareDownloadHandler._cookie_cache["larazon|www.larazon.bo"]
-    assert cached["cookies"] == {"cf_clearance": "L"}
-    h._fetch_with_browser.assert_awaited_once()
+    # autouse _service_down fixture: request -> None, ensure_running -> False
+    h._ensure_browser_started = AsyncMock()  # must never be awaited
+    with pytest.raises(Exception, match="browser service"):
+        await h._reverify(
+            "larazon|www.larazon.bo",
+            "https://www.larazon.bo/x",
+            _spider(),
+            used_seq=None,
+        )
+    h._ensure_browser_started.assert_not_awaited()
+    assert "larazon|www.larazon.bo" not in CloudflareDownloadHandler._cookie_cache

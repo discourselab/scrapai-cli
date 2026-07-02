@@ -6,9 +6,26 @@ import asyncio
 import pytest
 from unittest.mock import Mock
 
-from utils.browser_service import handle_request
+from utils.browser_service import handle_request, _orphaned_browser_pids
 
 pytestmark = pytest.mark.unit
+
+
+def test_orphaned_browser_pids_picks_reparented_cloakbrowser_chrome():
+    """A Chrome from the cloakbrowser cache whose parent died (ppid 1) is an
+    orphan from a SIGKILLed/OOMed owner; anything still parented, or any other
+    program, is left alone."""
+    procs = [
+        # orphaned cloakbrowser chrome -> sweep
+        {"pid": 100, "ppid": 1, "cmdline": "/home/u/.cloakbrowser/chrome --headless"},
+        # cloakbrowser chrome with a live parent (the running service) -> keep
+        {"pid": 101, "ppid": 900, "cmdline": "/home/u/.cloakbrowser/chrome --tab"},
+        # unrelated orphan (user's own chrome) -> keep
+        {"pid": 102, "ppid": 1, "cmdline": "/Applications/Chrome.app/chrome"},
+        # unreadable cmdline -> keep
+        {"pid": 103, "ppid": 1, "cmdline": ""},
+    ]
+    assert _orphaned_browser_pids(procs, "/home/u/.cloakbrowser") == [100]
 
 
 class FakeLane:

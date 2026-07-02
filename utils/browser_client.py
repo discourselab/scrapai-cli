@@ -39,10 +39,17 @@ def read_state():
         return None
 
 
-def write_state(pid, port):
+def write_state(pid, port, proxy_type=None, pool=None):
+    """Record the daemon's pid/port, plus how it was started (proxy/pool) so a
+    respawn or `browser restart` brings it back with the SAME settings."""
+    state = {"pid": pid, "port": port}
+    if proxy_type is not None:
+        state["proxy_type"] = proxy_type
+    if pool is not None:
+        state["pool"] = pool
     os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
     with open(STATE_FILE, "w") as f:
-        json.dump({"pid": pid, "port": port}, f)
+        json.dump(state, f)
 
 
 def clear_state():
@@ -82,6 +89,38 @@ def is_running():
         return False
     resp = request("ping", timeout=5)
     return bool(resp and resp.get("ok"))
+
+
+def _pid_alive(pid):
+    """True if a process with this pid exists (signal 0 probes without killing).
+
+    EPERM means the process exists but isn't ours — still alive. A recycled
+    pid belonging to some other program is indistinguishable here; acceptable,
+    because this only gates the rare ping-timed-out path and a false "alive"
+    just delays the respawn until the next attempt.
+    """
+    if not pid:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+
+
+def _up_or_busy():
+    """The service counts as up if it answers pings, OR if its recorded pid is
+    still alive — a service mid-Cloudflare-solve for many crawls can miss the
+    ping window. Busy is not dead: spawning a second service over a live one
+    orphans the first one's Chrome (nothing would ever close it)."""
+    if is_running():
+        return True
+    state = read_state()
+    return bool(state and _pid_alive(state.get("pid")))
 
 
 def free_port():
@@ -124,17 +163,19 @@ def _spawn_service(proxy_type="auto", pool=5):
         stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
-    write_state(proc.pid, port)
+    write_state(proc.pid, port, proxy_type=proxy_type, pool=pool)
     return proc
 
 
-def ensure_running(proxy_type="auto", pool=5, timeout=90):
+def ensure_running(proxy_type=None, pool=None, timeout=90):
     """Make sure the service is up, starting it if a crawl finds it stopped.
 
     A file lock serializes startup across processes so several concurrent crawls
     can't each spawn their own daemon (which would defeat one-browser-for-all).
-    Returns True if the service is up, False if it couldn't be started."""
-    if is_running():
+    ``proxy_type``/``pool`` default to whatever the dead service was started
+    with (from its state file) — a `browser start --pool 40` that dies must not
+    come back as pool 5. Returns True if the service is up, False if not."""
+    if _up_or_busy():
         return True
 
     lock_path = os.path.join(os.path.dirname(STATE_FILE), "browser_service.lock")
@@ -149,8 +190,14 @@ def ensure_running(proxy_type="auto", pool=5, timeout=90):
         lockf = None  # no flock (e.g. Windows): best-effort, no cross-proc lock
 
     try:
-        if is_running():  # another process started it while we waited for the lock
+        if _up_or_busy():  # another process started it while we waited for the lock
             return True
+        # Reuse the dead service's settings unless the caller overrides them.
+        stale = read_state() or {}
+        if proxy_type is None:
+            proxy_type = stale.get("proxy_type", "auto")
+        if pool is None:
+            pool = stale.get("pool", 5)
         try:
             proc = _spawn_service(proxy_type, pool)
         except RuntimeError:

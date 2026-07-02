@@ -6,7 +6,6 @@ reuse it (open once, pass Cloudflare once) instead of cold-starting every page.
 
 import os
 import signal
-import subprocess
 import sys
 import time
 from urllib.parse import urlparse
@@ -19,6 +18,45 @@ from utils import browser_client as bc
 @click.group()
 def browser():
     """Manage the persistent browser service."""
+
+
+def _start(proxy_type, pool):
+    """Spawn the service and wait until it answers pings. Exits on failure."""
+    try:
+        proc = bc._spawn_service(proxy_type, pool)
+    except RuntimeError:
+        click.echo("ERROR: browser needs a display but Xvfb is not installed.")
+        click.echo("Install: sudo apt-get install -y xvfb")
+        sys.exit(1)
+
+    click.echo("Starting browser service (launching browser, may take a moment)...")
+    for _ in range(90):
+        if bc.is_running():
+            state = bc.read_state()
+            click.echo(
+                f"Browser service started (pid {proc.pid}, port {state['port']})."
+            )
+            return
+        if proc.poll() is not None:
+            bc.clear_state()
+            click.echo("Browser service failed to start.")
+            sys.exit(1)
+        time.sleep(1)
+    click.echo("Browser service did not become ready in time.")
+    sys.exit(1)
+
+
+def _stop(state):
+    """Gracefully shut the service down and drop its state file."""
+    if bc.is_running():
+        bc.request("shutdown", timeout=10)
+        time.sleep(1)
+    # Ensure the process is gone, then drop the state file.
+    try:
+        os.kill(state["pid"], signal.SIGTERM)
+    except OSError:
+        pass
+    bc.clear_state()
 
 
 @browser.command()
@@ -39,54 +77,7 @@ def start(proxy_type, pool):
         state = bc.read_state()
         click.echo(f"Browser service already running (pid {state['pid']}).")
         return
-
-    bc.clear_state()  # drop any stale state
-    port = bc.free_port()
-    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    cmd = [
-        sys.executable,
-        "-m",
-        "utils.browser_service",
-        "--port",
-        str(port),
-        "--proxy-type",
-        proxy_type,
-        "--pool",
-        str(pool),
-    ]
-
-    from utils.display_helper import needs_xvfb, has_xvfb
-
-    if needs_xvfb():
-        if has_xvfb():
-            click.echo("Headless server detected - using Xvfb for the browser")
-            cmd = ["xvfb-run", "-a"] + cmd
-        else:
-            click.echo("ERROR: browser needs a display but Xvfb is not installed.")
-            click.echo("Install: sudo apt-get install -y xvfb")
-            sys.exit(1)
-
-    proc = subprocess.Popen(
-        cmd,
-        cwd=repo,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-    bc.write_state(proc.pid, port)
-
-    click.echo("Starting browser service (launching browser, may take a moment)...")
-    for _ in range(90):
-        if bc.is_running():
-            click.echo(f"Browser service started (pid {proc.pid}, port {port}).")
-            return
-        if proc.poll() is not None:
-            bc.clear_state()
-            click.echo("Browser service failed to start.")
-            sys.exit(1)
-        time.sleep(1)
-    click.echo("Browser service did not become ready in time.")
-    sys.exit(1)
+    _start(proxy_type, pool)
 
 
 @browser.command()
@@ -96,17 +87,33 @@ def stop():
     if not state:
         click.echo("Browser service not running.")
         return
-
-    if bc.is_running():
-        bc.request("shutdown", timeout=10)
-        time.sleep(1)
-    # Ensure the process is gone, then drop the state file.
-    try:
-        os.kill(state["pid"], signal.SIGTERM)
-    except OSError:
-        pass
-    bc.clear_state()
+    _stop(state)
     click.echo("Browser service stopped.")
+
+
+@browser.command()
+@click.option(
+    "--proxy-type",
+    default=None,
+    help="Proxy for the service (default: same as before the restart)",
+)
+@click.option(
+    "--pool",
+    default=None,
+    type=int,
+    help="Max concurrent lanes (default: same as before the restart)",
+)
+def restart(proxy_type, pool):
+    """Restart the browser service with its previous settings (flags override)."""
+    state = bc.read_state() or {}
+    if proxy_type is None:
+        proxy_type = state.get("proxy_type", "auto")
+    if pool is None:
+        pool = state.get("pool", 5)
+    if state:
+        _stop(state)
+        click.echo("Browser service stopped.")
+    _start(proxy_type, pool)
 
 
 @browser.command()

@@ -97,8 +97,9 @@ def test_ensure_running_short_circuits_when_already_up(monkeypatch):
     assert spawned["n"] == 0  # never spawned — already up
 
 
-def test_ensure_running_spawns_when_down(monkeypatch):
-    # down, then up after spawn (second is_running check)
+def test_ensure_running_spawns_when_down(monkeypatch, _tmp_state):
+    # down, then up after spawn (second is_running check); no state file
+    # means there is no live pid to guard.
     states = iter([False, False, True])
     monkeypatch.setattr(bc, "is_running", lambda: next(states))
     spawned = {"n": 0}
@@ -114,3 +115,84 @@ def test_ensure_running_spawns_when_down(monkeypatch):
     monkeypatch.setattr(bc, "_spawn_service", fake_spawn)
     assert bc.ensure_running(timeout=5) is True
     assert spawned["n"] == 1
+
+
+def test_pid_alive_true_for_self_false_for_dead():
+    assert bc._pid_alive(os.getpid()) is True
+    # A freshly-exited child pid is reliably dead.
+    import subprocess
+
+    proc = subprocess.Popen(["true"])
+    proc.wait()
+    assert bc._pid_alive(proc.pid) is False
+    assert bc._pid_alive(None) is False
+
+
+def test_ensure_running_treats_live_pid_as_busy_never_spawns(monkeypatch, _tmp_state):
+    """A service mid-CF-solve misses the 5s ping window. Its pid is alive, so
+    it's busy, not dead — spawning over it would orphan its Chrome."""
+    bc.write_state(os.getpid(), 12345)  # our own pid: definitely alive
+    monkeypatch.setattr(bc, "is_running", lambda: False)  # ping timed out
+    spawned = {"n": 0}
+    monkeypatch.setattr(
+        bc, "_spawn_service", lambda *a, **k: spawned.update(n=spawned["n"] + 1)
+    )
+    assert bc.ensure_running(timeout=5) is True
+    assert spawned["n"] == 0
+
+
+def test_ensure_running_spawns_when_state_pid_is_dead(monkeypatch, _tmp_state):
+    """State file left behind by a SIGKILLed service: pid gone -> spawn."""
+    import subprocess
+
+    proc = subprocess.Popen(["true"])
+    proc.wait()
+    bc.write_state(proc.pid, 12345)  # dead pid
+    states = iter([False, False, True])
+    monkeypatch.setattr(bc, "is_running", lambda: next(states))
+    spawned = {"n": 0}
+
+    class FakeProc:
+        def poll(self):
+            return None
+
+    def fake_spawn(*a, **k):
+        spawned["n"] += 1
+        return FakeProc()
+
+    monkeypatch.setattr(bc, "_spawn_service", fake_spawn)
+    assert bc.ensure_running(timeout=5) is True
+    assert spawned["n"] == 1
+
+
+def test_write_state_persists_service_settings():
+    bc.write_state(1, 2, proxy_type="residential", pool=40)
+    state = bc.read_state()
+    assert state["proxy_type"] == "residential"
+    assert state["pool"] == 40
+
+
+def test_ensure_running_respawn_reuses_remembered_settings(monkeypatch, _tmp_state):
+    """A service started with --pool 40 that dies must come back with pool 40,
+    not the default 5 (which thrashes under 40 concurrent crawls)."""
+    import subprocess
+
+    proc = subprocess.Popen(["true"])
+    proc.wait()
+    bc.write_state(proc.pid, 12345, proxy_type="residential", pool=40)  # dead
+    states = iter([False, False, True])
+    monkeypatch.setattr(bc, "is_running", lambda: next(states))
+    captured = {}
+
+    class FakeProc:
+        def poll(self):
+            return None
+
+    def fake_spawn(proxy_type, pool):
+        captured["proxy_type"] = proxy_type
+        captured["pool"] = pool
+        return FakeProc()
+
+    monkeypatch.setattr(bc, "_spawn_service", fake_spawn)
+    assert bc.ensure_running(timeout=5) is True
+    assert captured == {"proxy_type": "residential", "pool": 40}
