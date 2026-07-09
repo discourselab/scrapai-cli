@@ -163,7 +163,13 @@ def import_spider(file, project, skip_validation):
                     )
                     return
 
-            # Validate spider name matches inspector's folder structure
+            # Sanity-check spider name vs its domain. A domain can legitimately host
+            # MORE THAN ONE spider (e.g. noaa_gov + noaa_gov_gc, or a subdomain like
+            # ncei.noaa.gov grouped as noaa_gov_ncei), so the name won't always equal
+            # the domain. Everything downstream keys off the spider NAME (only the
+            # inspector's analysis folder stays domain-derived) — warn, don't block
+            # (previously this rejected legit sub-spiders, forcing them to drop
+            # source_url to sneak in).
             if source_url:
                 from urllib.parse import urlparse
 
@@ -172,21 +178,12 @@ def import_spider(file, project, skip_validation):
                 expected_name = domain.replace(".", "_")
 
                 if spider_name != expected_name:
-                    click.echo("❌ Spider name mismatch detected!")
                     click.echo(
-                        f"   Inspector created folder: data/{project}/{expected_name}/analysis/"
+                        f"⚠️  Spider name '{spider_name}' differs from its domain "
+                        f"('{expected_name}') — fine for a secondary or sub-domain "
+                        f"spider. Crawls will live under data/{project}/{spider_name}/ "
+                        f"(inspector analysis stays under data/{project}/{expected_name}/)."
                     )
-                    click.echo(f"   But spider name is: '{spider_name}'")
-                    click.echo(
-                        f"   Crawls will save to: data/{project}/{spider_name}/crawls/"
-                    )
-                    click.echo(
-                        "\n   ⚠️  Files will be scattered across different folders!"
-                    )
-                    click.echo(
-                        f"\n   Fix: Change spider name to '{expected_name}' in the JSON config."
-                    )
-                    return
 
             # Check for existing spider
             existing = db.query(Spider).filter(Spider.name == spider_name).first()
