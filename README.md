@@ -142,6 +142,8 @@ Our contribution is the orchestration: the CLI, the database-first spider manage
 
 **AI-assisted health checks.** `./scrapai health --project news` tests all spiders with 5 sample items, detects extraction vs crawling failures, and generates a markdown report for the agent to fix. Run monthly via cron to catch breakage early. When a site redesigns, the agent re-analyzes, updates selectors, and verifies the fix in 5-10 minutes vs 45 minutes manual.
 
+**Project-wide quality auditing.** `./scrapai audit --project news` scores every spider's coverage (scraped vs sitemap-declared pages) and extraction quality, checks compliance signals (robots.txt, legal pages), analyzes where organisations host their PDFs, and renders it all into a self-contained HTML dashboard. `overview` profiles each spider's content (sections, date spans, field coverage); `dedupe` reversibly consolidates duplicate crawl output. Three agent skills (`/spider-review`, `/spider-align`, `/spider-slow`) act on the audit's findings. See [docs/quality.md](docs/quality.md).
+
 ## Quick Start
 
 **Requirements:** Python 3.9+, Git
@@ -322,6 +324,11 @@ Found a vulnerability? See [SECURITY.md](SECURITY.md). Do not use public GitHub 
 ./scrapai inspect <url> --project <name>                 # Lightweight HTTP (default)
 ./scrapai inspect <url> --project <name> --browser       # CloakBrowser (JS + Cloudflare bypass)
 
+# Quality
+./scrapai audit --project <name>                         # Coverage/extraction/compliance audit + HTML dashboard
+./scrapai overview --project <name>                      # Per-spider content profile
+./scrapai dedupe --project <name>                        # Consolidate duplicate crawl output (reversible)
+
 # Database
 ./scrapai db migrate                                     # Run migrations
 ./scrapai db stats                                       # Show database statistics
@@ -385,6 +392,8 @@ The codebase is designed to be extended. The crawling infrastructure is done; wh
 | [docs/s3.md](docs/s3.md) | S3 object storage |
 | [docs/sitemap.md](docs/sitemap.md) | Sitemap spider |
 | [docs/projects.md](docs/projects.md) | Project organization |
+| [docs/quality.md](docs/quality.md) | Quality tools: audit, overview, dedupe |
+| [docs/skills-overview.md](docs/skills-overview.md) | Agent skills for spider maintenance |
 
 ## Contributing
 

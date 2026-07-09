@@ -42,6 +42,7 @@ file; never put a rule or command there (it will drift).
   - [6.6 Queue & parallel processing](#66-queue--parallel-processing)
   - [6.7 Database](#67-database)
   - [6.8 Sessions (authenticated sites)](#68-sessions-authenticated-sites)
+  - [6.9 Quality: audit, overview & dedupe](#69-quality-audit-overview--dedupe)
 - [7. Configuration reference](#7-configuration-reference)
   - [7.1 Settings](#71-settings-spider-json)
   - [7.2 Named callbacks and custom fields](#72-named-callbacks-and-custom-fields)
@@ -267,6 +268,15 @@ For content behind a login (paywalls, members-only, social). **scrapai never typ
 - `session list` · `session remove <name>` (delete) · re-run `session login <name>` to **refresh** an expired one.
 - **Use it:** `inspect <url> --session <name>` (Phase 1, gated pages) and set `"SESSION": "<name>"` in the spider so the crawl runs logged in (§7.1). Only that one session is ever loaded — never all of them.
 - **You cannot log in for the user.** When a site needs auth: run `session login <domain>`, then **tell the user to log in and close the window**, then proceed. (Server with no display → the remote-login flow is not built yet; the user logs in on a machine with a display and the file is reused.)
+
+### 6.9 Quality: audit, overview & dedupe
+Project-wide quality lenses over `data/<project>/` crawl output. Full reference: [docs/quality.md](docs/quality.md); the paired agent skills (`/spider-review`, `/spider-align`, `/spider-slow`) are in [docs/skills-overview.md](docs/skills-overview.md).
+
+- `audit --project <name>` — **read-only.** Per-spider coverage + extraction scoring (`crawl_audit.csv` / `audit_<project>.md`), compliance lenses, external-PDF hosts, and a self-contained HTML dashboard `_audit/dashboard_<project>.html` (tabs: Coverage · Compliance · PDFs). Classifies every spider into status groups (`ok` / `manual review` / `too few pages` / `incomplete` / `extraction broken`). Uses crawl-recorded stats (`_audit/crawl_stats/`) when present; falls back to fetching sitemaps. Flags: `--no-compliance`, `--no-fetch` / `--fetch-all`, `--only <spider>`, `--no-html`, `--refresh` / `--reset`.
+- `overview --project <name> [--only <spider>] [--thin-chars N]` — **read-only.** Per-spider content profile: sections, date span + per-year histogram + null %, field coverage, thin/constant/off-domain checks. PDF rows are profiled separately (URL-only by design, never counted as thin).
+- `dedupe --project <name> [--only <spider>] [--latest-only]` — the ONE **mutating** command, kept separate so the audit never rewrites data. Consolidates each spider's `crawls/*.jsonl`; originals kept as `*.superseded` (reversible).
+- **PDF rows:** under the default `PDF_MODE=links_only`, every PDF link on a crawled page becomes its own URL-only row (`metadata_json.content_type="pdf"`, `found_on` provenance). The audit judges extraction over HTML rows only and reports the PDF harvest per spider (same-org vs external derived from `allowed_domains`). Do not add per-spider `pdf_urls` extraction directives — harvesting is framework-level.
+- **Review records are human calls:** you may SUGGEST `_audit/audit_notes.json` / `audit_sitemap_skip.json` entries, but never write them without explicit user approval.
 
 ---
 
