@@ -142,6 +142,8 @@ Our contribution is the orchestration: the CLI, the database-first spider manage
 
 **AI-assisted health checks.** `./scrapai health --project news` tests all spiders with 5 sample items, detects extraction vs crawling failures, and generates a markdown report for the agent to fix. Run monthly via cron to catch breakage early. When a site redesigns, the agent re-analyzes, updates selectors, and verifies the fix in 5-10 minutes vs 45 minutes manual.
 
+**Project-wide quality auditing.** `./scrapai audit --project news` scores every spider's coverage (scraped vs sitemap-declared pages) and extraction quality, checks compliance signals (robots.txt, legal pages), analyzes where organisations host their PDFs, and renders it all into a self-contained HTML dashboard. `overview` profiles each spider's content (sections, date spans, field coverage); `dedupe` reversibly consolidates duplicate crawl output. Three agent skills (`/spider-review`, `/spider-align`, `/spider-slow`) act on the audit's findings. See [docs/quality.md](docs/quality.md).
+
 ## Quick Start
 
 **Requirements:** Python 3.9+, Git
@@ -193,7 +195,7 @@ For a quick overview of every detached crawl — run state plus how much each ha
 ```bash
 ./scrapai crawl-status [--project news]
 # spider          project   state     downloaded    with-content   start           end  last-item
-# clarin_com       latinos   running        1,240    1,198 (97%)    13:53 29-06-26  -    4s
+# example_com       news   running        1,240    1,198 (97%)    13:53 29-06-26  -    4s
 ```
 
 It joins Pueue's run state and start/end times with the crawl file: items downloaded, how many have content text (`with-content` % — PDF/links-only items are excluded since they carry no content by design), and `last-item` — time since the crawl last wrote an item, so a running crawl that has stalled stands out. Raw Pueue (`pueue status` / `pueue log <id>`) still works too.
@@ -322,6 +324,11 @@ Found a vulnerability? See [SECURITY.md](SECURITY.md). Do not use public GitHub 
 ./scrapai inspect <url> --project <name>                 # Lightweight HTTP (default)
 ./scrapai inspect <url> --project <name> --browser       # CloakBrowser (JS + Cloudflare bypass)
 
+# Quality
+./scrapai audit --project <name>                         # Coverage/extraction/compliance audit + HTML dashboard
+./scrapai overview --project <name>                      # Per-spider content profile
+./scrapai dedupe --project <name>                        # Consolidate duplicate crawl output (reversible)
+
 # Database
 ./scrapai db migrate                                     # Run migrations
 ./scrapai db stats                                       # Show database statistics
@@ -385,6 +392,8 @@ The codebase is designed to be extended. The crawling infrastructure is done; wh
 | [docs/s3.md](docs/s3.md) | S3 object storage |
 | [docs/sitemap.md](docs/sitemap.md) | Sitemap spider |
 | [docs/projects.md](docs/projects.md) | Project organization |
+| [docs/quality.md](docs/quality.md) | Quality tools: audit, overview, dedupe |
+| [docs/skills-overview.md](docs/skills-overview.md) | Agent skills for spider maintenance |
 
 ## Contributing
 
