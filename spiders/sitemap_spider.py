@@ -29,6 +29,12 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
         self.name = spider_name
         self._items_scraped = 0
         self._item_limit = None
+        # Audit accounting, counted in sitemap_filter() and dumped by closed()
+        # into crawl_stats/: total = page URLs in the sitemap; eligible = those
+        # that pass date/deny filters AND match an allow rule — the coverage
+        # denominator, captured at crawl time so nothing re-fetches the sitemap.
+        self._sm_total = 0
+        self._sm_eligible = 0
         self._load_config()
         super().__init__(*args, **kwargs)
 
@@ -107,6 +113,18 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
         if not sitemap_rules:
             sitemap_rules = [("/", "parse_article")]
 
+        # Compile allow patterns for the eligibility count in sitemap_filter();
+        # "/" = match-all.
+        self._sm_match_all = any(p == "/" for p, _ in sitemap_rules)
+        self._sm_allow_res = []
+        for p, _ in sitemap_rules:
+            if p == "/":
+                continue
+            try:
+                self._sm_allow_res.append(re.compile(p))
+            except re.error:
+                pass
+
         return sitemap_rules
 
     @classmethod
@@ -175,6 +193,10 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
         deny_res = getattr(self, "_deny_res", [])
         base = f"https://{self.allowed_domains[0]}/" if self.allowed_domains else None
 
+        # <sitemapindex> entries are sub-sitemap refs, not content pages — they
+        # pass through the filters below but must never be counted as pages.
+        is_index = getattr(entries, "type", None) == "sitemapindex"
+
         total = 0
         rewritten = 0
         filtered = 0
@@ -184,6 +206,17 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
 
         for entry in entries:
             total += 1
+
+            # Decided on the raw loc, before date/deny filtering, so _sm_total
+            # reflects the whole sitemap.
+            loc0 = entry.get("loc", "")
+            is_page = (
+                not is_index
+                and bool(loc0)
+                and not loc0.lower().endswith((".xml", ".xml.gz"))
+            )
+            if is_page:
+                self._sm_total += 1
 
             # Resolve relative <loc> to absolute before anything downstream reads
             # it. Covers root-relative ("/path") and protocol-relative ("//host").
@@ -216,6 +249,15 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
             if deny_res and any(r.search(entry["loc"]) for r in deny_res):
                 denied += 1
                 continue
+
+            # Survived date + deny filters and matches an allow rule → eligible.
+            if is_page and (
+                getattr(self, "_sm_match_all", False)
+                or any(
+                    rx.search(entry["loc"]) for rx in getattr(self, "_sm_allow_res", [])
+                )
+            ):
+                self._sm_eligible += 1
 
             logger.debug(f"Sitemap entry: {entry['loc']}")
             yielded += 1
