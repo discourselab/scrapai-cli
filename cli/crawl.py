@@ -225,10 +225,18 @@ def crawl_all(project, limit):
         click.echo(f"\n{'='*50}")
         click.echo(f"Running: {name}")
         click.echo(f"{'='*50}")
-        # detached=True keeps crawl_all running each spider inline, unchanged.
+        # Full crawls self-submit to Pueue like a single `crawl` (parallel,
+        # disconnect-safe); --limit runs stay inline.
         _run_spider(
-            project, name, None, limit, None, "auto", False, None, False, False, True
+            project, name, None, limit, None, "auto", False, None, False, False, False
         )
+
+    if not limit:
+        click.echo(
+            f"\n📋 All {len(spider_names)} spiders queued in Pueue "
+            "(detached; concurrency = your `pueue parallel` setting)."
+        )
+        click.echo("   Monitor: ./scrapai crawl-status   ·   pueue status")
 
 
 @click.command("crawl-status")
