@@ -1,4 +1,106 @@
+import json
+from pathlib import Path
+
 import click
+
+
+def _matches(rec, url, text, title):
+    """Case-insensitive substring filters, mirroring the DB branch's ilike."""
+
+    def has(field, needle):
+        return needle.lower() in str(rec.get(field) or "").lower()
+
+    if url and not has("url", url):
+        return False
+    if title and not has("title", title):
+        return False
+    if text and not (has("title", text) or has("content", text)):
+        return False
+    return True
+
+
+def _read_crawl_rows(crawls_dir, limit, url=None, text=None, title=None):
+    """(rows, file_count): the newest matching rows from crawl_*.jsonl.
+
+    Newest file first (mtime), rows within a file scanned bottom-up — crawl
+    files are append-only, so the last lines are the newest items. Mirrors the
+    DB branch's ORDER BY scraped_at DESC."""
+    files = sorted(
+        Path(crawls_dir).glob("crawl_*.jsonl"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    rows = []
+    for f in files:
+        try:
+            # ponytail: whole-file read to walk lines newest-first; fine at
+            # observed corpus sizes (tens of MB) — stream if files grow to GBs.
+            lines = f.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in reversed(lines):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            if not _matches(rec, url, text, title):
+                continue
+            rows.append(rec)
+            if len(rows) >= limit:
+                return rows, len(files)
+    return rows, len(files)
+
+
+# Bulky or bookkeeping row fields never shown as extra metadata.
+_SHOWN_OR_SKIPPED = {
+    "url",
+    "title",
+    "content",
+    "author",
+    "published_date",
+    "scraped_at",
+    "html",
+    "clean_html",
+    "spider_id",
+    "spider_name",
+    "source",
+    "_callback",
+    "extracted_at",
+}
+
+
+def _echo_crawl_row(i, rec):
+    """Render one JSONL row like the DB branch renders an article."""
+    pub = str(rec.get("published_date") or "Unknown")[:10]
+    scraped = str(rec.get("scraped_at") or "Unknown")[:16].replace("T", " ")
+    click.echo(f"🔸 [{i}] {rec.get('title') or 'No Title'}")
+    click.echo(f"   📅 Published: {pub} | Scraped: {scraped}")
+    click.echo(f"   🔗 {rec.get('url')}")
+    if rec.get("author"):
+        click.echo(f"   ✍️  {rec['author']}")
+    content = rec.get("content") or ""
+    if content:
+        preview = content[:150].replace("\n", " ").strip()
+        if len(content) > 150:
+            preview += "..."
+        click.echo(f"   📝 {preview}")
+    extras = {}
+    for k, v in rec.items():
+        if k in _SHOWN_OR_SKIPPED or v in (None, "", []):
+            continue
+        if k == "metadata_json" and isinstance(v, dict):
+            extras.update(v)
+        else:
+            extras[k] = v
+    for k, v in extras.items():
+        v = str(v)
+        if len(v) > 100:
+            v = v[:100] + "..."
+        click.echo(f"   • {k}: {v}")
+    click.echo()
 
 
 @click.command()
@@ -10,8 +112,66 @@ import click
 @click.option("--url", default=None, help="Filter by URL pattern")
 @click.option("--text", "-t", default=None, help="Search title or content")
 @click.option("--title", default=None, help="Search titles only")
-def show(spider_name, project, limit, url, text, title):
-    """Show scraped articles from database"""
+@click.option(
+    "--source",
+    type=click.Choice(["auto", "crawls", "db"]),
+    default="auto",
+    help=(
+        "auto (default): production crawls/*.jsonl when present, else the DB; "
+        "crawls/db force one source (db = test-crawl items)"
+    ),
+)
+def show(spider_name, project, limit, url, text, title, source):
+    """Show scraped articles (production crawl output by default, DB fallback).
+
+    Production crawls write crawls/*.jsonl, never DB rows; the DB holds only
+    --limit test-crawl items. Showing the DB for a production spider
+    misrepresented what it collected (docs/requests/20), so crawl files win
+    when they exist.
+    """
+    from core.config import DATA_DIR
+
+    crawls_dir = Path(DATA_DIR) / project / spider_name / "crawls"
+    use_crawls = source == "crawls" or (
+        source == "auto" and any(crawls_dir.glob("crawl_*.jsonl"))
+    )
+
+    if use_crawls:
+        rows, nfiles = _read_crawl_rows(crawls_dir, limit, url, text, title)
+        filters_applied = [
+            f"{label} contains '{needle}'"
+            for label, needle in (
+                ("URL", url),
+                ("title", title),
+                ("title or content", text),
+            )
+            if needle
+        ]
+        if not rows:
+            click.echo(
+                f"📭 No matching items in production crawl files for "
+                f"'{spider_name}' ({nfiles} files)"
+            )
+            if filters_applied:
+                click.echo(f"   (with filters: {', '.join(filters_applied)})")
+            click.echo("   (test-crawl items live in the DB: --source db)")
+            return
+        click.echo(
+            f"📰 Showing {len(rows)} newest items from production crawls "
+            f"({nfiles} files) for '{spider_name}':"
+        )
+        if filters_applied:
+            click.echo(f"   (filtered by: {', '.join(filters_applied)})")
+        click.echo()
+        for i, rec in enumerate(rows, 1):
+            _echo_crawl_row(i, rec)
+        return
+
+    if source == "auto":
+        click.echo("ℹ️  No production crawl files — showing DB (test-crawl) items.")
+    else:
+        click.echo("ℹ️  Source: DB (test-crawl items).")
+
     from core.db import get_db
     from core.models import Spider, ScrapedItem
 
