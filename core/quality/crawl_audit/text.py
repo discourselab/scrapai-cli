@@ -205,11 +205,13 @@ FETCH_MODES_NOTE = (
 DUPES_EXPLAINER = (
     "**true dupes** = rows with the same URL **and** identical "
     "content (re-run artifacts — what the default dedupe removes). "
-    "**versions** = same URL but *changed* content (genuine history "
-    "from re-fetching updated pages — default dedupe **keeps** "
-    "these; only `--latest-only` drops them). Neither affects the "
-    "`scraped`/`coverage` numbers elsewhere (those use unique "
-    "URLs).\n\n"
+    "**versions** = same URL but *changed* content among HTML rows "
+    "(genuine history from re-fetching updated pages — default "
+    "dedupe **keeps** these; only `--latest-only` drops them). "
+    "**pdf multi-ref** = the same PDF recorded once per linking page "
+    "(`found_on` provenance — expected, and dedupe keeps them; NOT "
+    "content churn). None of these affect the `scraped`/`coverage` "
+    "numbers elsewhere (those use unique URLs).\n\n"
 )
 
 DUPES_CAUSE = (

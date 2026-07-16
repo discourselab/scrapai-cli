@@ -12,6 +12,46 @@ from core.quality import _env
 LOC_RE = re.compile(r"<loc>\s*(.*?)\s*</loc>", re.I | re.S)
 SITEMAP_DIRECTIVE = re.compile(r"(?im)^\s*sitemap:\s*(\S+)")
 
+# Media URLs sometimes appear as plain <loc>s (WordPress image/attachment
+# sitemaps): they're media, not content pages, so they must not inflate the
+# coverage denominator. (<image:loc> tags aren't matched by LOC_RE at all; this
+# catches media that shows up as a plain <loc>.)
+_MEDIA_EXT = (
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".webp",
+    ".svg",
+    ".bmp",
+    ".tif",
+    ".tiff",
+    ".ico",
+    ".mp4",
+    ".m4v",
+    ".mov",
+    ".avi",
+    ".wmv",
+    ".webm",
+    ".mp3",
+    ".wav",
+    ".ogg",
+)
+
+
+def is_media_loc(url):
+    u = url.lower().split("?", 1)[0].split("#", 1)[0].rstrip("/")
+    return u.endswith(_MEDIA_EXT)
+
+
+def _looks_like_html(text):
+    """robots.txt is text/plain; an HTML body back is a Cloudflare/challenge or
+    soft-404 page, not robots — worth a browser retry before trusting it (a
+    non-empty challenge page otherwise sails through as a robots.txt with no
+    Sitemap: directive, masking a real sitemap)."""
+    head = (text or "")[:4000].lower()
+    return "<html" in head or "<!doctype html" in head
+
 
 def discover_sitemap(
     host, project, spider, cache_dir, state, browser=False, browser_retry=True
@@ -30,12 +70,18 @@ def discover_sitemap(
     base = "https://" + host
 
     def probe(url, suffix, needs_loc):
-        # `needs_loc` False (robots.txt) → escalate only when the fetch came back
-        # empty; True (sitemap.xml) → also escalate when it lacks <loc> (a blocked
-        # fetch can return a challenge/error page with no locs).
+        # `needs_loc` True (sitemap.xml) → escalate when empty OR it lacks <loc>
+        # (a blocked fetch returns a challenge/error page with no locs).
+        # `needs_loc` False (robots.txt) → escalate when empty OR the body is HTML:
+        # robots.txt is text/plain, so an HTML body is a Cloudflare/challenge or
+        # soft-404 page, not robots — a non-empty CF page used to sail through as
+        # a valid robots.txt with no Sitemap: directive, masking a real sitemap.
         out = os.path.join(cache_dir, spider + suffix)
         text = fetch(url, out, project, browser, state)
-        blocked = not text or (needs_loc and not LOC_RE.search(text))
+        if needs_loc:
+            blocked = not text or not LOC_RE.search(text)
+        else:
+            blocked = not text or _looks_like_html(text)
         if blocked and browser_retry and not browser:
             text = fetch(url, out, project, True, state)  # blocked plain → browser
         return text
@@ -230,7 +276,10 @@ def collect_pages(spider, cache_dir):
         if "<sitemapindex" in text.lower():
             continue
         for loc in LOC_RE.findall(text):
-            pages.add(loc.replace("&amp;", "&").strip())
+            loc = loc.replace("&amp;", "&").strip()
+            if is_media_loc(loc):
+                continue  # image/AV attachment loc — media, not a content page
+            pages.add(loc)
     return pages
 
 

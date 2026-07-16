@@ -64,6 +64,7 @@ def write_csvs(out, rows):
         "rows",
         "true_dupes",
         "versions",
+        "pdf_multi",
         "dup_pct",
         "files",
         "content",
@@ -141,13 +142,16 @@ def write_dupes_section(fh, project, rows):
         )
     else:
         fh.write(DUPES_EXPLAINER)
-        fh.write("| spider | files | rows | unique | true dupes | dup% | versions |\n")
-        fh.write("|---|---:|---:|---:|---:|---:|---:|\n")
+        fh.write(
+            "| spider | files | rows | unique | true dupes | dup% | versions "
+            "| pdf multi-ref |\n"
+        )
+        fh.write("|---|---:|---:|---:|---:|---:|---:|---:|\n")
         for r in dups:
             fh.write(
                 f"| {r['spider']} | {r['files']} | {r['rows']} | "
                 f"{r.get('unique', r['scraped'])} | {r['true_dupes']} | "
-                f"{r['dup_pct']}% | {r['versions']} |\n"
+                f"{r['dup_pct']}% | {r['versions']} | {r.get('pdf_multi', 0)} |\n"
             )
         ex = dups[0]["spider"]  # worst offender — used in the example below
         fh.write(DUPES_CAUSE)

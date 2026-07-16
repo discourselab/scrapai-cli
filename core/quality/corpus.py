@@ -103,6 +103,10 @@ def scan_file(path):
     """
     fname = os.path.basename(path)
     urls, uc, content, title, pdf = set(), set(), set(), set(), set()
+    pdf_uc = set()  # the PDF rows' share of uc — lets scoring split the same
+    #                 PDF re-recorded per linking page (found_on provenance)
+    #                 out of the displayed "versions" WITHOUT touching the
+    #                 uc/dedupe math (docs/requests/22, Fix B).
     clen = {}  # url -> content length (for the median content-depth signal)
     recs = 0  # successfully-parsed records (rows written to disk)
     n = 0
@@ -120,13 +124,15 @@ def scan_file(path):
             # unique (not duplicates); real repeated URLs do not.
             u = rec.get("url") or f"__noURL__{fname}_{n}"
             urls.add(u)
-            uc.add((u, fingerprint(rec)))
+            fp = fingerprint(rec)
+            uc.add((u, fp))
             recs += 1
             if is_pdf_row(rec):
                 # PDF harvest rows: counted separately, and NEVER into the
                 # content/clen signals — extraction quality is judged over HTML
                 # rows only (extract-mode PDF text must not inflate content%).
                 pdf.add(u)
+                pdf_uc.add((u, fp))
                 continue
             if isinstance(rec.get("content"), str) and rec["content"].strip():
                 content.add(u)
@@ -141,6 +147,7 @@ def scan_file(path):
         "clen": clen,
         "recs": recs,
         "pdf": pdf,
+        "pdf_uc": pdf_uc,
     }
 
 
@@ -187,6 +194,7 @@ def file_counts(path):
         # computed downstream at scoring/report time.
         "pdf": len(p["pdf"]),
         "pdf_hosts": pdf_hosts,
+        "pdf_uc": len(p["pdf_uc"]),
     }
 
 
@@ -228,6 +236,7 @@ def merge_partials(partials):
     """Union of per-file scan_file partials (multi-file spiders only). Keeps the
     materialised urlset since we already built it."""
     urls, uc, content, title, pdf = set(), set(), set(), set(), set()
+    pdf_uc = set()
     clen, recs = {}, 0
     for p in partials:
         urls |= p["urls"]
@@ -235,6 +244,7 @@ def merge_partials(partials):
         content |= p["content"]
         title |= p["title"]
         pdf |= p["pdf"]
+        pdf_uc |= p["pdf_uc"]
         clen.update(p["clen"])  # keep last seen (matches single-pass behavior)
         recs += p["recs"]
     pdf_hosts = dict(Counter(url_host(u) for u in pdf))
@@ -248,6 +258,7 @@ def merge_partials(partials):
         "urlset": urls,
         "pdf": len(pdf),
         "pdf_hosts": pdf_hosts,
+        "pdf_uc": len(pdf_uc),
     }
 
 
@@ -292,6 +303,7 @@ def scan_project(project, use_cache=True):
                 "_files": [],
                 "pdf": 0,
                 "pdf_hosts": {},
+                "pdf_uc": 0,
             }
             continue
 
@@ -302,12 +314,14 @@ def scan_project(project, use_cache=True):
             st = os.stat(f)
             cache = load_scan_cache(scan_cache_dir, spider) if use_cache else {}
             ent = cache.get(fname)
-            # "pdf_hosts" is the current-format sentinel: entries from before the
-            # pdf-aware scan re-scan exactly once, then re-cache.
+            # "pdf_hosts"/"pdf_uc" are the current-format sentinels: entries
+            # from before the pdf-aware scans re-scan exactly once, then
+            # re-cache.
             if not (
                 ent
                 and "clen_vals" in ent
                 and "pdf_hosts" in ent
+                and "pdf_uc" in ent
                 and ent.get("size") == st.st_size
                 and ent.get("mtime") == st.st_mtime
             ):
@@ -325,6 +339,7 @@ def scan_project(project, use_cache=True):
                 "content_med": round(median(ent["clen_vals"])),
                 "pdf": ent["pdf"],
                 "pdf_hosts": ent["pdf_hosts"],
+                "pdf_uc": ent["pdf_uc"],
             }
         else:
             # Rare: multiple crawl files. Counts need cross-file dedup, so the

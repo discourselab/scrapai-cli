@@ -80,6 +80,7 @@ def _coverage_detail(project, r):
             else ""
         ),
         f"versions <b>{r.get('versions', 0)}</b>",
+        (f"pdf multi-ref <b>{r.get('pdf_multi', 0)}</b>" if r.get("pdf_multi") else ""),
         f"files <b>{r.get('files', 0)}</b>",
         f"median <b>{_esc(str(r.get('content_med', 0)))}</b> chars",
         f"eligible <b>{_esc(str(r.get('eligible', '-')))}</b>",
@@ -224,8 +225,10 @@ def _cov_table(
         "(PDF harvest rows have their own column)."
     )
     tip_versions = _tip(
-        "The same URL saved again with CHANGED content — real history from "
-        "re-fetching updated pages; dedupe keeps these."
+        "The same URL saved again with CHANGED content (HTML rows) — real "
+        "history from re-fetching updated pages; dedupe keeps these. The same "
+        "PDF recorded per linking page is provenance, not churn — it is "
+        "excluded here and shown as 'pdf multi-ref' in the row detail."
     )
     tip_stale = _tip(
         "Flagged (⚠ Nd) when the newest saved crawl is more than 30 days old — "
@@ -345,7 +348,9 @@ def _dupes_section(project, rows):
     out.append(
         '<p class="hint"><b>true dupes</b> = same URL <b>and</b> identical content (re-run '
         "artifacts the default dedupe removes). <b>versions</b> = same URL, changed content "
-        "(genuine history; dedupe keeps these). Neither affects scraped/coverage.</p>"
+        "among HTML rows (genuine history; dedupe keeps these). <b>pdf multi-ref</b> = the "
+        "same PDF recorded once per linking page (provenance — expected, dedupe keeps them). "
+        "None affect scraped/coverage.</p>"
     )
     tb = []
     for r in dups:
@@ -359,7 +364,8 @@ def _dupes_section(project, rows):
             f'<td class="r" data-key="{r.get("scraped", 0)}">{r.get("scraped", 0)}</td>'
             f'<td class="r" data-key="{r.get("true_dupes", 0)}">{r.get("true_dupes", 0)}</td>'
             f'<td class="r" data-key="{r.get("dup_pct", 0)}">{r.get("dup_pct", 0)}%</td>'
-            f'<td class="r" data-key="{r.get("versions", 0)}">{r.get("versions", 0)}</td></tr>'
+            f'<td class="r" data-key="{r.get("versions", 0)}">{r.get("versions", 0)}</td>'
+            f'<td class="r" data-key="{r.get("pdf_multi", 0)}">{r.get("pdf_multi", 0)}</td></tr>'
         )
     head = (
         '<tr><th class="sel"><input type="checkbox" class="fx-all" aria-label="select all"></th>'
@@ -369,7 +375,8 @@ def _dupes_section(project, rows):
         '<th class="r" data-key="unique" data-type="num">unique</th>'
         '<th class="r" data-key="tdupes" data-type="num">true dupes</th>'
         '<th class="r" data-key="dpct" data-type="num">dup%</th>'
-        '<th class="r" data-key="versions" data-type="num">versions</th></tr>'
+        '<th class="r" data-key="versions" data-type="num">versions</th>'
+        '<th class="r" data-key="pdfmulti" data-type="num">pdf multi-ref</th></tr>'
     )
     out.append(
         f'<table class="fx-table" data-tab="cov-dupes"><thead>{head}</thead>'

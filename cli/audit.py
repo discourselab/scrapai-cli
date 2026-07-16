@@ -78,6 +78,13 @@ from core.quality.dashboard import write_dashboard
     help="do not retry failed sitemap fetches with --browser",
 )
 @click.option("--no-html", is_flag=True, help="skip building the HTML dashboard")
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="print per-spider detail, the full external-PDF report, and "
+    "per-organisation compliance output (default: progress + summary only)",
+)
 def audit(
     project,
     no_compliance,
@@ -91,6 +98,7 @@ def audit(
     global_cap,
     no_browser_retry,
     no_html,
+    verbose,
 ):
     """Read-only quality audit for a project (coverage · compliance · external PDFs).
 
@@ -124,10 +132,11 @@ def audit(
         refresh_compliance=refresh or reset,
         no_compliance=no_compliance,
         reset=reset,
+        verbose=verbose,
     )
 
     audit_result = crawl_audit.run(project, opts)
-    pdf_result = external_pdf.run(project, SimpleNamespace(only=None))
+    pdf_result = external_pdf.run(project, SimpleNamespace(only=None, verbose=verbose))
 
     if not no_html:
         path = write_dashboard(project, audit_result, pdf_result)

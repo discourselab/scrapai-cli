@@ -107,6 +107,22 @@ def test_dupes_math_stays_total(ctx):
     assert row["unique"] == 100
 
 
+def test_pdf_provenance_split_out_of_versions(ctx):
+    """The same PDF linked from N pages: uc counts N rows and dedupe KEEPS
+    them, so the counting must not change — but the displayed `versions` shows
+    only HTML churn, with the provenance multiplicity as its own figure
+    (docs/requests/22, Fix B; site20_org read 10,932 phantom
+    versions before)."""
+    # 100 unique urls (70 pdf), 120 rows, uc 115: the 15 over-unique pairs are
+    # 12 pdf multi-referrer rows + 3 genuine html re-fetches.
+    c = _corpus(100, 30, 70, {"x.org": 70}, rows=120, uc=115)
+    c["pdf_uc"] = 82  # 70 unique pdfs + 12 extra found_on provenance rows
+    row = score_spider("sp", _sp(), c, ctx)
+    assert row["true_dupes"] == 5  # rows - uc: unchanged (dedupe math)
+    assert row["pdf_multi"] == 12
+    assert row["versions"] == 3  # html re-fetch churn only
+
+
 def test_classify_thresholds_pinned():
     """The classify() contract is untouched — args are now HTML-only by caller
     convention, but signature and thresholds are identical."""

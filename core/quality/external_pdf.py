@@ -203,7 +203,8 @@ def run(project, opts=None):
     out = os.path.join(out_dir, "external_pdf_report.md")
     with open(out, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines))
-    print("\n".join(lines))
+    if getattr(opts, "verbose", False):
+        print("\n".join(lines))  # full report to stdout only when --verbose
     print(f"\nReport → {out}")
     return {"spiders": report, "report_path": out}
 

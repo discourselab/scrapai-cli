@@ -3,9 +3,11 @@ scan, per-spider scoring loop, and the compliance summary joined into the report
 
 import argparse
 import glob
+import io
 import os
 import sys
 import time
+from contextlib import contextmanager, nullcontext, redirect_stdout
 
 from core.quality._env import DATA_DIR
 from core.quality import (
@@ -25,6 +27,44 @@ from .spiders_db import audit_dir, load_spiders, project_exists
 
 DEFAULT_PER_CAP = 80  # max sitemap fetches per spider
 DEFAULT_GLOBAL_CAP = 2000  # max sitemap fetches overall
+
+
+@contextmanager
+def _progress(desc, total, enabled):
+    """A transient rich progress bar over `total` steps, or a no-op tracker when
+    disabled (verbose mode prints per-item lines instead) or there's nothing to
+    do. rich is already a dependency (used in cli/crawl.py); it degrades to plain
+    output on a non-tty."""
+    if not enabled or total <= 0:
+
+        class _Noop:
+            def advance(self):
+                pass
+
+        yield _Noop()
+        return
+    from rich.progress import (
+        BarColumn,
+        MofNCompleteColumn,
+        Progress,
+        TextColumn,
+        TimeElapsedColumn,
+    )
+
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        transient=True,
+    ) as prog:
+        task = prog.add_task(desc, total=total)
+
+        class _Bar:
+            def advance(self):
+                prog.advance(task)
+
+        yield _Bar()
 
 
 # ---------------------------------------------------------------------------- main
@@ -67,6 +107,13 @@ def main():
     )
     ap.add_argument("--only", nargs="+", help="restrict to these spider names")
     ap.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="print per-spider detail and per-organisation compliance output "
+        "(default: stage markers + a progress bar + a completion summary only)",
+    )
+    ap.add_argument(
         "--no-cache",
         action="store_true",
         help="ignore the per-file crawl-scan cache and re-read every "
@@ -106,6 +153,7 @@ def run(project, opts):
     `no_browser_retry`, `only`, `no_cache`, `refresh_compliance`, `no_compliance`, and
     (optionally) `reset` for the compliance snapshot."""
     args = opts
+    verbose = getattr(opts, "verbose", False)
     if not project_exists(project):
         # Guard the programmatic path too (main() and the CLI wrapper already check):
         # running on an unknown name would scaffold an empty data/<project>/ tree and
@@ -223,14 +271,18 @@ def run(project, opts):
                 n_skip += 1
                 continue  # already captured, or a known failure we deliberately don't retry
             try:
-                status = cc.capture(
-                    host,
-                    project,
-                    browser=spiders[name].get("browser", False),
-                    proxy="auto",
-                    update=args.refresh_compliance,
-                    reset=getattr(args, "reset", False),
-                )
+                # per-organisation capture is chatty; swallow its stdout unless
+                # --verbose (the start + summary lines below are the progress).
+                sink = nullcontext() if verbose else redirect_stdout(io.StringIO())
+                with sink:
+                    status = cc.capture(
+                        host,
+                        project,
+                        browser=spiders[name].get("browser", False),
+                        proxy="auto",
+                        update=args.refresh_compliance,
+                        reset=getattr(args, "reset", False),
+                    )
             except Exception as e:  # a crash counts as a failed attempt
                 cc.mark_capture_failed(project, host, f"capture crashed: {e!r}")
                 status = "failed"
@@ -264,14 +316,17 @@ def run(project, opts):
         should_fetch=should_fetch,
     )
     rows = []
-    for name in sorted(spiders):
-        row = score_spider(name, spiders[name], crawl.get(name, {}), ctx)
-        rows.append(row)
-        print(
-            f"  {name:<35} {row['status']:<26} "
-            f"scraped={row['scraped']} cov={row['coverage_pct']}%",
-            flush=True,
-        )
+    with _progress("scoring spiders", len(spiders), enabled=not verbose) as bar:
+        for name in sorted(spiders):
+            row = score_spider(name, spiders[name], crawl.get(name, {}), ctx)
+            rows.append(row)
+            if verbose:
+                print(
+                    f"  {name:<35} {row['status']:<26} "
+                    f"scraped={row['scraped']} cov={row['coverage_pct']}%",
+                    flush=True,
+                )
+            bar.advance()
 
     compliance = compliance_summary(project, spiders)
     write_outputs(project, rows, config_warnings, compliance)

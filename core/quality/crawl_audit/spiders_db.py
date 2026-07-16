@@ -19,7 +19,14 @@ def audit_dir(project):
 def crawl_stats_liveness(project, spider):
     """EXACT liveness from a real crawl's own stats (written by
     the spider's closed() handler), preferred over sampling. live = 2xx ÷ (2xx +
-    4xx + 5xx) across everything the crawl actually fetched — no extra requests."""
+    4xx) across everything the crawl actually fetched — no extra requests.
+
+    Only 4xx count as "dead" (the URL doesn't exist). 5xx are transient server
+    errors — a 503/502/504 during the crawl says nothing about whether the URL is
+    real — so they're excluded from the denominator entirely. Counting them as
+    dead used to shrink the eligible denominator and under-report coverage for any
+    site that threw transient 5xx mid-crawl (e.g. an 810×503 run reading as 56%
+    "live" when the URLs were fine)."""
     path = os.path.join(DATA_DIR, project, "_audit", "crawl_stats", spider + ".json")
     try:
         with open(path) as fh:
@@ -28,7 +35,7 @@ def crawl_stats_liveness(project, spider):
         return None
     status = d.get("status", {})
     ok = sum(v for k, v in status.items() if k.startswith("2"))
-    bad = sum(v for k, v in status.items() if k.startswith(("4", "5")))
+    bad = sum(v for k, v in status.items() if k.startswith("4"))
     if ok + bad == 0:
         return None
     return {"rate": round(ok / (ok + bad), 4), "sample": ok + bad}

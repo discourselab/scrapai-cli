@@ -142,8 +142,15 @@ def score_spider(name, sp, c, ctx):
     content_med = c.get("content_med", 0)
     uc = c.get("uc", unique_total)
     true_dupes = recs - uc  # identical re-scrapes (dupe math stays TOTAL)
-    versions = uc - unique_total  # same URL, changed content (incl. same pdf,
-    #                                        different found_on — documented, kept)
+    # The same PDF linked from N pages yields N rows whose fingerprints differ
+    # only by found_on provenance. dedupe KEEPS them (fingerprint includes
+    # found_on), so the counting must not change — the split below is purely
+    # presentational: pdf_multi is shown as its own figure and `versions`
+    # shows only HTML re-fetch churn, which is what its "genuine history"
+    # description always meant (docs/requests/22, Fix B).
+    pdf_uc = c.get("pdf_uc", pdf)
+    pdf_multi = max(0, pdf_uc - pdf)
+    versions = uc - unique_total - pdf_multi  # same URL, changed content (HTML)
     dup_pct = round(100 * true_dupes / recs) if recs else 0
     own = sp.get("domains") or ([sp["host"]] if sp.get("host") else [])
     pdf_own = sum(n for h, n in pdf_hosts.items() if host_in_domains(h, own))
@@ -408,6 +415,7 @@ def score_spider(name, sp, c, ctx):
         "rows": recs,
         "true_dupes": true_dupes,
         "versions": versions,
+        "pdf_multi": pdf_multi,  # same PDF, one row per linking page (kept)
         "dup_pct": dup_pct,
         "files": nfiles,
         "content": content,
