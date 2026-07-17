@@ -302,16 +302,9 @@ class CloudflareDownloadHandler:
             raise Exception(f"No cookies available after verify for {request.url}")
 
         # Reuse the HTML the browser just fetched during a verify of this exact URL.
-        if cached.get("last_browser_url") == request.url and cached.get(
-            "last_browser_html"
-        ):
-            html = cached["last_browser_html"]
-            with CloudflareDownloadHandler._cookie_cache_lock:
-                entry = CloudflareDownloadHandler._cookie_cache.get(key)
-                if entry:
-                    entry["last_browser_html"] = None
-                    entry["last_browser_url"] = None
-            return html
+        reused = self._consume_browser_html(key, request.url)
+        if reused is not None:
+            return reused
 
         # Fast path: HTTP with the cached cookie.
         html = await self._fetch_with_http(request.url, cached)
@@ -325,13 +318,41 @@ class CloudflareDownloadHandler:
             )
             await self._reverify(key, request.url, spider, used_seq=cached.get("seq"))
             cached = CloudflareDownloadHandler._cookie_cache[key]
-            html = await self._fetch_with_http(request.url, cached)
+            # The reverify just rendered THIS exact URL in the browser (real HTML,
+            # challenge already solved). Use it instead of re-fetching via curl:
+            # a host that challenges the curl path would just challenge it again,
+            # dropping a page we already have. Only hosts whose fresh cookie the
+            # curl path accepts fall through to the fast retry below.
+            reused = self._consume_browser_html(key, request.url)
+            if reused is not None:
+                html = reused
+            else:
+                html = await self._fetch_with_http(request.url, cached)
             if self._is_blocked(html):
                 # Still blocked right after a fresh verify => a real block
                 # (IP/rate limit), not a stale cookie. Surface it.
                 raise Exception(f"Still blocked after reverify: {request.url}")
 
         return html
+
+    def _consume_browser_html(self, key: str, url: str) -> Optional[str]:
+        """Return (and clear) the browser-rendered HTML cached for this exact URL
+        during a verify, or None. Single-use: the reverify gate renders the URL
+        that tripped it, and that render is served once then dropped so a later
+        request for the same URL re-fetches fresh rather than replaying stale HTML.
+        """
+        with CloudflareDownloadHandler._cookie_cache_lock:
+            entry = CloudflareDownloadHandler._cookie_cache.get(key)
+            if (
+                entry
+                and entry.get("last_browser_url") == url
+                and entry.get("last_browser_html")
+            ):
+                html = entry["last_browser_html"]
+                entry["last_browser_html"] = None
+                entry["last_browser_url"] = None
+                return html
+        return None
 
     async def _reverify(self, key: str, url: str, spider, used_seq):
         """The gate: hold all callers, let ONE drive the browser, cache the host
