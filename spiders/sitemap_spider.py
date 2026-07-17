@@ -180,6 +180,11 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
         since = self._parse_since_date()
         deny_res = getattr(self, "_deny_res", [])
         base = f"https://{self.allowed_domains[0]}/" if self.allowed_domains else None
+        # A <sitemapindex>'s entries are child-sitemap URLs, not content pages.
+        # Deny patterns must not apply to them: a deny like \?page= (meant for
+        # paginated listings) would swallow Drupal-style paginated child
+        # sitemaps (sitemap.xml?page=N) and the crawl would silently run empty.
+        is_index = getattr(entries, "type", None) == "sitemapindex"
 
         total = 0
         rewritten = 0
@@ -218,8 +223,9 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
             elif since and not entry.get("lastmod"):
                 no_lastmod += 1
 
-            # Enforce deny patterns on the now-absolute loc.
-            if deny_res and any(r.search(entry["loc"]) for r in deny_res):
+            # Enforce deny patterns on the now-absolute loc (content locs only;
+            # never the child sitemaps of an index).
+            if not is_index and deny_res and any(r.search(entry["loc"]) for r in deny_res):
                 denied += 1
                 continue
 
