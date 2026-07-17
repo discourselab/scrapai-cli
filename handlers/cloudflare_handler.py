@@ -486,6 +486,12 @@ class CloudflareDownloadHandler:
             ("cloudflare" in html_lower and "checking your browser" in html_lower),
             "just a moment" in html_lower and "cloudflare" in html_lower,
             "<title>just a moment...</title>" in html_lower,
+            # "JavaScript is disabled ... verify that you're not a robot. This
+            # requires JavaScript." — a CF interstitial that names neither
+            # "cloudflare" nor "just a moment", so it slipped past the checks
+            # above and got saved as article content. The paired phrases are
+            # specific to the challenge and won't co-occur in a real article.
+            ("this requires javascript" in html_lower and "not a robot" in html_lower),
             # CF block pages
             "sorry, you have been blocked" in html_lower,
             "access denied" in html_lower and "cloudflare" in html_lower,

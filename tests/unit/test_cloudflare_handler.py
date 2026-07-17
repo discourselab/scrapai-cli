@@ -121,6 +121,22 @@ class TestBlockDetection:
         assert is_blocked is True
 
     @pytest.mark.unit
+    def test_detects_javascript_disabled_robot_challenge(self):
+        """CF interstitial that names neither 'cloudflare' nor 'just a moment'.
+
+        This variant was being saved as article content (title empty, content =
+        the challenge text) because no indicator matched it.
+        """
+        handler = CloudflareDownloadHandler({})
+        html = (
+            "JavaScript is disabled\nIn order to continue, we need to verify "
+            "that you're not a robot. This requires JavaScript. Enable "
+            "JavaScript and then reload the page."
+        )
+
+        assert handler._is_blocked(html) is True
+
+    @pytest.mark.unit
     def test_no_block_on_normal_html(self):
         """Test that normal HTML is not flagged as blocked."""
         handler = CloudflareDownloadHandler({})
