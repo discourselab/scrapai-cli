@@ -79,6 +79,35 @@ def test_crawl_all_enqueues_each_spider(monkeypatch):
     assert "queued in Pueue" in res.output
 
 
+def test_pueue_active_task_dedup(monkeypatch):
+    """The duplicate guard: an unfinished task with the same label is reported,
+    finished ones and other labels are not, and unreadable pueue fails open."""
+    import json
+    from unittest.mock import Mock
+
+    import importlib
+
+    crawl_mod = importlib.import_module("cli.crawl")
+
+    def fake_status(tasks):
+        res = Mock(returncode=0, stdout=json.dumps({"tasks": tasks}))
+        return lambda *a, **k: res
+
+    running = {"1": {"label": "scrapai:proj:a_org", "status": {"Running": {}}}}
+    monkeypatch.setattr(crawl_mod.subprocess, "run", fake_status(running))
+    assert crawl_mod._pueue_active_task("scrapai:proj:a_org") == "1"
+    assert crawl_mod._pueue_active_task("scrapai:proj:b_org") is None
+
+    finished = {"1": {"label": "scrapai:proj:a_org", "status": {"Done": {"result": "Success"}}}}
+    monkeypatch.setattr(crawl_mod.subprocess, "run", fake_status(finished))
+    assert crawl_mod._pueue_active_task("scrapai:proj:a_org") is None
+
+    monkeypatch.setattr(
+        crawl_mod.subprocess, "run", lambda *a, **k: Mock(returncode=1, stdout="")
+    )
+    assert crawl_mod._pueue_active_task("scrapai:proj:a_org") is None
+
+
 def test_crawl_all_with_limit_stays_inline(monkeypatch):
     from unittest.mock import MagicMock, Mock, patch
 

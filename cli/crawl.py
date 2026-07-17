@@ -65,6 +65,25 @@ def _pueue_times(status):
     return (inner.get("start"), inner.get("end"))
 
 
+def _pueue_active_task(label):
+    """Task id of a Pueue task with this label that is not finished (queued,
+    running, paused, stashed), or None. Unreadable pueue output -> None (fail
+    open; a real Pueue problem surfaces on `pueue add` right after)."""
+    res = subprocess.run(["pueue", "status", "--json"], capture_output=True, text=True)
+    if res.returncode != 0:
+        return None
+    try:
+        tasks = json.loads(res.stdout).get("tasks", {})
+    except ValueError:
+        return None
+    for tid, task in tasks.items():
+        if task.get("label") != label:
+            continue
+        if _pueue_state(task.get("status") or {}) not in ("done", "killed", "failed"):
+            return tid
+    return None
+
+
 def _short_ts(ts):
     """Compact an ISO timestamp to 'hh:mm dd-mm-yy' (string-sliced, tz-safe). '-' if None."""
     if not ts:
@@ -418,6 +437,17 @@ def _run_spider(
             if project_name
             else f"scrapai:{spider_name}"
         )
+        # Don't queue a duplicate: a second task for the same spider would
+        # re-crawl for nothing at parallel=1 and, at parallel>1, run the same
+        # spider twice at once (interleaved crawl file, DeltaFetch races).
+        existing = _pueue_active_task(label)
+        if existing is not None:
+            click.echo(
+                f"Crawl '{spider_name}' is already queued or running in Pueue "
+                f"(task {existing}); not queueing a duplicate."
+            )
+            click.echo(f"  check: pueue log {existing}   stop: pueue kill {existing}")
+            return
         add = [
             "pueue",
             "add",
