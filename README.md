@@ -257,7 +257,6 @@ scrapai doesn't replace developers. It removes the repetitive parts so you can f
 | `middlewares.py` | SmartProxyMiddleware, direct-to-proxy escalation |
 | `pipelines.py` | Batched database writes and JSONL export |
 | `alembic/` | Database migrations |
-| `airflow/` | Production scheduling with Apache Airflow |
 
 **Storage modes:**
 - **Test mode** (`--limit N`): saves to database, inspect via `show` command
@@ -354,7 +353,7 @@ RESIDENTIAL_PROXY_PASSWORD=your_password
 RESIDENTIAL_PROXY_HOST=your-residential-proxy.com
 RESIDENTIAL_PROXY_PORT=7000
 
-# S3-compatible storage (optional, for Airflow workflows)
+# S3-compatible storage (optional)
 S3_ENDPOINT=https://your-s3-endpoint.com
 S3_BUCKET=scrapai-crawls
 ```

@@ -141,7 +141,7 @@ Scrapling's adaptive parser is unique: it tracks elements across site redesigns 
 | **Incremental crawl** | No | No | DeltaFetch (skip already-scraped URLs) |
 | **Queue system** | No | No | Database-backed with priorities |
 | **Export formats** | JSON/JSONL | Markdown, JSON | CSV, JSON, JSONL, Parquet |
-| **Scheduling** | No | Docker + external cron | Airflow DAGs |
+| **Scheduling** | No | Docker + external cron | Pueue + external cron |
 | **S3 upload** | No | No | Built-in |
 
 scrapai has more production features because that's what it was built for: running many scrapers on a schedule. Scrapling and crawl4ai are libraries, not platforms. You'd build these features yourself on top of them (and many teams do).
