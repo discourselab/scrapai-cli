@@ -1,7 +1,7 @@
 from scrapy.spiders import SitemapSpider
 from core.db import get_db
 from core.models import Spider
-from .base import BaseDBSpiderMixin
+from .base import BaseDBSpiderMixin, _pdf_links
 from dateutil import parser as dateutil_parser
 from datetime import datetime, timedelta
 from urllib.parse import urljoin, urlparse
@@ -122,6 +122,12 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
             response, source_label="sitemap_spider"
         ):
             yield item
+        # links_only: record PDF links found on this page as URL-only items
+        # (no download) — mirrors database_spider.parse_article, so PDF
+        # collection works for sitemap-driven spiders too.
+        if self._pdf_mode() == "links_only":
+            for purl in _pdf_links(response):
+                yield self._url_only_pdf_item(purl, response, "sitemap_spider")
 
     def _parse_since_date(self):
         """Parse SITEMAP_SINCE setting into a datetime.
