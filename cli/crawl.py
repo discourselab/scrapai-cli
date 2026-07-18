@@ -114,6 +114,24 @@ def _latest_crawl_file(project, spider):
     return files[0] if files else None
 
 
+def _supersede_todays_crawl_file(crawls_dir):
+    """Rename TODAY's crawl_DDMMYYYY.jsonl -> *.jsonl.superseded before a full
+    re-crawl. A same-day --reset-deltafetch is a repair — without this the new
+    run appends a second copy of everything it re-fetches into the same date
+    file (docs/requests/18). Older days' files are NEVER touched: a reset on a
+    later day is the versioning workflow (deliberate re-capture of updated
+    pages), and prior rows may be the only copy of since-removed pages.
+    Reversible (rename back to restore); the quality lenses glob *.jsonl, so a
+    superseded file drops out of them automatically.
+    ponytail: a second same-day reset overwrites the first backup — at most one
+    .superseded generation per date."""
+    f = Path(crawls_dir) / f"crawl_{datetime.now().strftime('%d%m%Y')}.jsonl"
+    if f.exists():
+        f.rename(str(f) + ".superseded")
+        return f
+    return None
+
+
 def _build_detached_cmd(
     scrapai_path,
     spider,
@@ -504,6 +522,21 @@ def _run_spider(
             shutil.rmtree(checkpoint_path)
             click.echo("🗑️  Checkpoint cleared - starting completely fresh")
 
+        # Same-day reset = repair: supersede TODAY's file so the re-crawl can't
+        # append a duplicate copy into it. Older days' files stay — a reset on
+        # a later day is versioning, and old rows may be the only copy of
+        # since-removed pages (docs/requests/18).
+        if project_name:
+            crawls_dir = Path(DATA_DIR) / project_name / spider_name / "crawls"
+        else:
+            crawls_dir = Path(DATA_DIR) / spider_name / "crawls"
+        superseded = _supersede_todays_crawl_file(crawls_dir)
+        if superseded:
+            click.echo(
+                f"📦 Superseded today's {superseded.name} (→ *.superseded) — "
+                "the same-day re-crawl replaces it; older files untouched"
+            )
+
     if proxy_type == "auto":
         click.echo("🔄 Proxy mode: auto (smart escalation with expert-in-the-loop)")
     elif proxy_type == "none":
@@ -575,6 +608,11 @@ def _run_spider(
         click.echo(f"🧪 Test mode: Saving to database (limit: {limit} items)")
         click.echo(f"   Use './scrapai show {spider_name}' to verify results")
         cmd.extend(["-s", f"CLOSESPIDER_ITEMCOUNT={limit}"])
+        # A test crawl must be side-effect-free: with the shared cache it marks
+        # its URLs "seen" and the later production crawl silently skips them
+        # (docs/requests/18). It must not skip anything either — a re-test after
+        # a production crawl still has to fetch its items.
+        cmd.extend(["-s", "DELTAFETCH_ENABLED=False"])
     else:
         click.echo(f"📁 Production mode: Exporting to files{html_note}")
         cmd.extend(["-s", 'ITEM_PIPELINES={"pipelines.ScrapaiPipeline": 300}'])
