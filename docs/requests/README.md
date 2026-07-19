@@ -15,9 +15,11 @@ These docs capture **framework changes** as discrete, reviewable requests — on
 
 **This repo instance IS the integration** (a clean clone of upstream main + the
 quality tool + these framework changes). Each request doc carries the problem,
-the implemented change, and its verification; numbering follows the old repo's
-ledger (gaps = requests that were superseded upstream or deliberately left
-behind — see the frozen repo for those).
+the implemented change, and its verification. Numbering ≤14 follows the old
+repo's ledger (gaps = requests that were superseded upstream or deliberately
+left behind — see the frozen repo for those); 15+ are new to this instance and
+are numbered by **logical grouping** (crawl framework → spiders → CLI tooling →
+quality tool), not by order of discovery.
 
 **One request doc = one PR.** The map:
 
@@ -34,6 +36,28 @@ behind — see the frozen repo for those).
 PRs 1–2 and 6 are small and independent (review-first); 3–4 are the tool's
 framework producers (their consumer arrives in PR 5); PR 5 degrades gracefully
 if 3–4 are still pending, so the order is a courtesy, not a hard dependency.
+
+The second wave (requests 16–23, 2026-07-10 → 2026-07-19). From this wave on
+there is no separate PR counter: **the request number is the PR** (branch
+`pr/<nn>-<slug>`), continuing the ledger; 15 was withdrawn, so the wave starts
+at 16.
+
+| PR | Request doc | Change | Files |
+|---|---|---|---|
+| 16 | [16-dead-proxy-fail-open.md](16-dead-proxy-fail-open.md) | bugfix: dead-proxy detection + fail-open to direct; compliance probes can't poison a domain | `middlewares.py`, `tests/` |
+| 17 | [17-browser-crawl-reliability.md](17-browser-crawl-reliability.md) | bugfix+feature: all-exception browser crawls exit failed; browser crawls get their own Pueue group | `extensions/browser_wedge.py`, `cli/crawl.py`, `settings.py`, `tests/` |
+| 18 | [18-crawl-output-hygiene.md](18-crawl-output-hygiene.md) | bugfix ×2: `--limit` test crawls no longer poison DeltaFetch; same-day reset re-runs supersede today's file only (no append dupes; version history preserved) | `cli/crawl.py`, `tests/` |
+| 19 | [19-use-sitemap-replaces-link-following.md](19-use-sitemap-replaces-link-following.md) | bugfix: loud warning that `USE_SITEMAP` disables link-following + docs correction (hybrid crawl = follow-up) | `cli/crawl.py`, `CLAUDE.md` |
+| 20 | [20-show-production-output.md](20-show-production-output.md) | bugfix: `show` reads production `crawls/*.jsonl` (DB fallback + `--source`) | `cli/show.py`, `tests/` |
+| 21 | [21-jsonapi-repository-harvest.md](21-jsonapi-repository-harvest.md) | feature port: JSON:API / paginated-JSON repository harvest spider | `spiders/repository_spider.py`, `cli/crawl.py`, `tests/` |
+| → PR 5 | [22-audit-measurement-and-quiet.md](22-audit-measurement-and-quiet.md) | bugfix bundle: audit measurement accuracy (liveness, PDF-provenance "versions", media locs, CF robots) + quiet default output | `core/quality/`, `cli/audit.py` |
+| → PR 3 | [23-sitemap-crawl-denominator.md](23-sitemap-crawl-denominator.md) | bugfix: crawl-recorded sitemap denominator counts unique, non-media pages | `spiders/sitemap_spider.py`, `tests/` |
+
+"→ PR 3 / → PR 5" = fixes to code still in review, appended to those open PRs
+rather than opened as new ones. PRs 16–21 are independent of the quality-tool
+stack and of each other. (15 was considered — default `ROBOTSTXT_OBEY` to
+True — and withdrawn as a framework change: it's a per-project preference,
+handled by setting `"ROBOTSTXT_OBEY": true` in that project's spider configs.)
 
 Requests that existed in the old (frozen) repo but do NOT travel to this
 instance — superseded by upstream or orthogonal local work — are documented in
