@@ -238,6 +238,36 @@ class TestSitemapAuditCounters:
         assert spider._sm_eligible == 2
 
     @patch("spiders.sitemap_spider.get_db")
+    def test_media_locs_and_repeats_not_counted(self, mock_get_db):
+        """Media attachment locs are not content pages, and a loc repeated
+        across sub-sitemap files counts once (docs/requests/19) — WP
+        image/attachment sitemaps used to inflate the coverage denominator
+        (site12_org: 3,742 phantom 'missing' pages)."""
+        _patch_get_db(mock_get_db, _make_active_spider_record(rules=[]))
+        spider = SitemapDatabaseSpider(spider_name="bbc_co_uk")
+
+        first = _FakeUrlset(
+            [
+                {"loc": "https://bbc.co.uk/post-1"},
+                {"loc": "https://bbc.co.uk/uploads/photo.jpg"},
+                {"loc": "https://bbc.co.uk/uploads/clip.mp4?v=2"},
+            ]
+        )
+        second = _FakeUrlset(
+            [
+                {"loc": "https://bbc.co.uk/post-1"},  # repeated in another file
+                {"loc": "https://bbc.co.uk/post-2"},
+            ]
+        )
+        out1 = list(spider.sitemap_filter(first))
+        out2 = list(spider.sitemap_filter(second))
+
+        assert spider._sm_total == 2  # post-1, post-2
+        assert spider._sm_eligible == 2
+        # Counting is measurement-only: nothing is dropped from the crawl.
+        assert len(out1) == 3 and len(out2) == 2
+
+    @patch("spiders.sitemap_spider.get_db")
     def test_sitemapindex_entries_never_counted(self, mock_get_db):
         """Sub-sitemap refs in a <sitemapindex> are not content pages — they
         must not inflate the coverage denominator."""
@@ -305,8 +335,9 @@ class TestAuditReadsWriterOutput:
 
         assert crawl_ran("testproj", "bbc_co_uk") is True
         live = crawl_stats_liveness("testproj", "bbc_co_uk")
-        # 2xx=90, 4xx+5xx=10 -> 90/100
-        assert live == {"rate": 0.9, "sample": 100}
+        # 2xx=90, 4xx=8 -> 90/98; 5xx are transient, excluded from the
+        # denominator (docs/requests/22, Fix A)
+        assert live == {"rate": 0.9184, "sample": 98}
         sm = crawl_stats_sitemap("testproj", "bbc_co_uk")
         assert sm == {"total": 600, "eligible": 550}
 
