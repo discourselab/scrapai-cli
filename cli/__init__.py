@@ -15,6 +15,7 @@ from .export import export  # noqa: E402
 from .crawl import crawl, crawl_all, crawl_status  # noqa: E402
 from .db import db  # noqa: E402
 from .inspect_cmd import inspect_cmd  # noqa: E402
+from .scrape import scrape  # noqa: E402
 from .analyze import analyze  # noqa: E402
 from .setup_cmd import setup, verify  # noqa: E402
 from .extract_urls import extract_urls  # noqa: E402
@@ -41,6 +42,7 @@ cli.add_command(crawl_all, "crawl-all")
 cli.add_command(crawl_status)
 cli.add_command(db)
 cli.add_command(inspect_cmd, "inspect")
+cli.add_command(scrape)
 cli.add_command(analyze)
 cli.add_command(setup)
 cli.add_command(verify)
