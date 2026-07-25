@@ -7,6 +7,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+def _spider_name_from_url(url):
+    """Derive spider name from a URL: www.wsj.com -> wsj_com."""
+    from urllib.parse import urlparse
+
+    domain = urlparse(url).netloc.removeprefix("www.")
+    return domain.replace(".", "_").replace("-", "_")
+
+
 @click.group()
 def queue():
     """Queue management"""
@@ -232,7 +240,6 @@ def next_item(project):
 @click.option("--force", is_flag=True, help="Skip verification checks")
 def complete(id, spider, force):
     """Mark item as completed (verifies spider exists in DB and final_spider.json on disk)"""
-    from urllib.parse import urlparse
     from core.db import get_db
     from core.models import CrawlQueue, Spider
     from core.config import DATA_DIR
@@ -249,9 +256,7 @@ def complete(id, spider, force):
             if spider:
                 spider_name = spider
             else:
-                parsed = urlparse(item.website_url)
-                domain = parsed.netloc.lstrip("www.")
-                spider_name = domain.replace(".", "_").replace("-", "_")
+                spider_name = _spider_name_from_url(item.website_url)
 
             # Check 1: spider exists in DB
             db_spider = (
