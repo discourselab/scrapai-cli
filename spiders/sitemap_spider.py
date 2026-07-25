@@ -225,7 +225,11 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
 
             # Enforce deny patterns on the now-absolute loc (content locs only;
             # never the child sitemaps of an index).
-            if not is_index and deny_res and any(r.search(entry["loc"]) for r in deny_res):
+            if (
+                not is_index
+                and deny_res
+                and any(r.search(entry["loc"]) for r in deny_res)
+            ):
                 denied += 1
                 continue
 
