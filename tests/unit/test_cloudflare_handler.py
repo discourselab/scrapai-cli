@@ -186,26 +186,6 @@ class TestStrategySelection:
                 handler.download_request(request, spider)
                 mock_hybrid.assert_called_once()
 
-    @pytest.mark.unit
-    def test_browser_only_strategy_when_configured(self):
-        """Test browser-only mode when explicitly configured."""
-        handler = CloudflareDownloadHandler({})
-        spider = Mock()
-        spider.custom_settings = {"CLOUDFLARE_STRATEGY": "browser_only"}
-        request = Mock(spec=Request)
-        request.url = "https://example.com"
-
-        # Check which method gets called
-        with patch.object(
-            handler, "_browser_only_fetch_sync", return_value=Mock()
-        ) as mock_browser:
-            with patch(
-                "twisted.internet.threads.deferToThread",
-                side_effect=lambda f, *args: f(*args),
-            ):
-                handler.download_request(request, spider)
-                mock_browser.assert_called_once()
-
 
 class TestCookieCacheManagement:
     """Test thread-safe cookie cache operations."""
@@ -315,19 +295,6 @@ class TestErrorHandling:
     """Test error handling in Cloudflare handler."""
 
     @pytest.mark.unit
-    def test_browser_fetch_raises_on_failure(self):
-        """Test that browser fetch raises exception on failure."""
-        handler = CloudflareDownloadHandler({})
-        spider = Mock()
-        request = Mock(spec=Request)
-        request.url = "https://example.com"
-
-        # Mock browser fetch to return None (failure)
-        with patch.object(CloudflareDownloadHandler, "_run_async", return_value=None):
-            with pytest.raises(Exception, match="Failed to fetch"):
-                handler._browser_only_fetch_sync(request, spider)
-
-    @pytest.mark.unit
     def test_hybrid_fetch_raises_on_no_cookies_after_refresh(self):
         """Test that hybrid fetch raises when cookies unavailable after refresh."""
         handler = CloudflareDownloadHandler({})
@@ -356,27 +323,15 @@ class TestHandlerLifecycle:
         # Should not raise
         handler.open()
 
-        # Browser should not be started yet (lazy initialization)
-        assert CloudflareDownloadHandler._browser_started is False
-
     @pytest.mark.unit
-    async def test_handler_close_stops_browser(self):
-        """Test that handler close cleans up browser state."""
+    async def test_handler_close_drops_spider_cookies(self):
+        """Test that handler close drops the spider's cookie cache entry."""
         handler = CloudflareDownloadHandler({})
 
-        # Mock browser as started
-        mock_browser = Mock()
-        mock_browser.browser = Mock()  # Mock the browser attribute
-        mock_browser.close = AsyncMock()  # Mock the async close method
+        spider = Mock()
+        spider.name = "cleanup_spider"
+        CloudflareDownloadHandler._cookie_cache["cleanup_spider"] = {"cookies": {}}
 
-        CloudflareDownloadHandler._shared_browser = mock_browser
-        CloudflareDownloadHandler._browser_started = True
+        await handler.close(spider)
 
-        # Call async close()
-        await handler.close()
-
-        # Browser close should have been called
-        mock_browser.close.assert_called_once()
-
-        assert CloudflareDownloadHandler._browser_started is False
-        assert CloudflareDownloadHandler._shared_browser is None
+        assert "cleanup_spider" not in CloudflareDownloadHandler._cookie_cache
