@@ -324,10 +324,7 @@ Found a vulnerability? See [SECURITY.md](SECURITY.md). Do not use public GitHub 
 # Database
 ./scrapai db migrate                                     # Run migrations
 ./scrapai db stats                                       # Show database statistics
-./scrapai db query "SELECT * FROM spiders LIMIT 5"       # Read-only SQL queries
-
-# Parallel crawling (requires GNU parallel)
-bin/parallel-crawl <project>                             # All spiders in project
+./scrapai db query "SELECT * FROM spiders LIMIT 5"       # SQL queries (SELECT/UPDATE/DELETE)
 ```
 
 ## Configuration
