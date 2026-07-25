@@ -44,7 +44,7 @@ test:
 	pytest -v
 
 test-unit:
-	pytest tests/unit -v -m unit
+	pytest tests/unit -v
 
 test-integration:
 	pytest tests/integration -v -m integration
