@@ -186,8 +186,19 @@ def build_compliance_rows(project, data=None):
                 "unchecked": True,
             }
         )
+
+    def _no_data_rank(e):
+        # no-data rows lead: ‼️ capture-failed first (most actionable), then ❓ not-checked,
+        # then the graded 🔴→🟢 rows — so problems sort to the TOP, not the bottom.
+        if e.get("failed"):
+            return 0
+        if e.get("checked") is None:
+            return 1
+        return 2
+
     rows.sort(
         key=lambda e: (
+            _no_data_rank(e),
             e.get("crawl_sev", 3),
             e.get("reuse_sev", 5),
             e.get("domain", ""),

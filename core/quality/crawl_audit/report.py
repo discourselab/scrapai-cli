@@ -17,8 +17,10 @@ from .text import (
     fix_hints,
 )
 
-# severity rank for the Compliance section lead-emoji / sort (worst first)
-_COMPL_SEV = {"🔴": 0, "🔎": 1, "🟡": 2, "⚪": 3, "🟢": 4, None: 5, "❓": 5}
+# severity rank for the Compliance section lead-emoji / sort (worst first). The no-data rows
+# lead: ‼️ capture-failed and ❓ not-checked are the most actionable (we know nothing), so they
+# sort ABOVE the graded 🔴→🟢 rows rather than falling to the bottom.
+_COMPL_SEV = {"‼️": -2, "❓": -1, None: -1, "🔴": 0, "🔎": 1, "🟡": 2, "⚪": 3, "🟢": 4}
 
 
 def compl_lead(e):
