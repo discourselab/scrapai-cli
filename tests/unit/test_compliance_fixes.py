@@ -134,6 +134,37 @@ def test_capture_failed_without_crawl_witness_stays_unchecked(tmp_data):
     assert any(f.get("domain") == dom for f in failures)
 
 
+def test_summary_agrees_with_report_on_rescue(tmp_data):
+    # The audit's per-spider compliance summary (feeds audit_<project>.md) must AGREE with
+    # build_report_data: a capture-failed domain rescued by its crawl-captured robots is NOT
+    # reported 'failed', and the crawl axis is answered.
+    from core.quality.crawl_audit.engine import compliance_summary
+
+    dom = "walled.example"
+    cc.mark_capture_failed(
+        "proj", dom, "unreachable — neither robots.txt nor homepage fetched"
+    )
+    crawls = os.path.join(str(tmp_data), "proj", cc.store.slug(dom), "crawls")
+    os.makedirs(crawls)
+    with open(os.path.join(crawls, "robots_01012026.txt"), "w") as fh:
+        fh.write(ROBOTS)
+
+    summary = compliance_summary("proj", {"walled_example": {"host": dom}})
+    e = summary["walled_example"]
+    assert e["failed"] is False  # rescued via crawl-captured robots → not a failure
+    assert e["access"] is not None  # crawl axis answered
+
+
+def test_summary_still_failed_without_witness(tmp_data):
+    # No crawl-time robots witness → the summary must still report 'failed' (nothing fabricated).
+    from core.quality.crawl_audit.engine import compliance_summary
+
+    dom = "dark.example"
+    cc.mark_capture_failed("proj", dom, "unreachable")
+    summary = compliance_summary("proj", {"dark_example": {"host": dom}})
+    assert summary["dark_example"]["failed"] is True
+
+
 def _seed_snapshot(tmp_path, org, ai_block):
     d = os.path.join(str(tmp_path), "proj", "_audit", "compliance", org, "2026-01-01")
     os.makedirs(d)

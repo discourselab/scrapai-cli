@@ -328,7 +328,7 @@ def run(project, opts):
                 )
             bar.advance()
 
-    compliance = compliance_summary(project, spiders)
+    compliance = compliance_summary(project, spiders, compliance_data)
     write_outputs(project, rows, config_warnings, compliance)
     out = audit_dir(project)
     print(
@@ -360,11 +360,19 @@ def _check_behind_crawl(project, spider, snapshot_date):
     return max(os.path.getmtime(f) for f in files) > snap + 86400
 
 
-def compliance_summary(project, spiders):
+def compliance_summary(project, spiders, compliance_data=None):
     """{spider: {domain, checked, access, reuse, license, ai_scrape, ai_reuse, mr_ban, llms,
     conflicts, failed, stale}} for the audit's Compliance section. Each spider maps to its
-    PRIMARY domain (host). Reuses compliance_capture's assessors + cross_check, so this and
-    `compliance_<project>.md` can never disagree. Guarded — never breaks the audit."""
+    PRIMARY domain (host). Reuses build_report_data's already-refined recs — INCLUDING the
+    crawl-robots rescue for capture-failed CF/proxy domains — so a domain answered via its
+    crawl-captured robots is NOT reported 'failed' here, keeping this and
+    `compliance_<project>.md` in agreement. Guarded — never breaks the audit."""
+    if compliance_data is None:
+        try:
+            compliance_data = cc.build_report_data(project)
+        except Exception:
+            compliance_data = None
+    captured = (compliance_data[0] if compliance_data else None) or {}
     out = {}
     for name, sp in spiders.items():
         try:
@@ -373,12 +381,19 @@ def compliance_summary(project, spiders):
             host = ""
         if not host or host == "web.archive.org":
             continue
-        org_base = cc.org_compliance_dir(project, host)
-        date, rec = cc.latest_snapshot(org_base)
+        # prefer the report's already-refined rec (includes the crawl-robots rescue for
+        # capture-failed domains); fall back to the latest snapshot on disk otherwise.
+        if host in captured:
+            _org, date, rec = captured[host]
+            failed = False  # answered via crawl-captured robots when the live probe was walled
+        else:
+            org_base = cc.org_compliance_dir(project, host)
+            date, rec = cc.latest_snapshot(org_base)
+            failed = cc.has_capture_failed(project, host)
         e = {
             "domain": host,
             "checked": date,
-            "failed": cc.has_capture_failed(project, host),
+            "failed": failed,
             "access": None,
             "reuse": None,
             "license": None,
