@@ -553,6 +553,11 @@ def _crawl_table(captured, unchecked, domains):
         "|---|---|---|---|---|---|---|",
     ]
     crawl_flagged = []
+    # no-data rows lead (most actionable) — NOT CHECKED before the graded 🔴→🟢 rows
+    for dom in unchecked:
+        lines.append(
+            f"| ❓ | [{dom}](https://{dom}/robots.txt) | **NOT CHECKED** | — | — | — | — |"
+        )
     for dom in crawl_sorted:
         org, date, rec = captured[dom]
         tier, emoji, _ = assess_crawl(rec)
@@ -564,10 +569,6 @@ def _crawl_table(captured, unchecked, domains):
         )
         if tier >= 2:
             crawl_flagged.append((tier, org, dom, date, rec))
-    for dom in unchecked:
-        lines.append(
-            f"| ❓ | [{dom}](https://{dom}/robots.txt) | **NOT CHECKED** | — | — | — | — |"
-        )
     return lines, crawl_sorted, crawl_flagged
 
 
@@ -584,7 +585,8 @@ def _reuse_table(captured, unchecked, domains):
     )
     lines = [
         "\n## Reuse — may we store / republish the content?\n",
-        "Rows run least-permissive → most-permissive. 🔎 **needs human review** — no "
+        "NOT-CHECKED rows lead; the graded rows then run least-permissive → most-permissive. "
+        "🔎 **needs human review** — no "
         "licence found AND the site blocked our probe, so a licence may have been missed "
         "· ⚪ no explicit grant (default ©, permission needed) · 🟡 licence with conditions "
         "(NC/ND/SA), **or** a permissive licence found only on a sub-page (verify it "
@@ -596,6 +598,9 @@ def _reuse_table(captured, unchecked, domains):
         "| | domain | checked | licence | found on | © ARR |",
         "|---|---|---|---|---|---|",
     ]
+    # no-data rows lead (most actionable) — NOT CHECKED before the graded rows
+    for dom in unchecked:
+        lines.append(f"| ❓ | {dom} | **NOT CHECKED** | — | — | — |")
     for dom in reuse_sorted:
         org, date, rec = captured[dom]
         _, emoji, _ = assess_reuse(rec)
@@ -624,8 +629,6 @@ def _reuse_table(captured, unchecked, domains):
         lines.append(
             f"| {emoji} | {dom} | {_date_cell(date, rec)} | {lic_cell} | {found} | {arr} |"
         )
-    for dom in unchecked:
-        lines.append(f"| ❓ | {dom} | **NOT CHECKED** | — | — | — |")
     return lines, reuse_sorted
 
 
