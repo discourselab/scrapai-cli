@@ -46,6 +46,7 @@ from .store import (
     compliance_root,
     latest_crawl_file,
     latest_snapshot,
+    norm_domain,
     project_domains,
     spider_dir_for_domain,
     spider_target_urls,
@@ -349,6 +350,85 @@ def _load_failures(project):
     return failures
 
 
+def _rescue_failed_from_crawl(project, captured):
+    """A capture-FAILURE means the lightweight probe reached NEITHER robots.txt NOR the
+    homepage — typically a Cloudflare/TLS wall the audit's no-proxy probe can't pass but the
+    spider's own crawl (browser / curl_cffi / proxy) does. When that spider captured robots.txt
+    at crawl time we still hold an AUTHORITATIVE witness for the CRAWL axis, so promote the
+    domain into `captured` with a crawl-sourced robots view (rendered '(via crawl)') instead of
+    leaving it 'NOT CHECKED'. The REUSE axis stays a 🔎 review — the homepage/licence was never
+    read (http_headers marked blocked, so license_review_needed() fires). Read-only: the
+    _capture_failed marker is LEFT in place (the live probe really did fail; `--refresh` still
+    retries it). Mirrors the per-snapshot 'rescued' path in _join_cross_check, extended to the
+    total-failure case. Returns the set of rescued domains so the failure banner drops them.
+    """
+    rescued = set()
+    for mk in sorted(
+        glob.glob(os.path.join(compliance_root(project), "*", "_capture_failed.json"))
+    ):
+        try:
+            dom = norm_domain(json.load(open(mk)).get("domain", ""))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not dom or dom in captured:
+            continue
+        spider_dir = spider_dir_for_domain(project, dom)
+        crawl_robots = latest_crawl_file(spider_dir, "robots") if spider_dir else None
+        if not crawl_robots:
+            continue
+        ua = spider_user_agent(project, dom)
+        robots = robots_view_from_text(project, dom, crawl_robots[1], ua)
+        robots["crawl_date"] = str(crawl_robots[2])
+        bots = robots["ai_bots"]
+        rec = {
+            "domain": dom,
+            "checked": str(crawl_robots[2]),
+            "source": "live",
+            "user_agent": ua,
+            "robots": robots,
+            # live probe reached neither robots nor homepage → mark the header probe blocked so
+            # the REUSE axis is a 🔎 review (licence unverified), never a false ⚪ "none found".
+            "http_headers": {
+                "fetch_status": "blocked",
+                "x_robots_tag": None,
+                "tdm_reservation": None,
+                "tdm_policy": None,
+                "noai": None,
+            },
+            "ai": {
+                "ai_bot_signals": bots,
+                "ai_bots_blocked": bots.get("full") or [],
+                "channel_blocked": bots.get("channel") or [],
+                "ai_scrape_block": ai_scrape_block_from(bots, False),
+                "ai_reuse_reserved": False,
+                "llms": {"present": False},
+            },
+            "license": None,
+            "license_url": None,
+            "license_source": None,
+            "license_quote": None,
+            "license_confidence": None,
+            "license_jsonld": None,
+            "bespoke_permission": None,
+            "legal_pages": [],
+            "all_rights_reserved": False,
+            "copyright": None,
+            "copyright_all": [],
+            "copyright_meta": None,
+            "copyright_holder": None,
+            "copyright_year": None,
+            "copyright_discrepancy": None,
+            "_rescued_from_crawl": True,
+        }
+        captured[dom] = (
+            os.path.basename(os.path.dirname(mk)),
+            str(crawl_robots[2]),
+            rec,
+        )
+        rescued.add(dom)
+    return rescued
+
+
 def build_report_data(project):
     """Build + fully process every org's LATEST compliance snapshot for `project` — the SAME
     data write_report() formats into markdown. Returns (captured, unchecked, failures) where
@@ -358,10 +438,18 @@ def build_report_data(project):
     the HTML dashboard can render the full compliance evidence from this one code path instead
     of re-parsing the markdown."""
     captured = _load_captured(project)
+    # promote capture-failed domains that still have a crawl-time robots witness (before the
+    # refine steps, so they get the same cross-check / llms-display processing as real snapshots)
+    rescued = _rescue_failed_from_crawl(project, captured)
     _refresh_robots_derived(project, captured)
     _rescan_legal_pages(project, captured)
     _join_cross_check(project, captured)
-    failures = _load_failures(project)
+    # a rescued domain is no longer a blind spot for the crawl axis → drop it from the banner
+    failures = [
+        f
+        for f in _load_failures(project)
+        if norm_domain(f.get("domain", "")) not in rescued
+    ]
 
     domains = set(project_domains(project)) | set(captured)
     unchecked = sorted(d for d in domains if d not in captured)

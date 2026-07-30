@@ -95,6 +95,45 @@ def test_failed_refresh_keeps_older_snapshot(tmp_data, monkeypatch):
     assert cc.has_capture_failed("proj", "flaky.example")
 
 
+def test_capture_failed_rescued_from_crawl_robots(tmp_data):
+    # A live-probe TOTAL failure (neither robots nor homepage) leaves only a marker — but when
+    # the spider captured robots.txt at crawl time, the report falls back to that witness so the
+    # domain is answered on the CRAWL axis '(via crawl)' instead of staying 'NOT CHECKED'; the
+    # REUSE axis stays a review (homepage/licence genuinely unread → header probe marked blocked).
+    from core.quality.compliance_capture import report as rpt
+
+    dom = "walled.example"
+    cc.mark_capture_failed(
+        "proj", dom, "unreachable — neither robots.txt nor homepage fetched"
+    )
+    crawls = os.path.join(str(tmp_data), "proj", cc.store.slug(dom), "crawls")
+    os.makedirs(crawls)
+    with open(os.path.join(crawls, "robots_01012026.txt"), "w") as fh:
+        fh.write(ROBOTS)
+
+    captured, unchecked, failures = rpt.build_report_data("proj")
+
+    assert dom in captured  # promoted out of NOT CHECKED
+    _, _, rec = captured[dom]
+    assert rec["robots"]["source"] == "crawl-capture"
+    assert rec["robots"]["fetched"]
+    assert rec["http_headers"]["fetch_status"] == "blocked"  # reuse stays a review
+    assert dom not in unchecked
+    assert all(f.get("domain") != dom for f in failures)  # dropped from the banner
+
+
+def test_capture_failed_without_crawl_witness_stays_unchecked(tmp_data):
+    # No crawl-time robots witness → the rescue must NOT fabricate a result; the domain stays a
+    # genuine capture-failure so it's still flagged for investigation.
+    from core.quality.compliance_capture import report as rpt
+
+    dom = "dark.example"
+    cc.mark_capture_failed("proj", dom, "unreachable")
+    captured, unchecked, failures = rpt.build_report_data("proj")
+    assert dom not in captured
+    assert any(f.get("domain") == dom for f in failures)
+
+
 def _seed_snapshot(tmp_path, org, ai_block):
     d = os.path.join(str(tmp_path), "proj", "_audit", "compliance", org, "2026-01-01")
     os.makedirs(d)
