@@ -1,10 +1,9 @@
 """Quality-audit command — one read-only view of a project's crawl corpus.
 
-`./scrapai audit --project <p>` runs three lenses over `data/<project>/` and builds a
+`./scrapai audit --project <p>` runs two lenses over `data/<project>/` and builds a
 self-contained HTML dashboard:
   - coverage + extraction quality (did we get the whole site? did extraction work?)
   - compliance (robots / licence / AI — may we crawl? may we reuse?)
-  - external-PDF host frequency (where the external PDFs come from)
 
 The audit is READ-ONLY. The one mutating step — dedupe — is a SEPARATE command
 (`./scrapai dedupe`); the audit only *surfaces* it (flags dupey spiders + a copy-paste
@@ -16,7 +15,7 @@ from types import SimpleNamespace
 
 import click
 
-from core.quality import crawl_audit, external_pdf
+from core.quality import crawl_audit
 from core.quality.dashboard import write_dashboard
 
 
@@ -82,8 +81,8 @@ from core.quality.dashboard import write_dashboard
     "--verbose",
     "-v",
     is_flag=True,
-    help="print per-spider detail, the full external-PDF report, and "
-    "per-organisation compliance output (default: progress + summary only)",
+    help="print per-spider detail and per-organisation compliance output "
+    "(default: progress + summary only)",
 )
 def audit(
     project,
@@ -100,7 +99,7 @@ def audit(
     no_html,
     verbose,
 ):
-    """Read-only quality audit for a project (coverage · compliance · external PDFs).
+    """Read-only quality audit for a project (coverage · compliance).
 
     Writes the per-lens markdown/CSV under data/<project>/_audit/ and builds an HTML
     dashboard (data/<project>/_audit/dashboard_<project>.html) unless --no-html.
@@ -136,10 +135,9 @@ def audit(
     )
 
     audit_result = crawl_audit.run(project, opts)
-    pdf_result = external_pdf.run(project, SimpleNamespace(only=None, verbose=verbose))
 
     if not no_html:
-        path = write_dashboard(project, audit_result, pdf_result)
+        path = write_dashboard(project, audit_result)
         click.echo(f"\nDashboard → {path}")
         click.echo(
             "  open it in a browser; dupey spiders show a copy-paste "

@@ -14,12 +14,10 @@ User-facing reference: [docs/quality.md](../quality.md); skills:
   - `corpus.py` — the ONE shared home for the JSONL scan + content fingerprint
     (crawl_audit's *true dupes* and dedupe's collapse set can no longer drift)
   - `dedupe.py` — corpus hygiene (the ONLY mutating command; reversible)
-  - `external_pdf.py` — external-PDF host frequency
   - `overview.py` + `overview_dashboard.py` — per-spider content profile + dashboard
   - `dashboard/` — the self-contained interactive audit dashboard (Coverage ·
-    Compliance · PDFs), vanilla JS/CSS, every value escaped, `render_dashboard()`
-    pure and unit-tested; incl. the per-project PDFs-tab host-exclusion layer
-    (`data/<project>/_audit/pdf_exclude.json`, dashboard-only, scaffolded inert)
+    Compliance), vanilla JS/CSS, every value escaped, `render_dashboard()`
+    pure and unit-tested
   - `_env.py` — repo-anchored environment (CLI launcher, settings.py, .scrapy,
     loud `db_query`); every engine works from ANY cwd
 - `cli/audit.py`, `cli/dedupe.py`, `cli/overview.py` — thin click wrappers,
@@ -105,9 +103,9 @@ application, core-field prune.
 - **Liveness** — upstream moved to Pueue + last-item run tracking; this audit reads
   `_audit/crawl_stats/<spider>.json`. Ship the stats writer (A) so both coexist, or
   point the audit at the Pueue/`_stats.json` source.
-- **PDFs** — upstream records PDFs as `PDF_MODE` URL-only items; `external_pdf`
-  reads an `external_pdf_urls` field on content rows. Reconcile to the new PDF item
-  model (the PDFs-tab host-exclusion layer is orthogonal and rides on top).
+- **PDFs** — upstream records PDFs as `PDF_MODE` URL-only items; the audit reads that
+  row model directly (`metadata_json.content_type = "pdf"`) for its `pdf` column and
+  `pdf-only` flag.
 - **`FIELD_EXTRACT` → `FIELDS` rename** — point the audit's/overview's schema
   reading at `FIELDS` with a `FIELD_EXTRACT` fallback.
 
@@ -120,6 +118,23 @@ application, core-field prune.
 - **Spider-vs-mini-crawl safety net** — spiders now capture legal pages + PDFs as
   content rows; compliance's own mini-crawl is a second, independent pass. Add a
   compare step that diffs the two sets per domain and flags discrepancies.
+
+## Dropped before merge — the external-PDF lens
+
+The audit originally shipped a third lens: `external_pdf.py`, which ranked each
+spider's harvested PDF links by host, wrote `_audit/external_pdf_report.md`, and fed
+a PDFs dashboard tab (with a per-project host-exclusion layer,
+`_audit/pdf_exclude.json`, to keep the tab readable). It was **cut before merge** on
+the requester's call: it re-read the whole corpus a second time with no scan cache,
+produced a multi-megabyte report, and needed the exclusion machinery — the most
+complex code in the dashboard — just to be legible. Neither of its two JSON exports
+had a consumer.
+
+What remains is unaffected: the crawler still harvests every PDF link as a URL-only
+row (`PDF_MODE` untouched), and the audit keeps the `pdf` / `(N ext)` column, the
+same-org vs external split, the `pdf-only` flag, and the PDF-provenance split out of
+`versions`. The links themselves live in the crawl output, so the per-host view can
+be rebuilt whenever it earns its keep.
 
 ## Deferred / out of scope
 

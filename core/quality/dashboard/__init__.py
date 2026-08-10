@@ -5,9 +5,9 @@ Rendered from the engines' RETURNED structured objects (and the compliance snaps
 markdown files remain the untouched ground truth; this HTML is a *projection* of the same data.
 
 One elegant idea runs through it: a quality report is a **faceted view over one corpus of
-sources, each carrying three lenses**. So the UI is *one generic interactive table*
+sources, each carrying two lenses**. So the UI is *one generic interactive table*
 (sort · facet · search · select · expand · tooltip), written once in vanilla JS/CSS and
-instantiated three times — Coverage · Compliance · PDFs. Add a lens later = add a column spec,
+instantiated twice — Coverage · Compliance. Add a lens later = add a column spec,
 not more JS.
 
 Everything derives from a single source of truth per fact: status meanings from
@@ -16,7 +16,7 @@ Everything derives from a single source of truth per fact: status meanings from
 (site-derived clause/URL text is untrusted). Self-contained: no server, no new dependency.
 
 This package is a facade over the split modules (assets, widgets, coverage_tab,
-compliance_tab, pdfs_tab, render) — every name the old single-file module exposed
+compliance_tab, render) — every name the old single-file module exposed
 is re-exported here, so `from core.quality.dashboard import ...` keeps working
 unchanged (including the legacy underscore aliases `_CSS` / `_JS`).
 """
@@ -57,23 +57,6 @@ from .coverage_tab import (
     _status_summary,
     bulk_dedupe_command,
     dupe_command,
-)
-from .pdfs_tab import (
-    _PDF_SHARE_FLOOR,
-    _PDF_URL_SAMPLE,
-    _STORAGE_RE,
-    _ensure_pdf_exclude,
-    _is_storage_host,
-    _load_pdf_exclude,
-    _pdf_config_blob,
-    _pdf_detail_placeholder,
-    _pdf_exclude_config,
-    _pdf_exclude_infobox,
-    _pdf_exclude_instructions,
-    _pdf_json_blob,
-    _pdf_table,
-    _project_own_domains,
-    _sample_urls,
 )
 from .render import render_dashboard, write_dashboard
 from .widgets import (
@@ -119,14 +102,11 @@ __all__ = [
     "_CRAWL_SEV",
     "_CSS",
     "_JS",
-    "_PDF_SHARE_FLOOR",
-    "_PDF_URL_SAMPLE",
     "_REUSE_SEV",
     "_SELECT_MODE",
     "_SELECT_NOUN",
     "_STATUS_CLASS",
     "_STATUS_ORDER",
-    "_STORAGE_RE",
     "_all_spiders_table",
     "_chip",
     "_compliance_detail",
@@ -135,30 +115,18 @@ __all__ = [
     "_cov_table",
     "_coverage_detail",
     "_dupes_section",
-    "_ensure_pdf_exclude",
     "_esc",
     "_flag_guidance",
     "_flag_title",
     "_flags_cell",
     "_flatten_compliance",
     "_health_strip",
-    "_is_storage_host",
     "_link",
-    "_load_pdf_exclude",
     "_md_strip",
     "_meter",
     "_notes_definitions",
     "_num_cell",
-    "_pdf_config_blob",
-    "_pdf_detail_placeholder",
-    "_pdf_exclude_config",
-    "_pdf_exclude_infobox",
-    "_pdf_exclude_instructions",
-    "_pdf_json_blob",
-    "_pdf_table",
-    "_project_own_domains",
     "_render_hint",
-    "_sample_urls",
     "_slug",
     "_status_lead",
     "_status_section",

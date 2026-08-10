@@ -271,8 +271,8 @@ NOTES_AND_DEFINITIONS = (
     '(`metadata_json.content_type = "pdf"`, never downloaded under the '
     "default `PDF_MODE=links_only`). `(N ext)` = PDFs on hosts outside the "
     "spider's own `allowed_domains` — external repositories/citations; the "
-    "rest are the org's own documents. Per-host detail: "
-    "`external_pdf_report.md` / the PDFs tab. Two edges to know: a sitemap "
+    "rest are the org's own documents. The URLs themselves stay in the crawl "
+    "output. Two edges to know: a sitemap "
     "that lists `.pdf` locs directly can leave those out of coverage (they "
     "count as `pdf`, not `scraped`); in `PDF_MODE=extract` the fetched PDFs "
     "sit in DeltaFetch, so the stale check compares against total uniques.\n"

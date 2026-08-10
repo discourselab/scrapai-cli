@@ -8,7 +8,7 @@ duplicate rows, some sites forbid reuse. The quality tools answer, per project:
 
 | Command | Question it answers | Writes |
 |---|---|---|
-| `./scrapai audit` | Did we get the whole site? Did extraction work? May we crawl/reuse it? Where do the external PDFs come from? | reports + CSVs + HTML dashboard (read-only for crawl data) |
+| `./scrapai audit` | Did we get the whole site? Did extraction work? May we crawl/reuse it? | reports + CSVs + HTML dashboard (read-only for crawl data) |
 | `./scrapai overview` | What did each spider *actually* collect — sections, date span, field coverage, thin items? | report + CSV + HTML dashboard (read-only) |
 | `./scrapai dedupe` | — (the ONE mutating command) | consolidates `crawls/*.jsonl`, originals kept as `*.superseded` |
 
@@ -30,9 +30,8 @@ Outputs under `data/<project>/_audit/`:
 
 - `audit_<project>.md` — the coverage/extraction report (+ `crawl_audit.csv`, `coverage.csv`)
 - `compliance_<project>.md` — robots / licence / AI-signals rollup
-- `external_pdf_report.md` — the PDF harvest per spider: external hosts ranked by frequency + same-org counts (built from the crawl's URL-only PDF rows, `metadata_json.content_type = "pdf"`; nothing is ever downloaded under the default `PDF_MODE=links_only`)
 - `dashboard_<project>.html` — self-contained interactive view (tabs: Coverage ·
-  Compliance · PDFs; sort, facet, search, row-expand, row-select → copy-paste commands)
+  Compliance; sort, facet, search, row-expand, row-select → copy-paste commands)
 
 ### Flags
 
@@ -173,7 +172,7 @@ The dashboard's row-select bars build these commands for you (select rows → co
 
 `cli/{audit,dedupe,overview}.py` are thin click wrappers over `core/quality/`:
 `crawl_audit/` (coverage engine), `compliance_capture/` (robots/licence/AI),
-`external_pdf.py`, `overview.py`, `dedupe.py`, `corpus.py` (shared JSONL scan +
+`overview.py`, `dedupe.py`, `corpus.py` (shared JSONL scan +
 fingerprint), `dashboard/` + `overview_dashboard.py` (self-contained HTML),
 `_env.py` (repo-anchored CLI/DB access). Each engine exposes `run(project, opts)`
 returning its structured result. The former standalone root scripts are frozen as

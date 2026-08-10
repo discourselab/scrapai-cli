@@ -86,7 +86,7 @@ GLOSSARY = [
 COLUMN_DEFS = {
     "pdf": "PDF documents harvested as URL-only rows (never downloaded under the "
     "default links_only mode). (N ext) = hosts outside the spider's own "
-    "domains — external repositories/citations. Details on the PDFs tab.",
+    "domains — external repositories/citations.",
     "status": "Solution family — the single action this spider needs. Hover the chip for its meaning.",
     "sitemap": "Coverage-denominator source: yes (USE_SITEMAP) · found (auto-discovered) · ignored · no.",
     "coverage": "scraped ÷ eligible — the fraction of the pages it should have that it actually got.",
@@ -96,7 +96,6 @@ COLUMN_DEFS = {
     "access": "May we FETCH the pages? robots for our paths / anti-scraping ToS / AI-bot bans.",
     "reuse": "May we STORE / republish? licence + AI-reuse reservations. Absent licence = default ©.",
     "licence": "The reuse licence detected on the home page or a linked legal page.",
-    "links": "Count of external-PDF links to this host (sort to surface an org's own repository).",
     "robots": "robots.txt — ✓ links to the live file when the site serves one.",
     "llms": "llms.txt — ✓ (⚠✗ when it prohibits AI use) links to the live file when present.",
 }

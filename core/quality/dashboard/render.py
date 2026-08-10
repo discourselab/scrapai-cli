@@ -16,26 +16,21 @@ from .coverage_tab import (
     _status_section,
     _status_summary,
 )
-from .pdfs_tab import _ensure_pdf_exclude, _pdf_table
 from .widgets import _esc, _md_strip
 
 
-def render_dashboard(
-    project, coverage_rows, compliance_rows, pdf_spiders, config_warnings=()
-):
+def render_dashboard(project, coverage_rows, compliance_rows, config_warnings=()):
     """Render the full self-contained interactive HTML from the engines' structured data.
     Pure — no filesystem, no network; unit-testable. `coverage_rows` = crawl_audit rows;
-    `compliance_rows` = build_compliance_rows() output; `pdf_spiders` = external_pdf spiders.
+    `compliance_rows` = build_compliance_rows() output.
     """
     coverage_rows = coverage_rows or []
     compliance_rows = compliance_rows or []
-    pdf_spiders = pdf_spiders or []
 
     n_spiders = len(coverage_rows)
     n_compl = sum(
         1 for e in compliance_rows if e.get("checked") is not None or e.get("failed")
     )
-    n_pdf = sum(1 for s in pdf_spiders if s.get("total"))
 
     warn = ""
     if config_warnings:
@@ -100,16 +95,6 @@ def render_dashboard(
         if coverage_rows
         else '<p class="empty">No spiders / no crawl output for this project.</p>'
     )
-    selbar_pdf = (
-        f'<div class="selbar" id="selbar-pdfs" data-project="{_esc(project)}" '
-        'data-mode="pdf-json">'
-        '<b><span class="n">0</span> hosts to include</b> → save as '
-        "<code>data/&lt;project&gt;/_audit/pdf_hosts.json</code> "
-        '<button class="copy" type="button">copy JSON</button>'
-        '<button class="dl" type="button">download pdf_hosts.json</button>'
-        '<button class="savepage" type="button">save page with choices</button>'
-        '<code class="cmd json"></code></div>'
-    )
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -118,7 +103,7 @@ def render_dashboard(
 <body>
 <header>
  <h1>{_esc(project)} — quality audit</h1>
- <div class="meta">{n_spiders} spiders · {n_compl} compliance-checked · {n_pdf} with external PDFs
+ <div class="meta">{n_spiders} spiders · {n_compl} compliance-checked
  · click a row to expand · click a header to sort · click a chip to filter · hover for detail.
  The markdown reports are the untouched ground truth; this is the interactive view.</div>
  <details class="howto">
@@ -131,7 +116,6 @@ def render_dashboard(
 <nav>
  <button class="active" onclick="tab('coverage',this)">Coverage</button>
  <button onclick="tab('compliance',this)">Compliance</button>
- <button onclick="tab('pdfs',this)">PDFs</button>
 </nav>
 <main>
  <section id="coverage" class="active">
@@ -140,20 +124,16 @@ def render_dashboard(
  <section id="compliance">
   {failbanner}{_compliance_table(compliance_rows)}
  </section>
- <section id="pdfs">
-  {_pdf_table(pdf_spiders, project)}{selbar_pdf}
- </section>
 </main>
 <script>{_JS}</script>
 </body></html>
 """
 
 
-def write_dashboard(project, audit_result, pdf_result):
-    """Assemble the structured inputs (coverage rows + full compliance snapshots + PDF hosts),
+def write_dashboard(project, audit_result):
+    """Assemble the structured inputs (coverage rows + full compliance snapshots),
     render, and write `_audit/dashboard_<project>.html`; return its path."""
     audit_result = audit_result or {}
-    pdf_result = pdf_result or {}
     coverage_rows = audit_result.get("rows", []) or []
     config_warnings = audit_result.get("config_warnings", []) or []
     try:
@@ -165,16 +145,12 @@ def write_dashboard(project, audit_result, pdf_result):
     except Exception as e:  # never let the dashboard break the audit
         print(f"      ⚠ dashboard: compliance detail unavailable ({e})", flush=True)
         compliance_rows = []
-    pdf_spiders = pdf_result.get("spiders", []) or []
 
     out_dir = os.path.join(DATA_DIR, project, "_audit")
     os.makedirs(out_dir, exist_ok=True)
-    _ensure_pdf_exclude(project)  # give a new project the standard (inert) layout
     path = os.path.join(out_dir, f"dashboard_{project}.html")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(
-            render_dashboard(
-                project, coverage_rows, compliance_rows, pdf_spiders, config_warnings
-            )
+            render_dashboard(project, coverage_rows, compliance_rows, config_warnings)
         )
     return path

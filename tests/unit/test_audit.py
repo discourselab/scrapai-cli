@@ -119,48 +119,23 @@ def _compl_rows():
     ]
 
 
-def _pdf_spiders():
-    return [
-        {
-            "spider": "acme_org",
-            "total": 3,
-            "unique": 3,
-            "hosts": [
-                {
-                    "host": "s3.amazonaws.com",
-                    "count": 2,
-                    "sample": "https://s3.amazonaws.com/a.pdf",
-                    "urls": [
-                        "https://s3.amazonaws.com/a.pdf",
-                        "https://s3.amazonaws.com/b.pdf",
-                    ],
-                },
-                {
-                    "host": "example.org",
-                    "count": 1,
-                    "sample": "https://example.org/b.pdf",
-                    "urls": ["https://example.org/b.pdf"],
-                },
-            ],
-        },
-        {"spider": "empty_org", "total": 0, "unique": 0, "hosts": []},
-    ]
-
-
 def test_render_basic_structure():
-    html = render_dashboard("news", _cov_rows(), _compl_rows(), _pdf_spiders())
+    html = render_dashboard("news", _cov_rows(), _compl_rows())
     # self-contained: inline style/script, no external assets
     assert "<style>" in html and "<script>" in html
     assert 'src="http' not in html
-    # compliance + pdf lens tables, and the coverage all-spiders table
-    for t in ('data-tab="compliance"', 'data-tab="pdfs"', 'data-tab="cov-all"'):
+    # the compliance table and the coverage all-spiders table
+    for t in ('data-tab="compliance"', 'data-tab="cov-all"'):
         assert t in html
+    # two lenses, two tabs — the nav carries exactly Coverage and Compliance
+    assert html.count("onclick=\"tab('") == 2
+    assert "'pdfs'" not in html
     assert 'class="meter"' in html  # bar-meters
     assert "fx-row" in html and "fx-detail" in html and "data-type=" in html
 
 
 def test_coverage_mirrors_md_sections():
-    html = render_dashboard("news", _cov_rows(), _compl_rows(), _pdf_spiders())
+    html = render_dashboard("news", _cov_rows(), _compl_rows())
     # audit-MD sections, in the coverage tab
     assert "Status labels" in html  # summary table
     assert "Duplicate rows (" in html  # dupes section
@@ -177,7 +152,7 @@ def test_coverage_mirrors_md_sections():
 
 
 def test_styled_tooltips_and_plain_surface():
-    html = render_dashboard("news", _cov_rows(), _compl_rows(), _pdf_spiders())
+    html = render_dashboard("news", _cov_rows(), _compl_rows())
     # the styled-tooltip primitive: data-tip everywhere, the popover engine present, native title
     # kept only as the SR/no-JS fallback (paired with data-tip on the same element)
     assert html.count("data-tip=") > 20
@@ -214,7 +189,7 @@ def test_tooltip_values_xss_safe():
             "flags": "<img src=x onerror=alert(1)>",
         }
     ]
-    html = render_dashboard("p", cov, [], [])
+    html = render_dashboard("p", cov, [])
     assert "<img src=x onerror=alert(1)>" not in html  # never raw
     assert (
         "&lt;img src=x onerror=alert(1)&gt;" in html
@@ -222,7 +197,7 @@ def test_tooltip_values_xss_safe():
 
 
 def test_select_and_bulk_command():
-    html = render_dashboard("news", _cov_rows(), _compl_rows(), _pdf_spiders())
+    html = render_dashboard("news", _cov_rows(), _compl_rows())
     assert 'class="fx-check"' in html  # checkboxes on the Duplicate-rows table
     assert 'id="selbar-cov-dupes"' in html and 'data-project="news"' in html
     # the dupey spider surfaces its dedupe command in the Duplicate-rows section
@@ -289,7 +264,7 @@ def test_per_status_action_commands():
             "flags": "sitemap-drift (0/1030)",
         },
     ]
-    html = render_dashboard("kb", rows, [], [])
+    html = render_dashboard("kb", rows, [])
     # each problem section has checkboxes and a select-bar in the right mode
     assert 'id="selbar-cov-incomplete"' in html and 'data-mode="repair"' in html
     assert 'id="selbar-cov-too-few-pages"' in html and 'data-mode="crawl"' in html
@@ -323,137 +298,18 @@ def test_fix_hint_is_bulleted():
             "flags": "",
         }
     ]
-    html = render_dashboard("kb", rows, [], [])
+    html = render_dashboard("kb", rows, [])
     # the how-to-fix is a lead paragraph + a bullet list, not one blob
     assert '<details class="howto"><summary>how to fix</summary>' in html
     assert "<ul><li>" in html  # structured, not a paragraph blob
 
 
 def test_compliance_evidence_rendered():
-    html = render_dashboard("news", _cov_rows(), _compl_rows(), _pdf_spiders())
+    html = render_dashboard("news", _cov_rows(), _compl_rows())
     assert "acme.org" in html
     assert "CC BY-NC 4.0" in html
     assert "You may reuse" in html  # licence quote
     assert "Anti-scraping clause" in html  # quoted clause block
-
-
-def test_pdf_flat_and_empty_spider_omitted():
-    html = render_dashboard("news", _cov_rows(), _compl_rows(), _pdf_spiders())
-    assert "s3.amazonaws.com" in html
-    assert "empty_org" not in html  # zero-PDF spider produces no rows
-
-
-def test_pdf_urls_lazy_seeded_sample():
-    # URLs are NOT in the initial DOM — they live in the #pdf-urls island and are built on expand.
-    # Only a SEEDED sample of ≤5 URLs per host is embedded (keeps the tab light); deterministic.
-    import json
-
-    urls = [f"https://s3.amazonaws.com/doc{i}.pdf" for i in range(30)]
-    spiders = [
-        {
-            "spider": "acme_org",
-            "total": 30,
-            "unique": 30,
-            "hosts": [
-                {
-                    "host": "s3.amazonaws.com",
-                    "count": 30,
-                    "sample": urls[0],
-                    "urls": urls,
-                }
-            ],
-        }
-    ]
-    html = render_dashboard("news", [], [], spiders)
-    html2 = render_dashboard("news", [], [], spiders)
-    assert html == html2  # seeded → reproducible
-    assert 'id="pdf-urls"' in html  # JSON island present
-    assert 'class="pdfurls" data-n="5"' in html  # only 5 sampled, not 30
-    assert "random sample of 30" in html  # labelled as a sample
-    assert html.count("<a href=") == 0  # no PDF links in the initial DOM
-    blob = html.split('id="pdf-urls">', 1)[1].split("</script>", 1)[0]
-    blob = blob.replace("\\u003c", "<").replace("\\u003e", ">").replace("\\u0026", "&")
-    assert len(list(json.loads(blob).values())[0]) == 5  # island carries exactly 5
-
-
-def test_pdf_share_floor_and_slider():
-    # ONE gate: a host's share of the org's PDFs. Below the render floor (0.1%) → not rendered;
-    # the slider gates the rest. No hard 1-link rule.
-    # org total is recomputed from host counts → 1999 + 1 = 2000; tinycite = 0.05% < 0.1% floor
-    spiders = [
-        {
-            "spider": "big_org",
-            "total": 2000,
-            "unique": 2000,
-            "hosts": [
-                {
-                    "host": "bigrepo.com",
-                    "count": 1999,
-                    "sample": "https://bigrepo.com/0.pdf",
-                    "urls": ["https://bigrepo.com/a.pdf", "https://bigrepo.com/b.pdf"],
-                },
-                {
-                    "host": "tinycite.org",
-                    "count": 1,
-                    "sample": "https://tinycite.org/x.pdf",
-                    "urls": ["https://tinycite.org/x.pdf"],
-                },
-            ],
-        }
-    ]
-    html = render_dashboard("kb", [], [], spiders)
-    assert 'data-host="bigrepo.com"' in html  # 5% share → rendered
-    assert 'data-host="tinycite.org"' not in html  # 0.05% < 0.1% floor → not rendered
-    assert (
-        "data-share=" in html and 'class="pdf-share"' in html
-    )  # per-host share + the single slider
-    assert ">sample</th>" not in html  # sample column dropped (lighter)
-
-
-def test_pdf_storage_hosts_flagged_only():
-    from core.quality.dashboard import _is_storage_host
-
-    assert _is_storage_host("iea.blob.core.windows.net") and _is_storage_host(
-        "files.wri.org"
-    )
-    assert not _is_storage_host("energy.gov")
-    spiders = [
-        {
-            "spider": "site25_org",
-            "total": 10,
-            "unique": 10,
-            "hosts": [
-                {
-                    "host": "files.site25.org",
-                    "count": 2,
-                    "sample": "https://files.site25.org/a.pdf",
-                    "urls": [
-                        "https://files.site25.org/a.pdf",
-                        "https://files.site25.org/b.pdf",
-                    ],
-                },
-                {
-                    "host": "energy.gov",
-                    "count": 8,
-                    "sample": "https://energy.gov/0.pdf",
-                    "urls": [f"https://energy.gov/{i}.pdf" for i in range(8)],
-                },
-            ],
-        }
-    ]
-    html = render_dashboard("kb", [], [], spiders)
-    # storage host is FLAGGED ☁ but not special-cased in the gate (no keep/pin/exempt attribute)
-    assert 'data-host="files.site25.org"' in html and 'class="stor"' in html
-    assert "data-storage" not in html
-
-
-def test_pdf_include_list_selbar():
-    html = render_dashboard("news", _cov_rows(), _compl_rows(), _pdf_spiders())
-    assert 'id="selbar-pdfs"' in html and 'data-mode="pdf-json"' in html
-    assert "save page with choices" in html and "download pdf_hosts.json" in html
-    assert (
-        'data-spider="acme_org"' in html
-    )  # rows carry spider+host for the {spider:{keep:[…]}} JSON
 
 
 def test_coverage_detail_flag_targeted():
@@ -510,7 +366,7 @@ def test_escapes_untrusted_values():
     compl[0]["clauses"] = [
         ("Anti-scraping clause", "https://x/t", "<script>evil()</script>")
     ]
-    html = render_dashboard("p", cov, compl, [])
+    html = render_dashboard("p", cov, compl)
     assert "<script>alert(1)</script>" not in html
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
     assert "<img src=x onerror=alert(1)>" not in html
@@ -540,7 +396,7 @@ def test_found_empty_sitemap_flag_rendered():
             "flags": "found sitemap empty (0 usable URLs)",
         }
     ]
-    html = render_dashboard("p", rows, [], [])
+    html = render_dashboard("p", rows, [])
     assert "found sitemap empty (0 usable URLs)" in html
     assert (
         "audit_sitemap_skip.json" in html
@@ -548,7 +404,7 @@ def test_found_empty_sitemap_flag_rendered():
 
 
 def test_compliance_robots_llms_columns():
-    html = render_dashboard("news", [], _compl_rows(), [])
+    html = render_dashboard("news", [], _compl_rows())
     assert ">robots</th>" in html and ">llms</th>" in html  # dedicated columns
     assert '<a href="https://acme.org/robots.txt"' in html  # clickable robots.txt ✓
     assert '<a href="https://acme.org/llms.txt"' in html  # clickable llms.txt
@@ -560,20 +416,10 @@ def test_compliance_robots_llms_columns():
 
 
 def test_ai_evidence_drawer_has_source_links():
-    html = render_dashboard("news", [], _compl_rows(), [])
+    html = render_dashboard("news", [], _compl_rows())
     assert "AI signals" in html
     assert '<a href="https://acme.org/.well-known/tdmrep.json"' in html  # receipt link
     assert "TDMRep reservation file present" in html
-
-
-def test_pdf_grouped_by_org():
-    html = render_dashboard("news", [], [], _pdf_spiders())
-    assert (
-        'class="fx-group"' in html and 'data-group="acme_org"' in html
-    )  # per-org sections
-    assert "1 hosts" in html or "hosts</span>" in html  # group header summary
-    assert 'data-host="s3.amazonaws.com"' in html  # host rows under the group
-    assert ">spider</th>" not in html  # redundant column dropped
 
 
 def test_assess_reuse_factual_no_ai_kb():
@@ -630,7 +476,7 @@ def test_license_low_data_key_is_clean():
 
     compl = _compl_rows()
     compl[0]["license_low"] = True
-    html = render_dashboard("p", [], compl, [])
+    html = render_dashboard("p", [], compl)
     m = re.search(r'<td data-key="([^"]*)">[^<]*cc by-nc', html, re.I)
     assert m, "licence cell missing"
     assert "<" not in m.group(1) and "data-tip" not in m.group(1)
@@ -652,7 +498,7 @@ def test_unchecked_rows_have_sortable_cells():
     import re
 
     rows = [{"domain": "unchecked.example", "unchecked": True}]
-    html = render_dashboard("p", [], rows, [])
+    html = render_dashboard("p", [], rows)
     row = re.search(
         r'<tr class="fx-row"[^>]*data-facet="not-checked".*?</tr>', html, re.S
     )
@@ -669,7 +515,7 @@ def test_llms_link_uses_recorded_path():
         "verdict": "allows",
         "path": "/.well-known/llms.txt",
     }
-    html = render_dashboard("p", [], compl, [])
+    html = render_dashboard("p", [], compl)
     assert '<a href="https://acme.org/.well-known/llms.txt"' in html
 
 
@@ -743,7 +589,7 @@ def test_coverage_detail_no_duplicate_unique():
 
 
 def test_empty_project():
-    html = render_dashboard("empty", [], [], [])
+    html = render_dashboard("empty", [], [])
     assert "No spiders" in html
     assert "quality audit" in html
     # no per-row dedupe command when there are no dupey spiders (the regenerate-help
@@ -825,26 +671,3 @@ def test_pdf_only_spider_renders_na_content():
         r'<tr class="fx-row"[^>]*data-name="repo_org".*?</tr>', html, re.S
     ).group(0)
     assert "n/a" in row_html
-
-
-def test_pdfs_tab_same_org_note():
-    from core.quality.dashboard import render_dashboard as rd
-
-    spiders = [
-        {
-            "spider": "x_org",
-            "total": 10,
-            "unique": 10,
-            "own_unique": 176,
-            "hosts": [
-                {
-                    "host": "site25.org",
-                    "count": 10,
-                    "sample": "https://site25.org/a.pdf",
-                    "urls": ["https://site25.org/a.pdf"],
-                }
-            ],
-        }
-    ]
-    html = rd("p", [], [], spiders)
-    assert "176 same-org PDFs" in html
