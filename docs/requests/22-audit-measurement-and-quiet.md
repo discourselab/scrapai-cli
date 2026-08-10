@@ -2,18 +2,18 @@
 
 **Requested by:** MirjamOdile (2026-07-16)
 **Type:** bugfix bundle (audit scoring accuracy) + UX (quiet by default)
-**Status:** Fixes A, C, D, E applied and verified on `news_batch_1`
+**Status:** Fixes A, C, D, E applied and verified on a production project
 (C/D syntax/logic-checked but not yet exercised live — they only fire on the
 sitemap FETCH path and verification ran `--no-fetch`; run a normal fetching
-audit, e.g. re-check that `site06_org` is discovered rather than mislabelled
-`no-sitemap`). Fix B implemented **presentationally** after the counting
+audit, e.g. re-check that the CF-guarded site in Fix D is discovered rather
+than mislabelled `no-sitemap`). Fix B implemented **presentationally** after the counting
 approach was tried, shown to break the audit↔dedupe invariant, and reverted —
 see the Fix B section.
 *(Numbered 23 before the 2026-07-16 renumbering. The spider-side
 "Fix C-companion" moved to request 19, where the sitemap-spider work lives.)*
 
-These are the audit-side "measurement bugs" found during the news_batch_1
-review: the audit scores against a corrupted denominator / fingerprint, so it
+These are the audit-side "measurement bugs" found during a project review:
+the audit scores against a corrupted denominator / fingerprint, so it
 flags healthy spiders as broken and stays silent on genuinely broken ones. All
 fixes are audit-only (they change reported numbers, never crawl behaviour or
 data).
@@ -24,14 +24,14 @@ data).
 
 `crawl_stats_liveness()` bucketed 5xx with 4xx, so a crawl that threw transient
 503s had its `eligible` denominator shrunk and its coverage under-reported.
-Observed: `site33_org` read "liveness 56%" from 810×503 (transient); real
+Observed: one spider read "liveness 56%" from 810×503 (transient); real
 coverage ~97%.
 
 **File:** `core/quality/crawl_audit/spiders_db.py` — only 4xx count as dead
 (the URL doesn't exist); 5xx are transient server errors, excluded from the
 denominator entirely.
 
-**Verified:** `site33_org` moved `manual review` (liveness 56%, coverage
+**Verified:** that spider moved `manual review` (liveness 56%, coverage
 172%) → `ok` (eligible 599→1064, coverage 97%, flags cleared).
 
 **Test note:** the audit-integration expectation in
@@ -42,7 +42,7 @@ file belongs to the per-crawl stats PR).
 
 **Symptom:** the content fingerprint hashes `metadata_json`, which for PDF rows
 carries `found_on`. The same PDF linked from N pages yields N rows with N
-fingerprints. Observed: `site20_org` reported **10,932 "versions"**
+fingerprints. Observed: one document-heavy spider reported **10,932 "versions"**
 (exact: 12,350 PDF link-occurrences − 1,391 unique ≈ 10,959).
 
 **Why the counting fix is wrong.** Keying PDF rows in `scan_file()`'s `uc` set
@@ -84,7 +84,7 @@ request 19.
 `discover_sitemap()`'s robots probe treated any non-empty body as a valid
 robots.txt. A Cloudflare "Just a moment" challenge is non-empty HTML with no
 `Sitemap:` directive, so discovery concluded "no sitemap" even when robots.txt
-really declares one. Observed: `site06_org` — robots.txt declares
+really declares one. Observed: a CF-guarded site whose robots.txt declares
 `sitemap_index.xml`, but the audit reported `no-sitemap` (hiding a ~50% loss).
 
 **File:** `core/quality/crawl_audit/sitemaps.py` — a robots body that looks
@@ -109,10 +109,10 @@ and per-org compliance output.
 
 ## Impact
 
-- Coverage numbers stop lying: `site33_org`-class false "liveness" flags
-  disappear, `site20_org`'s 10,932 phantom versions are shown as PDF
-  provenance instead of content churn, and CF-guarded sites like `site06_org`
-  are correctly discovered instead of mislabelled `no-sitemap`.
+- Coverage numbers stop lying: transient-5xx false "liveness" flags disappear,
+  the 10,932 phantom versions are shown as PDF provenance instead of content
+  churn, and CF-guarded sites are correctly discovered instead of mislabelled
+  `no-sitemap`.
 - Default `./scrapai audit` output becomes a few progress lines + a summary;
   `--verbose` restores the previous detail.
 - All changes are read-only measurement/report fixes — no crawl, spider, or
