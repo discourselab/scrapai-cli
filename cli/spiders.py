@@ -164,8 +164,8 @@ def import_spider(file, project, skip_validation):
                     return
 
             # Sanity-check spider name vs its domain. A domain can legitimately host
-            # MORE THAN ONE spider (e.g. noaa_gov + noaa_gov_gc, or a subdomain like
-            # ncei.noaa.gov grouped as noaa_gov_ncei), so the name won't always equal
+            # MORE THAN ONE spider (e.g. site28_gov + site28_gov_gc, or a subdomain like
+            # data.site28.gov grouped as site28_gov_data), so the name won't always equal
             # the domain. Everything downstream keys off the spider NAME (only the
             # inspector's analysis folder stays domain-derived) — warn, don't block
             # (previously this rejected legit sub-spiders, forcing them to drop
