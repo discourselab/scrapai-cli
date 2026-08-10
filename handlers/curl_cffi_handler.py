@@ -7,6 +7,7 @@ Chrome browser at the TLS handshake level — something Scrapy/Twisted cannot do
 Activated via spider setting: CURL_CFFI_ENABLED: true
 """
 
+import base64
 import gzip
 import logging
 
@@ -23,11 +24,20 @@ def proxies_from_request(request):
     SmartProxyMiddleware communicates the chosen proxy via request.meta['proxy'];
     curl_cffi needs it as a {scheme: url} dict. Without this the proxy is silently
     dropped on the curl_cffi transport.
+
+    Scrapy's built-in HttpProxyMiddleware strips any credentials out of
+    meta['proxy'] into a Proxy-Authorization header. curl_cffi authenticates from
+    the URL only, so put them back or an authenticating proxy answers 407.
     """
     proxy = request.meta.get("proxy")
-    if proxy:
-        return {"http": proxy, "https": proxy}
-    return None
+    if not proxy:
+        return None
+    auth = request.headers.get("Proxy-Authorization")
+    if auth and "@" not in proxy:
+        creds = base64.b64decode(auth.split()[-1]).decode()
+        scheme, _, host = proxy.partition("://")
+        proxy = f"{scheme}://{creds}@{host}"
+    return {"http": proxy, "https": proxy}
 
 
 class CurlCffiDownloadHandler:
@@ -82,6 +92,9 @@ class CurlCffiDownloadHandler:
         for k, v in default_headers.items():
             if k not in headers:
                 headers[k] = v
+
+        # Proxy credentials belong to the tunnel, not the origin server
+        headers.pop("Proxy-Authorization", None)
 
         if "Cookie" in headers:
             logger.debug(f"Cookie header: {headers['Cookie'][:80]}...")
