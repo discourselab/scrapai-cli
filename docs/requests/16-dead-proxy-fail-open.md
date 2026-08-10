@@ -1,6 +1,6 @@
 # 16 — SmartProxyMiddleware: dead-proxy detection + fail-open to direct
 
-**Requested by:** Ranu (2026-07-10)
+**Requested by:** MirjamOdile (2026-07-10)
 **Type:** bugfix (reliability defect — not a feature request)
 **Status:** implemented locally (middlewares.py), candidate for upstream PR
 
