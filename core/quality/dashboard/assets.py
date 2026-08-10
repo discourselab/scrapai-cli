@@ -44,12 +44,7 @@ display:inline-block}
 .tok[title]{cursor:help;border-bottom:1px dotted var(--mut)}
 .fx-row{cursor:pointer}
 .fx-row:hover td{background:#1b2836}
-.fx-row.hid,.fx-detail.hid,.fx-group.hid{display:none}
-tr.fx-group{cursor:pointer;background:#111c28}
-tr.fx-group:hover td{background:#1b2836}
-tr.fx-group td{font-size:13px}
-tr.fx-group .caret{display:inline-block;transition:transform .1s}
-tr.fx-group.open .caret{transform:rotate(90deg)}
+.fx-row.hid,.fx-detail.hid{display:none}
 .caret{color:var(--mut);font-size:11px;transition:transform .1s}
 .fx-row.open .caret{transform:rotate(90deg);display:inline-block}
 .fx-detail td{background:#0d1620;color:var(--fg);font-size:13px}
@@ -151,7 +146,6 @@ function setupTable(table){
  var tbody=table.querySelector('tbody');
  var facetsEl=document.querySelector('.fx-facets[data-for="'+tab+'"]');
  var active=new Set(); var att=false; var q='';
- var groups=tbody.querySelectorAll('tr.fx-group'); var grouped=groups.length>0; var openG=new Set();
  // helpers
  function detail(id){return tbody.querySelectorAll('tr.fx-detail[data-id="'+id+'"]')[0];}
  function apply(){
@@ -160,16 +154,10 @@ function setupTable(table){
    var okA=!att||r.getAttribute('data-attention')==='1';
    var okQ=q===''||(r.getAttribute('data-name')||'').toLowerCase().indexOf(q)>=0;
    var show=okF&&okA&&okQ;
-   if(grouped){var g=r.getAttribute('data-group');show=show&&(q!==''||openG.has(g));} // search forces expand
    r.classList.toggle('hid',!show);
    var d=detail(r.getAttribute('data-id'));
    if(d){d.classList.toggle('hid',!show);}   // detail's expand state stays on its `hidden` attr
-  });
-  if(grouped){groups.forEach(function(gr){
-   var gid=gr.getAttribute('data-group'); gr.classList.toggle('open',openG.has(gid)||q!=='');
-   var any=false; tbody.querySelectorAll('tr.fx-row[data-group="'+gid+'"]:not(.hid)').forEach(function(){any=true;});
-   gr.classList.toggle('hid',q!==''&&!any);   // when searching, hide empty org sections
-  });}}
+  });}
  // expand
  tbody.addEventListener('click',function(e){
   if(e.target.closest('a,button,input'))return;
@@ -179,12 +167,6 @@ function setupTable(table){
   if(open){d.removeAttribute('hidden');r.classList.add('open');}
   else{d.setAttribute('hidden','');r.classList.remove('open');}
   r.setAttribute('aria-expanded',open?'true':'false');});
- // group headers: click toggles that group's rows
- if(grouped){tbody.addEventListener('click',function(e){
-  var g=e.target.closest('tr.fx-group');if(!g)return;
-  var gid=g.getAttribute('data-group');
-  if(openG.has(gid))openG.delete(gid);else openG.add(gid);
-  apply();});}
  // sort
  table.querySelectorAll('th[data-key]').forEach(function(th){
   var idx=th.cellIndex;   // real column position (accounts for a leading no-key `sel` column)
@@ -244,12 +226,6 @@ function setupTable(table){
    refresh();});
   var cb=selbar.querySelector('button.copy');
   if(cb)cb.addEventListener('click',function(){copy(cmd.textContent,cb);});}
- if(grouped){
-  // start collapsed, but open any group that already has a ticked row so selections are visible
-  tbody.querySelectorAll('tr.fx-row .fx-check:checked').forEach(function(c){
-   openG.add(c.closest('tr.fx-row').getAttribute('data-group'));});
-  apply();
- }
 }
 // styled hover/focus tooltip — replaces native title= everywhere; instant, readable, discoverable.
 (function(){
