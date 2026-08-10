@@ -10,6 +10,38 @@ import re
 
 logger = logging.getLogger(__name__)
 
+# Media URLs sometimes appear as plain <loc>s (WP image/attachment sitemaps):
+# media, not content pages — they must not inflate the audit's coverage
+# denominator (docs/requests/19). Mirrors the audit's fetched-path list
+# (core/quality/crawl_audit/sitemaps.py); duplicated because this file must
+# not import the quality tool.
+_MEDIA_EXT = (
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".webp",
+    ".svg",
+    ".bmp",
+    ".tif",
+    ".tiff",
+    ".ico",
+    ".mp4",
+    ".m4v",
+    ".mov",
+    ".avi",
+    ".wmv",
+    ".webm",
+    ".mp3",
+    ".wav",
+    ".ogg",
+)
+
+
+def _is_media_loc(url):
+    u = url.lower().split("?", 1)[0].split("#", 1)[0].rstrip("/")
+    return u.endswith(_MEDIA_EXT)
+
 
 class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
     """Spider for crawling sites via sitemap.xml files."""
@@ -29,6 +61,15 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
         self.name = spider_name
         self._items_scraped = 0
         self._item_limit = None
+        # Audit accounting, counted in sitemap_filter() and dumped by closed()
+        # into crawl_stats/: total = UNIQUE page URLs in the sitemap (media
+        # locs excluded, deduped across sub-sitemap files — docs/requests/19);
+        # eligible = those that pass date/deny filters AND match an allow rule
+        # — the coverage denominator, captured at crawl time so nothing
+        # re-fetches the sitemap.
+        self._sm_total = 0
+        self._sm_eligible = 0
+        self._sm_seen = set()
         self._load_config()
         super().__init__(*args, **kwargs)
 
@@ -106,6 +147,18 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
 
         if not sitemap_rules:
             sitemap_rules = [("/", "parse_article")]
+
+        # Compile allow patterns for the eligibility count in sitemap_filter();
+        # "/" = match-all.
+        self._sm_match_all = any(p == "/" for p, _ in sitemap_rules)
+        self._sm_allow_res = []
+        for p, _ in sitemap_rules:
+            if p == "/":
+                continue
+            try:
+                self._sm_allow_res.append(re.compile(p))
+            except re.error:
+                pass
 
         return sitemap_rules
 
@@ -186,6 +239,10 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
         # sitemaps (sitemap.xml?page=N) and the crawl would silently run empty.
         is_index = getattr(entries, "type", None) == "sitemapindex"
 
+        # <sitemapindex> entries are sub-sitemap refs, not content pages — they
+        # pass through the filters below but must never be counted as pages.
+        is_index = getattr(entries, "type", None) == "sitemapindex"
+
         total = 0
         rewritten = 0
         filtered = 0
@@ -195,6 +252,22 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
 
         for entry in entries:
             total += 1
+
+            # Decided on the raw loc, before date/deny filtering, so _sm_total
+            # reflects the whole sitemap. Media attachment locs are not content
+            # pages, and the same loc repeated across sub-sitemap files counts
+            # once (docs/requests/19).
+            loc0 = entry.get("loc", "")
+            new_page = (
+                not is_index
+                and bool(loc0)
+                and not loc0.lower().endswith((".xml", ".xml.gz"))
+                and not _is_media_loc(loc0)
+                and loc0 not in self._sm_seen
+            )
+            if new_page:
+                self._sm_seen.add(loc0)
+                self._sm_total += 1
 
             # Resolve relative <loc> to absolute before anything downstream reads
             # it. Covers root-relative ("/path") and protocol-relative ("//host").
@@ -232,6 +305,15 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
             ):
                 denied += 1
                 continue
+
+            # Survived date + deny filters and matches an allow rule → eligible.
+            if new_page and (
+                getattr(self, "_sm_match_all", False)
+                or any(
+                    rx.search(entry["loc"]) for rx in getattr(self, "_sm_allow_res", [])
+                )
+            ):
+                self._sm_eligible += 1
 
             logger.debug(f"Sitemap entry: {entry['loc']}")
             yielded += 1

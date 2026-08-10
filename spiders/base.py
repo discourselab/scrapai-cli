@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import re
 
 logger = logging.getLogger(__name__)
@@ -145,6 +146,81 @@ class BaseDBSpiderMixin:
                 "https": "handlers.cloudflare_handler.CloudflareDownloadHandler",
             }
 
+    def closed(self, reason):
+        """Persist each completed crawl's own stats so the audit can read EXACT
+        page liveness for free, instead of the slow sampled --check-liveness
+        pass (which fetches ~1000 URLs and took forever). Scrapy already counts
+        every response status; we just write them out. Only full production
+        crawls write: an item-capped run (--limit / health) is skipped by
+        SETTING, not close reason — a test crawl that runs out of items UNDER
+        its limit still ends "finished" and must not overwrite a real crawl's
+        numbers."""
+        if reason != "finished":
+            return
+        try:
+            if self.crawler.settings.getint("CLOSESPIDER_ITEMCOUNT"):
+                return
+            from core.config import DATA_DIR
+
+            stats = self.crawler.stats.get_stats()
+            project = (
+                getattr(getattr(self, "spider_config", None), "project", None)
+                or "default"
+            )
+            status = {
+                k.rsplit("/", 1)[-1]: v
+                for k, v in stats.items()
+                if "downloader/response_status_count/" in k
+            }
+            data = {
+                "spider": self.spider_name,
+                "reason": reason,
+                "items": stats.get("item_scraped_count", 0),
+                "requests": stats.get("downloader/request_count", 0),
+                "status": status,  # {"200": 4890, "404": 210, ...}
+            }
+            # A resumed crawl (checkpoint) restores its request queue from disk
+            # but every in-memory counter restarts at zero, so this leg's
+            # numbers aren't the whole crawl's. Record the fact and withhold
+            # the sitemap denominator below — wrong-but-plausible coverage is
+            # worse than absent (the audit falls back to fetching the sitemap).
+            resumed = getattr(self, "_resumed", False)
+            if resumed:
+                data["resumed"] = True
+            # For the audit: sitemap spiders count their own sitemap size +
+            # rule-eligible URLs while parsing (sitemap_spider.py); record them
+            # so the audit reads the coverage denominator from the crawl instead
+            # of re-fetching the sitemap. Absent on rule-based spiders -> the
+            # audit falls back to fetching the sitemap for those.
+            sm_total = getattr(self, "_sm_total", 0)
+            if sm_total and not resumed:
+                data["sitemap_total"] = sm_total
+                data["eligible"] = getattr(self, "_sm_eligible", 0)
+            out_dir = os.path.join(DATA_DIR, project, "_audit", "crawl_stats")
+            os.makedirs(out_dir, exist_ok=True)
+            with open(os.path.join(out_dir, f"{self.spider_name}.json"), "w") as fh:
+                json.dump(data, fh, indent=2)
+            logger.info(f"Wrote crawl stats → {out_dir}/{self.spider_name}.json")
+        except Exception as e:
+            logger.warning(f"Could not write crawl stats: {e}")
+
+    @staticmethod
+    def _resumed_from_checkpoint(crawler):
+        """True when this run continues an interrupted crawl. Scrapy's scheduler
+        persists its pending-queue state to JOBDIR/requests.queue/active.json on
+        close: a cleanly finished crawl leaves an empty list, an interrupted one
+        the non-empty priority state it will resume from — the same file Scrapy
+        itself reads to resume. Must be checked BEFORE the scheduler opens (the
+        queue is consumed during the run); callers do this from from_crawler."""
+        jobdir = crawler.settings.get("JOBDIR")
+        if not jobdir:
+            return False
+        try:
+            with open(os.path.join(jobdir, "requests.queue", "active.json")) as fh:
+                return bool(json.load(fh))
+        except (OSError, ValueError):
+            return False
+
     @classmethod
     def _apply_cf_to_crawler(cls, spider, crawler):
         """Apply spider settings + Cloudflare/curl_cffi handlers to crawler after init.
@@ -155,6 +231,9 @@ class BaseDBSpiderMixin:
         propagation step, JSON-declared settings like CONCURRENT_REQUESTS,
         DOWNLOAD_DELAY, and AUTOTHROTTLE_ENABLED are silently ignored.
         """
+        # Runs from from_crawler, before the scheduler opens — the last moment
+        # the persisted queue state is still readable (see the helper).
+        spider._resumed = cls._resumed_from_checkpoint(crawler)
         if hasattr(spider, "custom_settings"):
             for key, value in spider.custom_settings.items():
                 crawler.settings.set(key, value, priority="spider")
