@@ -157,9 +157,9 @@ adapted to the framework's PDF row model. `git diff` against main = the PR.
 **Update — the external-PDF lens was dropped before merge.** The record above
 describes the shape as first built. `external_pdf.py`, its
 `_audit/external_pdf_report.md`, the dashboard's PDFs tab and the
-`pdf_exclude.json` host-exclusion layer were all cut on the requester's call (a
-second uncached pass over the corpus for a report whose exports nothing consumed —
-rationale in [quality-tool.md](quality-tool.md#dropped-before-merge--the-external-pdf-lens)).
+`pdf_exclude.json` host-exclusion layer were all cut on the requester's call —
+convoluted and not particularly useful, with external-source scanning moving
+elsewhere ([quality-tool.md](quality-tool.md#dropped-before-merge--the-external-pdf-lens)).
 Everything else in this section stands: the row model, the `pdf (N ext)` column and
 its own/external split, the `pdf-only` flag, the overview's PDF stats and the
 scan-cache `pdf`/`pdf_hosts` fields are unchanged.

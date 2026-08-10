@@ -125,16 +125,13 @@ The audit originally shipped a third lens: `external_pdf.py`, which ranked each
 spider's harvested PDF links by host, wrote `_audit/external_pdf_report.md`, and fed
 a PDFs dashboard tab (with a per-project host-exclusion layer,
 `_audit/pdf_exclude.json`, to keep the tab readable). It was **cut before merge** on
-the requester's call: it re-read the whole corpus a second time with no scan cache,
-produced a multi-megabyte report, and needed the exclusion machinery — the most
-complex code in the dashboard — just to be legible. Neither of its two JSON exports
-had a consumer.
+the requester's call: convoluted and not particularly useful in practice, and
+scanning external sources is moving elsewhere, so it does not need to ship here.
 
 What remains is unaffected: the crawler still harvests every PDF link as a URL-only
 row (`PDF_MODE` untouched), and the audit keeps the `pdf` / `(N ext)` column, the
 same-org vs external split, the `pdf-only` flag, and the PDF-provenance split out of
-`versions`. The links themselves live in the crawl output, so the per-host view can
-be rebuilt whenever it earns its keep.
+`versions`. The links themselves live in the crawl output.
 
 ## Deferred / out of scope
 
