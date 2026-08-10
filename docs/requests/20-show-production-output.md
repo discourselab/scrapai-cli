@@ -1,6 +1,6 @@
 # 20 — `./scrapai show` reads production crawl output, not just the DB
 
-**Requested by:** Ranu (2026-07-16)
+**Requested by:** MirjamOdile (2026-07-16)
 **Type:** bug (misleading tool — wrong data source)
 **Status:** implemented locally (`cli/show.py`)
 *(Numbered 21 before the 2026-07-16 renumbering.)*
