@@ -103,10 +103,9 @@ Two per-project JSON files under `_audit/` carry HUMAN verdicts — agents may
 
 Crawl data (`crawls/*.jsonl`, spider configs, the DB) is **never** touched. The
 audit does maintain its own `_audit/` state: the caches above, pruning
-crawl_stats/scan_cache for spiders whose data folder was deleted, refreshing the
-`_instructions` line in the review-record files (entries untouched, atomic
-writes), and scaffolding an inert `pdf_exclude.json` template on first dashboard
-build. `dedupe` is the only command that rewrites crawl output.
+crawl_stats/scan_cache for spiders whose data folder was deleted, and refreshing
+the `_instructions` line in the review-record files (entries untouched, atomic
+writes). `dedupe` is the only command that rewrites crawl output.
 
 ---
 
