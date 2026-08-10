@@ -1,6 +1,6 @@
 # 24 — curl_cffi handler: proxy credentials dropped (407) and leaked to origin
 
-**Requested by:** Ranu (2026-08-05)
+**Requested by:** MirjamOdile (2026-08-05)
 **Type:** bugfix (transport defect — not a feature request)
 **Status:** implemented locally (`handlers/curl_cffi_handler.py`), candidate for
 upstream PR
