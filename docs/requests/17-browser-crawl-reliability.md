@@ -1,6 +1,6 @@
 # 17 — Browser crawls: fail loud on a wedged service + dedicated Pueue group
 
-**Requested by:** Ranu (2026-07-15)
+**Requested by:** MirjamOdile (2026-07-15)
 **Type:** reliability defect (fail-loud) + feature (browser-crawl concurrency)
 **Status:** implemented locally (`extensions/browser_wedge.py`, `cli/crawl.py`,
 `settings.py`); the solve-probe liveness check is a documented follow-up.
