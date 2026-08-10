@@ -1,6 +1,6 @@
 # 18 — Crawl-output hygiene: test crawls side-effect-free + same-day resets supersede
 
-**Requested by:** Ranu (2026-07-16)
+**Requested by:** MirjamOdile (2026-07-16)
 **Type:** bug ×2 (silent content loss + duplicate rows), one theme: a crawl run
 must not corrupt another run's state or output
 **Status:** implemented locally (`cli/crawl.py`)
