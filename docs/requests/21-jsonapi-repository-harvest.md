@@ -1,6 +1,6 @@
 # 21 — Repository-harvest spider (JSON:API / paginated-JSON) — port
 
-**Requested by:** Ranu (2026-07-13)
+**Requested by:** MirjamOdile (2026-07-13)
 **Type:** feature port (proven in the pre-migration production repo as its request 11)
 **Status:** implemented (spiders/repository_spider.py + cli/crawl.py routing), tests green
 *(Numbered 17 before the 2026-07-16 renumbering.)*
