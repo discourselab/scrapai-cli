@@ -1,6 +1,6 @@
 # 23 — Sitemap crawl-recorded denominator: unique pages only, media excluded
 
-**Requested by:** Ranu (2026-07-16)
+**Requested by:** MirjamOdile (2026-07-16)
 **Type:** bug (measurement — audit coverage denominator)
 **Status:** implemented locally (`spiders/sitemap_spider.py`); ships as a patch
 commit on the open **per-crawl-stats PR (PR 3)**, whose code it corrects.
