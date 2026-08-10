@@ -1,6 +1,6 @@
 # 22 — Audit: measurement-accuracy fixes + minimal default output
 
-**Requested by:** Ranu (2026-07-16)
+**Requested by:** MirjamOdile (2026-07-16)
 **Type:** bugfix bundle (audit scoring accuracy) + UX (quiet by default)
 **Status:** Fixes A, C, D, E applied and verified on `news_batch_1`
 (C/D syntax/logic-checked but not yet exercised live — they only fire on the

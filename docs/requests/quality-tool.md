@@ -1,6 +1,6 @@
 # Quality-tool suite — integration handover
 
-**Requested by:** Ranu (project owner). **Status:** built, bug-fixed, restructured and
+**Requested by:** MirjamOdile (project owner). **Status:** built, bug-fixed, restructured and
 documented locally (`./scrapai audit` / `overview` / `dedupe` + dashboards + the
 `spider-*` maintenance skills). This note is the checklist for folding it upstream.
 User-facing reference: [docs/quality.md](../quality.md); skills:
