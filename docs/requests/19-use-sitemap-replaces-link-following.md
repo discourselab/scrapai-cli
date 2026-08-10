@@ -1,6 +1,6 @@
 # 19 — `USE_SITEMAP` silently replaces link-following (no hybrid)
 
-**Requested by:** Ranu (2026-07-16)
+**Requested by:** MirjamOdile (2026-07-16)
 **Type:** bug (framework defect + misleading docs)
 **Status:** implemented locally (loud warning + docs fix); the hybrid crawl is
 a documented follow-up.
