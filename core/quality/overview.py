@@ -21,8 +21,9 @@ Per spider it computes:
   - off-domain    — scraped URLs outside allowed_domains (misconfiguration)
   - samples       — a few real titles/URLs to eyeball plausibility
 
-Writes `data/<project>/_audit/overview_<project>.md` + `overview_<project>.csv` and returns
-`{"spiders": [row, ...], "report_path": md_path}` for the HTML dashboard.
+Writes `data/<project>/_audit/overview_<project>.md` + `overview_<project>.csv` +
+`overview_rows.json` (the full row store a `--only` run merges the other spiders' rows
+from) and returns `{"spiders": [row, ...], "report_path": md_path}` for the HTML dashboard.
 """
 
 import csv
@@ -625,9 +626,12 @@ def _print_terminal(project, rows, thin_chars):
 
 # --------------------------------------------------------------------------- run
 def run(project, opts=None):
-    """Build the content profile for every spider in `project` (or `opts.only`). Writes
-    `_audit/overview_<project>.md` + `.csv`, prints a terminal table, and returns
-    `{"spiders": [row, ...], "report_path": md_path, "thin_chars": n}`."""
+    """Build the content profile for every spider in `project`. Writes
+    `_audit/overview_<project>.md` + `.csv` + `overview_rows.json` (the full row
+    store), prints a terminal table, and returns
+    `{"spiders": [row, ...], "report_path": md_path, "thin_chars": n}`.
+    `opts.only` narrows the profiling WORK, not the report: the other spiders'
+    rows are carried over from the stored `overview_rows.json`."""
     only = list(getattr(opts, "only", None) or []) if opts is not None else []
     thin_chars = (
         int(getattr(opts, "thin_chars", 200) or 200) if opts is not None else 200
@@ -648,6 +652,7 @@ def run(project, opts=None):
         and not d.startswith("_")
         and d != "health"
     )
+    all_names = list(spider_names)
     if only:
         spider_names = [s for s in spider_names if s in only]
 
@@ -661,6 +666,36 @@ def run(project, opts=None):
 
     out_dir = os.path.join(base, "_audit")
     os.makedirs(out_dir, exist_ok=True)
+    # The CSV is lossy (nested sections/year_hist/fields/samples are flattened), so
+    # the row store for --only merges is a JSON dump of the full rows. Tuples become
+    # lists on round-trip — fine, every consumer indexes/iterates them.
+    rows_path = os.path.join(out_dir, "overview_rows.json")
+    if only:
+        stored = None
+        try:
+            with open(rows_path, encoding="utf-8") as fh:
+                stored = json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            pass
+        if stored is None:
+            print(
+                "⚠ no previous overview to merge into (overview_rows.json missing) — "
+                "output contains only the --only spiders; run a full overview once"
+            )
+        else:
+            done = {r["spider"] for r in rows}
+            kept = [
+                r
+                for r in stored
+                if r["spider"] not in done and r["spider"] in all_names
+            ]
+            rows = sorted(rows + kept, key=lambda r: r["spider"])
+            print(
+                f"merged {len(kept)} stored rows from previous report "
+                f"(recomputed: {', '.join(sorted(done))})"
+            )
+    with open(rows_path, "w", encoding="utf-8") as fh:
+        json.dump(rows, fh)
     md = _write_markdown(project, rows, out_dir, thin_chars)
     _write_csv(project, rows, out_dir)
     _print_terminal(project, rows, thin_chars)

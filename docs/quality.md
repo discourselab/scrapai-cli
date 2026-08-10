@@ -42,7 +42,7 @@ Outputs under `data/<project>/_audit/`:
 | `--reset` | re-capture compliance, OVERWRITING prior dated snapshots (no history) |
 | `--no-fetch` | never fetch sitemaps; use only cached files + crawl-recorded counts |
 | `--fetch-all` | re-fetch every spider's sitemap (refreshes the cache; prunes the previous generation) |
-| `--only <spider>` | restrict to specific spiders (repeatable) |
+| `--only <spider>` | recompute only these spiders (repeatable); every other spider's row carries over from the previous report, so the output stays project-wide |
 | `--no-cache` | ignore the per-file crawl-scan cache; re-read every `crawls/*.jsonl` |
 | `--per-cap N` / `--global-cap N` | max sitemap fetches per spider (80) / overall (2000) |
 | `--no-browser-retry` | don't retry failed sitemap fetches with `--browser` |
@@ -122,7 +122,7 @@ span + null % + per-year histogram, per-field coverage %, thin-item %, degenerat
 `overview_<project>.md` + `.csv` + `overview_<project>.html`. Complementary to the
 audit — it never recomputes coverage-vs-sitemap or dupes.
 
-Flags: `--only <spider>` (repeatable) · `--thin-chars N` (default 200) · `--no-html`.
+Flags: `--only <spider>` (repeatable; recomputes just those — other rows carry over from `_audit/overview_rows.json`, so the report stays project-wide) · `--thin-chars N` (default 200) · `--no-html`.
 In the dashboard, the null-date and thin meters are lower-is-better (green = low).
 A `date-null N%` flag alone is informational and does not mark a spider for attention.
 

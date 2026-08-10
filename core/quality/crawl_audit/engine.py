@@ -19,7 +19,7 @@ from core.quality import (
 # the report's "true dupes" always equals what the default dedupe collapses.
 from core.quality.corpus import scan_project as crawl_audit
 
-from .report import write_outputs
+from .report import merge_only_rows, read_csv_rows, write_outputs
 from .review import ensure_review_configs, load_notes, load_skip
 from .scoring import ScoreContext, score_spider
 from .sitemaps import spider_cache_dirs
@@ -207,7 +207,7 @@ def run(project, opts):
         return not has_cache(name)  # 'missing' — only where nothing cached
 
     print(f"[1/3] loading spider metadata for project '{project}'...", flush=True)
-    spiders = load_spiders(project)
+    all_spiders = load_spiders(project)
     ensure_review_configs(
         project
     )  # create stubs if absent; keep `_instructions` current (entries untouched)
@@ -216,16 +216,17 @@ def run(project, opts):
     config_warnings = config_warnings + note_warnings
     for w in config_warnings:
         print(f"  ⚠ {w}", flush=True)
-    if args.only:
-        spiders = {k: v for k, v in spiders.items() if k in args.only}
 
     # A spider whose project data folder has been deleted is treated as removed
     # from the project: drop it from the audit (even if its DB row lingers). The
     # folder is the source of truth for "is this spider part of the working set",
     # so deleting the folder is enough to make it disappear here. Not silent — log
     # each one — and clean up its orphaned audit artifacts so they don't pile up.
+    # Runs on the FULL set, before any --only filter, so the prune keeps working
+    # project-wide even on a narrowed run (a merged report must not resurrect a
+    # spider whose folder is gone).
     removed = [
-        n for n in spiders if not os.path.isdir(os.path.join(DATA_DIR, project, n))
+        n for n in all_spiders if not os.path.isdir(os.path.join(DATA_DIR, project, n))
     ]
     for n in removed:
         print(
@@ -233,7 +234,7 @@ def run(project, opts):
             f"gone (removed from project)",
             flush=True,
         )
-        spiders.pop(n, None)
+        all_spiders.pop(n, None)
         for stale in (
             os.path.join(DATA_DIR, project, "_audit", "crawl_stats", f"{n}.json"),
             os.path.join(DATA_DIR, project, "_audit", "scan_cache", f"{n}.json"),
@@ -242,6 +243,13 @@ def run(project, opts):
                 os.remove(stale)
             except OSError:
                 pass
+
+    # --only narrows the WORK (sitemap fetch, compliance capture, scoring), never
+    # the report: the un-scored spiders' rows are merged back from the previous
+    # run's crawl_audit.csv after the scoring loop.
+    spiders = all_spiders
+    if args.only:
+        spiders = {k: v for k, v in all_spiders.items() if k in args.only}
 
     print(
         f"      {len(spiders)} spiders; "
@@ -328,7 +336,30 @@ def run(project, opts):
                 )
             bar.advance()
 
-    compliance = compliance_summary(project, spiders, compliance_data)
+    if args.only:
+        # Merge the un-scored spiders' rows back from the previous run's CSV, so a
+        # --only run still writes the full project report (only the named spiders
+        # recomputed). Stored rows for spiders no longer in the pruned working set
+        # are dropped.
+        stored = read_csv_rows(audit_dir(project))
+        if stored is None:
+            print(
+                "      ⚠ no previous report to merge into (crawl_audit.csv missing) — "
+                "output contains only the --only spiders; run a full audit once",
+                flush=True,
+            )
+        else:
+            n_fresh = len(rows)
+            rows = merge_only_rows(rows, stored, all_spiders)
+            print(
+                f"      merged {len(rows) - n_fresh} stored rows from previous report "
+                f"(recomputed: {', '.join(sorted(spiders))})",
+                flush=True,
+            )
+
+    # the compliance lens covers ALL spiders (cache-only — reads the snapshot
+    # store), even when --only narrowed the capture + scoring above
+    compliance = compliance_summary(project, all_spiders, compliance_data)
     write_outputs(project, rows, config_warnings, compliance)
     out = audit_dir(project)
     print(

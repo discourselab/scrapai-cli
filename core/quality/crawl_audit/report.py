@@ -52,31 +52,39 @@ def compl_notes(e):
     return " · ".join(t)
 
 
+# crawl_audit.csv columns + their read-back types, in the score_spider() row order.
+# ONE structure drives both write_csvs and read_csv_rows, so writer and reader can't
+# drift. `int` columns are cast back on read; the two that mix a count with a text
+# placeholder ("-" sitemap_total, "" coverage_pct) keep the placeholder as-is.
+# `eligible` stays str on purpose — scoring stores it as str(...) even when numeric.
+CSV_FIELDS = {
+    "spider": str,
+    "sitemap": str,
+    "sitemap_total": int,
+    "eligible": str,
+    "scraped": int,
+    "pdf": int,
+    "pdf_own": int,
+    "pdf_ext": int,
+    "unique": int,
+    "rows": int,
+    "true_dupes": int,
+    "versions": int,
+    "pdf_multi": int,
+    "dup_pct": int,
+    "files": int,
+    "content": int,
+    "content_pct": int,
+    "content_med": int,
+    "coverage_pct": int,
+    "stale": str,
+    "flags": str,
+    "status": str,
+}
+
+
 def write_csvs(out, rows):
-    fields = [
-        "spider",
-        "sitemap",
-        "sitemap_total",
-        "eligible",
-        "scraped",
-        "pdf",
-        "pdf_own",
-        "pdf_ext",
-        "unique",
-        "rows",
-        "true_dupes",
-        "versions",
-        "pdf_multi",
-        "dup_pct",
-        "files",
-        "content",
-        "content_pct",
-        "content_med",
-        "coverage_pct",
-        "stale",
-        "flags",
-        "status",
-    ]
+    fields = list(CSV_FIELDS)
     with open(os.path.join(out, "crawl_audit.csv"), "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=fields)
         w.writeheader()
@@ -86,6 +94,35 @@ def write_csvs(out, rows):
         w = csv.DictWriter(fh, fieldnames=fields)
         w.writeheader()
         w.writerows([r for r in rows if r["sitemap"] in ("yes", "found")])
+
+
+def read_csv_rows(out):
+    """crawl_audit.csv read back into typed row dicts — the inverse of write_csvs,
+    used by a --only run to carry the un-scored spiders' rows into the new report.
+    Returns None when no CSV exists (no previous report to merge into)."""
+    path = os.path.join(out, "crawl_audit.csv")
+    if not os.path.exists(path):
+        return None
+    rows = []
+    with open(path, newline="") as fh:
+        for rec in csv.DictReader(fh):
+            for k, cast in CSV_FIELDS.items():
+                if cast is int:
+                    try:
+                        rec[k] = int(rec[k])
+                    except (ValueError, TypeError):
+                        pass  # placeholder ("-" / "") — kept as written
+            rows.append(rec)
+    return rows
+
+
+def merge_only_rows(fresh, stored, present):
+    """The full row set for a --only run: freshly scored `fresh` + every `stored`
+    row whose spider was neither re-scored nor dropped from the `present` working
+    set, in the normal run's sorted-by-spider order."""
+    done = {r["spider"] for r in fresh}
+    kept = [r for r in stored if r["spider"] not in done and r["spider"] in present]
+    return sorted(fresh + kept, key=lambda r: r["spider"])
 
 
 def write_header(fh, project, rows, config_warnings):
