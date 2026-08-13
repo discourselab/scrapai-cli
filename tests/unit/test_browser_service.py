@@ -32,7 +32,7 @@ class FakeLane:
     def __init__(self):
         self.page = Mock()
 
-    async def fetch(self, url):
+    async def fetch(self, url, wait_selector=None, wait_timeout=10):
         return "<html>body</html>" * 1000  # > 0 bytes
 
 

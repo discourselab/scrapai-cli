@@ -129,10 +129,17 @@ async def handle_request(pool, req, stop):
     if action == "cf_verify":
         # Drive the central browser to clear CF for this host, then return the
         # HTML + host-scoped cookies + UA so the crawl can do fast HTTP itself.
+        # In browser_only mode the handler calls cf_verify for every URL, so
+        # wait_selector / wait_timeout are honoured here to let React apps finish
+        # rendering before the DOM is captured.
         domain = _domain(req["url"])
         lane = await pool.acquire(domain, _session_file(req))
         async with _nav_lock(domain):
-            html = await lane.fetch(req["url"])
+            html = await lane.fetch(
+                req["url"],
+                wait_selector=req.get("wait_selector"),
+                wait_timeout=req.get("wait_timeout", 10),
+            )
             if not html:
                 return {"ok": False, "error": "verify failed"}
             cookies = await _lane_cookies(lane, req["url"])
