@@ -166,3 +166,61 @@ async def test_inspect_without_path_skips_screenshot(monkeypatch):
     )
     assert resp["ok"] is True
     assert calls["n"] == 0  # no path -> no screenshot
+
+
+# ---------------------------------------------------------------------------
+# cf_browser.fetch() — wait_selector on first fetch (cf_verified=False)
+# ---------------------------------------------------------------------------
+
+
+async def test_cf_browser_fetch_applies_wait_selector_on_first_request(monkeypatch):
+    """wait_selector must be honoured on the very first URL per domain.
+
+    Before the fix, fetch() only called wait_for_selector in the
+    'subsequent requests' branch (cf_verified=True). On the first request
+    (cf_verified=False) it used a hardcoded sleep(3) and returned immediately,
+    so a CSR SPA's start_url came back as a half-hydrated shell.
+    """
+    from utils.cf_browser import CloudflareBrowserClient
+
+    client = CloudflareBrowserClient()
+
+    # Stub out the real browser: CF verify always succeeds immediately.
+    async def fake_verify_cloudflare(url):
+        client.cf_verified = True
+        return True
+
+    monkeypatch.setattr(client, "verify_cloudflare", fake_verify_cloudflare)
+
+    # Minimal page mock: goto succeeds, content() returns rendered HTML.
+    page = Mock()
+
+    async def fake_goto(url, wait_until=None, timeout=None):
+        return None
+
+    page.goto = fake_goto
+
+    selector_waits = []
+
+    async def fake_wait_for_selector(selector, timeout=None):
+        selector_waits.append(selector)
+
+    page.wait_for_selector = fake_wait_for_selector
+
+    async def fake_content():
+        return "<html><div class='app'>hydrated</div></html>"
+
+    page.content = fake_content
+
+    client.page = page
+    # Initialise the fetch lock so the lock-init branch is skipped.
+    client.fetch_lock = asyncio.Lock()
+
+    html = await client.fetch(
+        "https://example.com/jobs", wait_selector=".app", wait_timeout=5
+    )
+
+    assert selector_waits == [".app"], (
+        "wait_for_selector was not called on the first (cf_verified=False) fetch"
+    )
+    assert "hydrated" in html
