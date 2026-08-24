@@ -74,3 +74,11 @@ logging.getLogger("nodriver").setLevel(logging.WARNING)
 logging.getLogger("websockets").setLevel(logging.WARNING)
 logging.getLogger("playwright").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
+
+# Crawl-time compliance witnesses: capture /robots.txt + /llms.txt through the
+# spider's own downloader (same CF/proxy/TLS path) and write them beside the crawl
+# output as crawls/{robots,llms}_DDMMYYYY.txt. The audit's compliance cross-check
+# reads these as the authoritative witness against its own independent fetch.
+EXTENSIONS = {
+    "extensions.compliance_files.ComplianceFileCapture": 100,
+}
