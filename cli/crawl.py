@@ -514,6 +514,7 @@ def _run_spider(
     # Check if browser mode enabled (CLI flag or spider setting)
     cf_enabled = browser  # CLI flag takes precedence
     use_sitemap = False
+    use_repository = False
     if spider_settings:
         for setting in spider_settings:
             if setting.key in ["CLOUDFLARE_ENABLED", "BROWSER_ENABLED"] and str(
@@ -528,8 +529,15 @@ def _run_spider(
                 "1",
             ]:
                 use_sitemap = True
+            # REPOSITORY_SOURCE (JSON:API / paginated-JSON repository harvest) is a
+            # JSON dict setting; its presence routes to the repository spider.
+            if setting.key == "REPOSITORY_SOURCE" and setting.value:
+                use_repository = True
 
-    if use_sitemap:
+    if use_repository:
+        spider_class = "repository_database_spider"
+        click.echo("🗄️  Using repository-harvest spider (JSON API)")
+    elif use_sitemap:
         spider_class = "sitemap_database_spider"
         click.echo("🗺️  Using sitemap spider")
     else:
