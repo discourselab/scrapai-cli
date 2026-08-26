@@ -1,15 +1,21 @@
 """
 Scrapy download handler for Cloudflare-protected sites.
 
-This handler uses a hybrid approach:
-1. A central browser verifies CF once per host (cookies are per-hostname) to get
-   the CF cookie. Verification is held at one gate, so concurrent requests never
-   drive the browser at the same time.
-2. Fast concurrent HTTP requests with the cached cookie for everything else.
-3. Reactive (not time-based) reverify: only when a host has no cookie yet, or an
-   HTTP response comes back blocked. On a block, all requests hold, ONE
-   reverifies, everyone retries with the fresh cookie — so a transient cookie
-   death pauses briefly instead of failing requests.
+This handler supports two strategies, selected by CLOUDFLARE_STRATEGY:
+
+hybrid (default, fast):
+  1. A central browser verifies CF once per host (cookies are per-hostname) to
+     get the CF cookie. Verification is held at one gate, so concurrent requests
+     never drive the browser at the same time.
+  2. Fast concurrent HTTP requests with the cached cookie for everything else.
+  3. Reactive (not time-based) reverify: only when a host has no cookie yet, or
+     an HTTP response comes back blocked. On a block, all requests hold, ONE
+     reverifies, everyone retries with the fresh cookie.
+
+browser_only (slow, for JS-rendered SPAs that need a real browser every page):
+  Every request is rendered by the shared browser service via cf_verify, which
+  navigates the already-verified browser to the target URL and returns the fully
+  rendered DOM. No HTTP fallback. Requires CONCURRENT_REQUESTS=1.
 """
 
 import asyncio
@@ -164,7 +170,7 @@ class CloudflareDownloadHandler:
             logger.info("CloudflareDownloadHandler: Stopped persistent event loop")
 
     def download_request(self, request: Request, spider):
-        """Handle request: browser verifies a host once, HTTP does the rest.
+        """Dispatch to hybrid or browser-only fetch based on CLOUDFLARE_STRATEGY.
 
         Note: This handler is only used when spider explicitly enables
         CLOUDFLARE_ENABLED=True in settings.
@@ -176,7 +182,47 @@ class CloudflareDownloadHandler:
         Returns:
             Deferred that resolves to HtmlResponse
         """
+        strategy = (
+            getattr(spider, "custom_settings", {})
+            .get("CLOUDFLARE_STRATEGY", "hybrid")
+            .lower()
+        )
+        if strategy == "browser_only":
+            return threads.deferToThread(
+                self._browser_only_fetch_sync, request, spider
+            )
         return threads.deferToThread(self._hybrid_fetch_sync, request, spider)
+
+    def _browser_only_fetch_sync(self, request: Request, spider):
+        """Browser-only mode: every request rendered by the shared browser service.
+
+        Calls _verify_via_service for every URL, which drives the already-warm
+        browser (CF already solved after the first hit) to navigate and return the
+        fully rendered DOM. No HTTP fallback — use only when the site is a pure
+        CSR SPA that yields no useful content over plain HTTP.
+        """
+        try:
+            html = CloudflareDownloadHandler._run_async(
+                self._browser_only_fetch_async(request, spider)
+            )
+            self._stop_if_session_expired(html, spider)
+            if html:
+                return _make_response(request.url, html, request)
+            raise Exception(f"Browser-only fetch returned no HTML for {request.url}")
+        except Exception as e:
+            logger.error(f"Browser-only fetch error for {request.url}: {e}")
+            raise
+
+    async def _browser_only_fetch_async(self, request: Request, spider):
+        """Route every request through the shared browser service (cf_verify action)."""
+        result = await self._verify_via_service(request.url, spider)
+        if result is None:
+            raise Exception(
+                f"Browser service unreachable for {request.url} "
+                "(request will be retried)"
+            )
+        html, _cookies, _user_agent = result
+        return html
 
     def _hybrid_fetch_sync(self, request: Request, spider):
         """Hybrid mode: browser once + HTTP with cookies (fast). Runs in thread."""
@@ -320,18 +366,37 @@ class CloudflareDownloadHandler:
         mistakenly-stopped service self-heals instead of every crawl spawning its
         own browser. Returns (html, cookies, user_agent), or None if the service
         still isn't reachable (caller then falls back to a local browser). The
-        blocking socket/startup work runs in an executor so the loop never stalls."""
+        blocking socket/startup work runs in an executor so the loop never stalls.
+
+        CF_WAIT_SELECTOR (optional spider setting): CSS selector to wait for
+        before capturing the rendered DOM. Useful for JS-heavy SPAs where
+        content loads asynchronously after DOMContentLoaded.
+        CF_WAIT_TIMEOUT: seconds to wait for the selector (default 10).
+        """
         from utils import browser_client
 
-        session_name = getattr(spider, "custom_settings", {}).get("SESSION")
+        spider_settings = getattr(spider, "custom_settings", {})
+        session_name = spider_settings.get("SESSION")
+        wait_selector = spider_settings.get("CF_WAIT_SELECTOR")
+        wait_timeout = spider_settings.get("CF_WAIT_TIMEOUT", 10)
 
         def _call():
-            resp = browser_client.request("cf_verify", url=url, session=session_name)
+            resp = browser_client.request(
+                "cf_verify",
+                url=url,
+                session=session_name,
+                wait_selector=wait_selector,
+                wait_timeout=wait_timeout,
+            )
             if resp is None:
                 # Service down (e.g. someone ran `browser stop`) — restart + retry.
                 if browser_client.ensure_running():
                     resp = browser_client.request(
-                        "cf_verify", url=url, session=session_name
+                        "cf_verify",
+                        url=url,
+                        session=session_name,
+                        wait_selector=wait_selector,
+                        wait_timeout=wait_timeout,
                     )
             return resp
 
@@ -342,6 +407,7 @@ class CloudflareDownloadHandler:
         if not resp.get("ok"):
             raise Exception(f"Browser service failed to verify CF for {url}")
         return resp["html"], resp["cookies"], resp["user_agent"]
+
 
     async def _fetch_with_http(self, url: str, cached: Dict) -> Optional[str]:
         """Fetch URL with HTTP + cached cookies using curl_cffi for TLS stealth."""

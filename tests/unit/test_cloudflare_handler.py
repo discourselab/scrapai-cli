@@ -335,3 +335,94 @@ class TestHandlerLifecycle:
         await handler.close(spider)
 
         assert "cleanup_spider" not in CloudflareDownloadHandler._cookie_cache
+
+
+class TestBrowserOnlyStrategy:
+    """browser_only routes every request through the browser service (cf_verify)."""
+
+    def _spider(self, strategy="browser_only"):
+        s = Mock()
+        s.name = "test_spider"
+        s.custom_settings = {"CLOUDFLARE_STRATEGY": strategy}
+        return s
+
+    @pytest.mark.unit
+    def test_download_request_routes_to_browser_only(self, monkeypatch):
+        """CLOUDFLARE_STRATEGY='browser_only' dispatches to _browser_only_fetch_sync."""
+        handler = CloudflareDownloadHandler({})
+        spider = self._spider("browser_only")
+        request = Request("https://example.com/job/1")
+
+        calls = []
+
+        def fake_browser_only(req, sp):
+            calls.append(("browser_only", req.url))
+
+        def fake_hybrid(req, sp):
+            calls.append(("hybrid", req.url))
+
+        monkeypatch.setattr(handler, "_browser_only_fetch_sync", fake_browser_only)
+        monkeypatch.setattr(handler, "_hybrid_fetch_sync", fake_hybrid)
+
+        from twisted.internet import threads as tw_threads
+        monkeypatch.setattr(
+            tw_threads, "deferToThread",
+            lambda fn, *args: fn(*args),
+        )
+
+        handler.download_request(request, spider)
+        assert calls == [("browser_only", "https://example.com/job/1")]
+
+    @pytest.mark.unit
+    def test_download_request_default_is_hybrid(self, monkeypatch):
+        """No CLOUDFLARE_STRATEGY (or 'hybrid') defaults to hybrid path."""
+        handler = CloudflareDownloadHandler({})
+        spider = self._spider("hybrid")
+        request = Request("https://example.com/job/2")
+
+        calls = []
+
+        monkeypatch.setattr(handler, "_browser_only_fetch_sync", lambda r, s: calls.append("browser_only"))
+        monkeypatch.setattr(handler, "_hybrid_fetch_sync", lambda r, s: calls.append("hybrid"))
+
+        from twisted.internet import threads as tw_threads
+        monkeypatch.setattr(
+            tw_threads, "deferToThread",
+            lambda fn, *args: fn(*args),
+        )
+
+        handler.download_request(request, spider)
+        assert calls == ["hybrid"]
+
+    @pytest.mark.unit
+    async def test_browser_only_fetch_async_calls_verify_via_service(self, monkeypatch):
+        """_browser_only_fetch_async delegates to _verify_via_service and returns html."""
+        handler = CloudflareDownloadHandler({})
+        spider = self._spider()
+        request = Request("https://example.com/job/3")
+
+        async def fake_verify(url, sp):
+            return "<html>rendered</html>", {"cf_clearance": "tok"}, "UA"
+
+        monkeypatch.setattr(handler, "_verify_via_service", fake_verify)
+
+        html = await handler._browser_only_fetch_async(request, spider)
+        assert html == "<html>rendered</html>"
+
+    @pytest.mark.unit
+    async def test_browser_only_fetch_async_raises_when_service_unreachable(
+        self, monkeypatch
+    ):
+        """_browser_only_fetch_async raises when browser service is None."""
+        handler = CloudflareDownloadHandler({})
+        spider = self._spider()
+        request = Request("https://example.com/job/4")
+
+        async def fake_verify(url, sp):
+            return None  # service unreachable
+
+        monkeypatch.setattr(handler, "_verify_via_service", fake_verify)
+
+        with pytest.raises(Exception, match="Browser service unreachable"):
+            await handler._browser_only_fetch_async(request, spider)
+

@@ -535,7 +535,30 @@ class CloudflareBrowserClient:
                     else:
                         raise
 
-                await asyncio.sleep(3)
+                await asyncio.sleep(1)
+
+                # Wait for specific selector if requested.
+                # This is needed for CSR SPAs on the very first request per
+                # domain: CF verify leaves cf_verified=False until this branch
+                # completes, so without this check the first page of a React/
+                # Vue/Aurelia site is captured before the app finishes hydrating.
+                if wait_selector:
+                    logger.info(
+                        f"Waiting for selector '{wait_selector}' "
+                        f"(timeout: {wait_timeout}s)"
+                    )
+                    try:
+                        await self.page.wait_for_selector(
+                            wait_selector, timeout=wait_timeout * 1000
+                        )
+                        logger.info(f"Selector '{wait_selector}' found")
+                        await asyncio.sleep(1)
+                    except Exception as e:
+                        logger.warning(f"Timeout waiting for selector: {e}")
+                        await asyncio.sleep(1.5)
+                else:
+                    await asyncio.sleep(2)
+
                 html = await self._body_or_dom(response)
                 logger.info(f"Fetched {len(html)} bytes from {url}")
                 return html
