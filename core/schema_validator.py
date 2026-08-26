@@ -13,7 +13,11 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 CORE_FIELDS = {"title", "content", "author", "published_date", "url"}
-GENERIC_EXTRACTORS = {"newspaper", "trafilatura", "playwright"}
+# Extractors that populate the core article fields on their own, with no
+# FIELDS directive. `fusion` qualifies: it fills title/content from the Arc XP
+# JSON payload and author/published_date from structured metadata, exactly as
+# newspaper/trafilatura do.
+GENERIC_EXTRACTORS = {"newspaper", "trafilatura", "playwright", "fusion"}
 
 
 def load_project_schema(project: str, data_dir: str) -> Optional[dict]:

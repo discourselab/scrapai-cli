@@ -344,7 +344,7 @@ class SpiderSettingsSchema(BaseModel):
     def validate_extractor_order(cls, v):
         """Validate extractor order contains known extractors."""
         if v is not None:
-            allowed = {"newspaper", "trafilatura", "custom", "playwright"}
+            allowed = {"newspaper", "trafilatura", "custom", "playwright", "fusion"}
             for extractor in v:
                 if extractor not in allowed:
                     raise ValueError(

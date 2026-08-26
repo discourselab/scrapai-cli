@@ -1,3 +1,4 @@
+import json
 import logging
 import asyncio
 from abc import ABC, abstractmethod
@@ -131,6 +132,99 @@ def _extract_media(html: Optional[str]):
         if tag.get("src")
     ]
     return images, videos
+
+
+def _json_object_at(text, start):
+    """Return the JSON object literal beginning at ``text[start]`` ('{').
+
+    Scans with a brace counter that ignores braces inside strings, so an
+    object containing "};" in a string value is not truncated the way a
+    non-greedy regex would truncate it. Returns None if unbalanced.
+    """
+    if start >= len(text) or text[start] != "{":
+        return None
+    depth, in_string, escaped = 0, False, False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]  # noqa: E203
+    return None
+
+
+def fusion_global_content(html):
+    """Parse the Arc XP ``Fusion.globalContent`` payload out of a page.
+
+    Arc XP ships the article body in this JSON blob and renders it client
+    side, so the body is absent from the served DOM. Returns the decoded dict
+    or None.
+
+    A page may assign the marker more than once: some deployments emit a stub
+    ``Fusion.globalContent={}`` and keep the real content elsewhere, so the
+    first parseable object is not necessarily the useful one. Every occurrence
+    is scanned and the first payload carrying ``content_elements`` wins; absent
+    that, the first parseable object is returned so callers can still inspect
+    metadata such as ``node_type``.
+
+    Known limitation: deployments that embed the payload as an escaped string
+    (``Fusion.globalContent=JSON.parse("...")``) are not decoded; the extractor
+    declines and the next extractor in EXTRACTOR_ORDER takes over.
+    """
+    if not html:
+        return None
+    marker = "Fusion.globalContent"
+    fallback = None
+    idx = html.find(marker)
+    while idx != -1:
+        brace = html.find("{", idx + len(marker))
+        # Only accept a '{' that follows the assignment, not some later object.
+        # This also rejects the sibling marker Fusion.globalContentConfig,
+        # whose 'Config=' text lands in `between`.
+        between = html[idx + len(marker) : brace] if brace != -1 else ""  # noqa: E203
+        if brace != -1 and between.strip().startswith("="):
+            raw = _json_object_at(html, brace)
+            if raw:
+                try:
+                    data = json.loads(raw)
+                except json.JSONDecodeError:
+                    data = None
+                if isinstance(data, dict):
+                    if data.get("content_elements"):
+                        return data
+                    if fallback is None and data:
+                        fallback = data
+        idx = html.find(marker, idx + 1)
+    return fallback
+
+
+def fusion_body_text(data):
+    """Plain text of an Arc XP payload's ``content_elements`` text blocks."""
+    parts = []
+    for el in (data or {}).get("content_elements") or []:
+        if el.get("type") != "text":
+            continue
+        frag = el.get("content") or ""
+        if not frag:
+            continue
+        # Elements are HTML fragments (<p>, <a>, entities) — let bs4 both strip
+        # the tags and unescape the entities.
+        text = BeautifulSoup(frag, "lxml").get_text(" ", strip=True)
+        if text:
+            parts.append(text)
+    return "\n\n".join(parts).strip()
 
 
 class BaseExtractor(ABC):
@@ -292,6 +386,55 @@ class TrafilaturaExtractor(BaseExtractor):
             )
         except Exception as e:
             logger.debug(f"TrafilaturaExtractor failed for {url}: {e}")
+            return None
+
+
+class FusionExtractor(BaseExtractor):
+    """Extractor for Arc XP pages whose body lives only in Fusion JSON.
+
+    On some Arc XP sites the served DOM carries just the
+    headline and metadata while the article body is delivered inside the
+    ``Fusion.globalContent`` script blob and rendered client side. DOM-based
+    extractors therefore return navigation chrome instead of the article. This
+    reads the body straight out of that payload, so a plain HTTP fetch is
+    enough — no browser rendering.
+
+    Author and published_date still come from structured metadata (extruct),
+    matching NewspaperExtractor/TrafilaturaExtractor.
+    """
+
+    def extract(
+        self, url: str, html: str, title_hint: str = None, include_html: bool = False
+    ) -> Optional[ScrapedArticle]:
+        try:
+            data = fusion_global_content(html)
+            if not data:
+                return None
+
+            content = fusion_body_text(data)
+            title = (data.get("headlines") or {}).get("basic") or title_hint
+            if title:
+                title = title.strip()
+
+            if not title or not content:
+                logger.debug(
+                    f"FusionExtractor found no usable body for {url} "
+                    f"(title={bool(title)}, content_chars={len(content)})"
+                )
+                return None
+
+            return ScrapedArticle(
+                url=url,
+                title=title,
+                content=content,
+                author=extract_meta_author(html),
+                published_date=extract_meta_date(html),
+                source="fusion",
+                metadata={"description": (data.get("description") or {}).get("basic")},
+                html=html if include_html else None,
+            )
+        except Exception as e:
+            logger.debug(f"FusionExtractor failed for {url}: {e}")
             return None
 
 
@@ -524,6 +667,24 @@ class SmartExtractor:
                         )
                 except Exception as e:
                     logger.debug(f"Newspaper extractor failed for {url}: {e}")
+
+            elif strategy == "fusion":
+                logger.info(f"Trying fusion extractor for {url}")
+                try:
+                    result = await asyncio.to_thread(
+                        FusionExtractor().extract,
+                        url,
+                        html,
+                        title_hint,
+                        include_html,
+                    )
+                    if result:
+                        logger.info(f"Successfully extracted {url} using fusion")
+                        return result
+                    else:
+                        logger.debug(f"Fusion extractor returned no result for {url}")
+                except Exception as e:
+                    logger.debug(f"Fusion extractor failed for {url}: {e}")
 
             elif strategy == "trafilatura":
                 logger.info(f"Trying trafilatura extractor for {url}")
