@@ -53,8 +53,6 @@ Built by [DiscourseLab](https://www.discourselab.ai/). Used in production across
 - Sites with hard CAPTCHAs (we handle Cloudflare challenges, not Capsolver-level CAPTCHAs)
 - Login-required or paywall content (not supported yet)
 
-See [COMPARISON.md](COMPARISON.md) for a detailed comparison with Scrapling and crawl4ai.
-
 ## Why scrapai?
 
 We needed data for our work. Hundreds of websites, scraped regularly, structured consistently. We got sick of building and maintaining fleets of scrapers.
@@ -282,7 +280,7 @@ scrapai's approach: **the agent writes config, not code.**
 - JSON configs are validated through Pydantic before import. Malformed configs, SSRF URLs, and injection attempts fail validation
 - At runtime, Scrapy executes deterministically with no AI in the loop
 
-The hard enforcement (allow/deny lists) is a Claude Code feature configured via `./scrapai setup`. Other agents get instructions but not enforcement. Only Claude Code guarantees the agent can't sidestep it. For autonomous operation, we pair this with NanoClaw's container isolation. See [COMPARISON.md](COMPARISON.md#ai-agents--scraping-the-security-question) for the full analysis.
+The hard enforcement (allow/deny lists) is a Claude Code feature configured via `./scrapai setup`. Other agents get instructions but not enforcement. Only Claude Code guarantees the agent can't sidestep it. For autonomous operation, we pair this with NanoClaw's container isolation.
 
 Found a vulnerability? See [SECURITY.md](SECURITY.md). Do not use public GitHub issues.
 
