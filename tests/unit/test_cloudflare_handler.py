@@ -365,8 +365,10 @@ class TestBrowserOnlyStrategy:
         monkeypatch.setattr(handler, "_hybrid_fetch_sync", fake_hybrid)
 
         from twisted.internet import threads as tw_threads
+
         monkeypatch.setattr(
-            tw_threads, "deferToThread",
+            tw_threads,
+            "deferToThread",
             lambda fn, *args: fn(*args),
         )
 
@@ -382,12 +384,20 @@ class TestBrowserOnlyStrategy:
 
         calls = []
 
-        monkeypatch.setattr(handler, "_browser_only_fetch_sync", lambda r, s: calls.append("browser_only"))
-        monkeypatch.setattr(handler, "_hybrid_fetch_sync", lambda r, s: calls.append("hybrid"))
+        monkeypatch.setattr(
+            handler,
+            "_browser_only_fetch_sync",
+            lambda r, s: calls.append("browser_only"),
+        )
+        monkeypatch.setattr(
+            handler, "_hybrid_fetch_sync", lambda r, s: calls.append("hybrid")
+        )
 
         from twisted.internet import threads as tw_threads
+
         monkeypatch.setattr(
-            tw_threads, "deferToThread",
+            tw_threads,
+            "deferToThread",
             lambda fn, *args: fn(*args),
         )
 
@@ -425,4 +435,3 @@ class TestBrowserOnlyStrategy:
 
         with pytest.raises(Exception, match="Browser service unreachable"):
             await handler._browser_only_fetch_async(request, spider)
-

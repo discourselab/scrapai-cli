@@ -220,7 +220,7 @@ async def test_cf_browser_fetch_applies_wait_selector_on_first_request(monkeypat
         "https://example.com/jobs", wait_selector=".app", wait_timeout=5
     )
 
-    assert selector_waits == [".app"], (
-        "wait_for_selector was not called on the first (cf_verified=False) fetch"
-    )
+    assert selector_waits == [
+        ".app"
+    ], "wait_for_selector was not called on the first (cf_verified=False) fetch"
     assert "hydrated" in html

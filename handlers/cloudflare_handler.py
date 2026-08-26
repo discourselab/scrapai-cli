@@ -188,9 +188,7 @@ class CloudflareDownloadHandler:
             .lower()
         )
         if strategy == "browser_only":
-            return threads.deferToThread(
-                self._browser_only_fetch_sync, request, spider
-            )
+            return threads.deferToThread(self._browser_only_fetch_sync, request, spider)
         return threads.deferToThread(self._hybrid_fetch_sync, request, spider)
 
     def _browser_only_fetch_sync(self, request: Request, spider):
@@ -407,7 +405,6 @@ class CloudflareDownloadHandler:
         if not resp.get("ok"):
             raise Exception(f"Browser service failed to verify CF for {url}")
         return resp["html"], resp["cookies"], resp["user_agent"]
-
 
     async def _fetch_with_http(self, url: str, cached: Dict) -> Optional[str]:
         """Fetch URL with HTTP + cached cookies using curl_cffi for TLS stealth."""
