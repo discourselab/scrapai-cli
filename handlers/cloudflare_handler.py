@@ -215,7 +215,10 @@ class CloudflareDownloadHandler:
         """Route every request through the shared browser service (cf_verify action)."""
         result = await self._verify_via_service(request.url, spider)
         if result is None:
-            raise Exception(
+            # OSError, not a bare Exception: it is in Scrapy's default
+            # RETRY_EXCEPTIONS, so a service that is briefly unreachable costs
+            # a retry instead of silently dropping the URL from the crawl.
+            raise OSError(
                 f"Browser service unreachable for {request.url} "
                 "(request will be retried)"
             )
@@ -338,7 +341,10 @@ class CloudflareDownloadHandler:
             # that turned 40 crawls into 40 orphaned Chromes.
             via_service = await self._verify_via_service(url, spider)
             if via_service is None:
-                raise Exception(
+                # OSError so RetryMiddleware actually honours the retry this
+                # message promises; a bare Exception is not in
+                # RETRY_EXCEPTIONS and would drop the URL instead.
+                raise OSError(
                     f"browser service unreachable while verifying CF for {url} "
                     "(request will be retried)"
                 )

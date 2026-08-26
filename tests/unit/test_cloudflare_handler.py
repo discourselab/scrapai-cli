@@ -435,3 +435,59 @@ class TestBrowserOnlyStrategy:
 
         with pytest.raises(Exception, match="Browser service unreachable"):
             await handler._browser_only_fetch_async(request, spider)
+
+
+def _retry_exceptions():
+    """The exception types Scrapy's RetryMiddleware actually retries."""
+    from scrapy.settings.default_settings import RETRY_EXCEPTIONS
+    from scrapy.utils.misc import load_object
+
+    return tuple(load_object(x) if isinstance(x, str) else x for x in RETRY_EXCEPTIONS)
+
+
+class TestUnreachableServiceIsRetryable:
+    """An unreachable browser service must raise something Scrapy will retry.
+
+    Both paths log "(request will be retried)". RetryMiddleware only retries
+    exceptions listed in RETRY_EXCEPTIONS, so raising a bare Exception dropped
+    the URL from the crawl while claiming the opposite in the logs. These tests
+    assert against Scrapy's real list rather than a hardcoded type, so they keep
+    holding if that list changes.
+    """
+
+    @pytest.mark.unit
+    async def test_browser_only_unreachable_raises_retryable(self, monkeypatch):
+        handler = CloudflareDownloadHandler({})
+        spider = Mock()
+        spider.name = "s"
+        spider.custom_settings = {"CLOUDFLARE_STRATEGY": "browser_only"}
+
+        async def fake_verify(url, sp):
+            return None
+
+        monkeypatch.setattr(handler, "_verify_via_service", fake_verify)
+
+        with pytest.raises(_retry_exceptions()):
+            await handler._browser_only_fetch_async(
+                Request("https://example.com/a"), spider
+            )
+
+    @pytest.mark.unit
+    async def test_hybrid_reverify_unreachable_raises_retryable(self, monkeypatch):
+        """The default hybrid path has the same promise to keep."""
+        handler = CloudflareDownloadHandler({})
+        spider = Mock()
+        spider.name = "s"
+        spider.custom_settings = {}
+
+        async def fake_verify(url, sp):
+            return None
+
+        monkeypatch.setattr(handler, "_verify_via_service", fake_verify)
+        CloudflareDownloadHandler._refresh_lock = None
+        CloudflareDownloadHandler._cookie_cache.pop("retryable_key", None)
+
+        with pytest.raises(_retry_exceptions()):
+            await handler._reverify(
+                "retryable_key", "https://example.com/a", spider, None
+            )
