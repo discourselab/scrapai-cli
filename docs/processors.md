@@ -218,12 +218,12 @@ Parse datetime string into ISO format.
 
 **Resolution order:**
 1. If `format` is given, use strptime (explicit wins).
-2. Else try `dateparser` — handles relative dates ("2 weeks ago", "yesterday"), 200+ languages, and fuzzy fragments.
+2. Else try `dateparser` — handles relative dates ("2 weeks ago", "yesterday"), 200+ languages, and fuzzy fragments. With `languages` set, those are tried first and auto-detect is the retry.
 3. Else fall back to `dateutil`.
 
 **Parameters:**
 - `format` (optional): strptime format string. Use when the input is consistent and you want strict parsing.
-- `languages` (optional): list of language hints for `dateparser` (e.g. `["en", "de"]`). Speeds parsing and disambiguates locales.
+- `languages` (optional): languages `dateparser` tries **first** (e.g. `["en", "de"]`). If none of them parse the value, `dateparser` is retried with auto-detect, so a value that doesn't match the page costs an extra attempt rather than the date. Auto-detect reads non-English month names, abbreviations (`Dez`, `Mär`) and weekday prefixes unaided, so the option is rarely needed.
 
 **Example with format:**
 ```json
@@ -235,7 +235,7 @@ Parse datetime string into ISO format.
 }
 ```
 
-**Example with language hint:**
+**Example preferring a language** (optional — auto-detect handles it anyway):
 ```json
 {
   "css": "span.date::text",
@@ -244,6 +244,18 @@ Parse datetime string into ISO format.
   ]
 }
 ```
+
+**Surrounding label text defeats parsing in any language** — strip it first:
+```json
+{
+  "css": "span.date::text",
+  "processors": [
+    {"type": "replace", "old": "Veröffentlicht am ", "new": ""},
+    {"type": "parse_datetime"}
+  ]
+}
+```
+A null `published_date` on a non-English site is usually this, not the language.
 
 **Example without format (auto-detect):**
 ```json
