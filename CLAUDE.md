@@ -236,7 +236,7 @@ Look these up as you reach each step. Always pass `--project <name>` on inspect/
 - **Flags:** `--browser` (JS + Cloudflare; Xvfb auto on headless — never run `xvfb-run` yourself) · `--save-html` (default off) · `--reset-deltafetch` (also clears checkpoint) · `--scrapy-args "..."`.
 
 ### 6.5 Show, health, export
-- `show <name> --project [--limit N] [--url pattern] [--text "q"] [--title "q"]`
+- `show <name> --project [--limit N] [--url pattern] [--text "q"] [--title "q"] [--source auto|db|crawls]` — reads the spider's `crawls/*.jsonl` when any exist, else the database (`--source auto`, the default). Test-crawl items live in the **DB**, production crawls write **files**. **Verifying a `--limit` test crawl → pass `--source db`**, or on a spider that has already crawled you are reading the production corpus, not the items you just fetched.
 - `health --project` — tests every spider (5 items, min 50 chars), report to `health/<YYYYMMDD>/report.md`, exit 0/1. Flags `crawling` (too few items) / `extraction` (content too short) / `schema_coverage` (a required field unpopulated after a schema change — fix `FIELDS`, re-import). Use monthly (cron/CI) to catch broken spiders. → [docs/health.md](docs/health.md).
 - **Export only when asked — never proactively.** Ask the format first, run it, then **give the user the full output path.** `export <name> --project --format csv|json|jsonl|parquet [--limit N] [--url] [--title] [--text] [--output]`. Default path `…/exports/export_<ddmmyyyy_HHMMSS>.<fmt>`.
 
