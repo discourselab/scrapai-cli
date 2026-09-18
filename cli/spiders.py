@@ -2,6 +2,23 @@ import click
 import json
 import sys
 
+# Cloudflare settings that are accepted but read by nothing: hybrid is the only
+# Cloudflare path, and the CF_*/threshold keys have no reader. They validate,
+# persist to the DB and reach crawler.settings, so without this warning a dead
+# key looks like working configuration.
+DEAD_SETTINGS = {
+    "CLOUDFLARE_STRATEGY": "not read; hybrid is the only Cloudflare path",
+    "CLOUDFLARE_HEADLESS": "not read; headless is handled by Xvfb auto-wrapping",
+    "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": (
+        "not read; cookies are reused without time-based refresh"
+    ),
+    "CF_MAX_RETRIES": "not read",
+    "CF_RETRY_INTERVAL": "not read",
+    "CF_POST_DELAY": "not read",
+    "CF_WAIT_SELECTOR": "not read",
+    "CF_WAIT_TIMEOUT": "not read",
+}
+
 
 @click.group()
 def spiders():
@@ -127,6 +144,15 @@ def import_spider(file, project, skip_validation):
                         "\n💡 Use --skip-validation to bypass validation (not recommended)"
                     )
                     return
+
+            # Warn about settings that are accepted but have no reader, so a
+            # dead knob cannot masquerade as working configuration. Deliberately
+            # outside the validation branch: it runs on the --skip-validation
+            # path too, which a schema-level check would have silently skipped.
+            for key in [k for k in settings_dict if k in DEAD_SETTINGS]:
+                click.echo(
+                    f"⚠️  '{key}' has no effect ({DEAD_SETTINGS[key]}); remove it"
+                )
 
             # Validate spider config covers every `required: true` field in
             # the project schema. Skipped when --skip-validation is set,

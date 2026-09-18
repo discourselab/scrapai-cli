@@ -144,7 +144,6 @@ Values: `"auto"` (default, escalates direct → dc → residential), `"none"` to
 ```json
 {
   "CLOUDFLARE_ENABLED": true,
-  "CLOUDFLARE_STRATEGY": "browser_only",
   "CONCURRENT_REQUESTS": 1
 }
 ```

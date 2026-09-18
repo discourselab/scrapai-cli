@@ -185,7 +185,7 @@ Some sitemaps use non-conformant root-relative (`<loc>/blog/post-1</loc>`) or pr
 
 **Sitemap + Cloudflare:**
 ```json
-{ "USE_SITEMAP": true, "CLOUDFLARE_ENABLED": true, "CLOUDFLARE_STRATEGY": "hybrid" }
+{ "USE_SITEMAP": true, "CLOUDFLARE_ENABLED": true }
 ```
 
 **Sitemap + DeltaFetch:**

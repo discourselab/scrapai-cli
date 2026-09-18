@@ -319,18 +319,30 @@ class TestSettingsValidation:
         assert "Unknown extractor" in str(exc_info.value)
 
     @pytest.mark.unit
-    def test_valid_cloudflare_strategy(self):
-        """Test that valid Cloudflare strategies are accepted."""
-        for strategy in ["hybrid", "browser_only", "HYBRID", "BROWSER_ONLY"]:
+    def test_cloudflare_strategy_is_not_a_schema_field(self):
+        """CLOUDFLARE_STRATEGY is not a field, and configs declaring it import.
+
+        Hybrid is the only Cloudflare path, so the key has no meaning.
+        `extra="allow"` carries it as an ignored extra rather than rejecting the
+        config; `cli.spiders.DEAD_SETTINGS` is what tells the user it does
+        nothing.
+        """
+        assert "CLOUDFLARE_STRATEGY" not in SpiderSettingsSchema.model_fields
+        # An old config still validates, whatever the value.
+        for strategy in ["hybrid", "browser_only", "anything_at_all"]:
             SpiderSettingsSchema(CLOUDFLARE_STRATEGY=strategy)
-            # Should not raise
 
     @pytest.mark.unit
-    def test_invalid_cloudflare_strategy(self):
-        """Test that invalid Cloudflare strategies are rejected."""
-        with pytest.raises(ValidationError) as exc_info:
-            SpiderSettingsSchema(CLOUDFLARE_STRATEGY="invalid_strategy")
-        assert "Invalid Cloudflare strategy" in str(exc_info.value)
+    def test_dead_settings_registry_has_no_implemented_keys(self):
+        """Every key the import warning lists is absent from the schema."""
+        from cli.spiders import DEAD_SETTINGS
+
+        assert "CLOUDFLARE_STRATEGY" in DEAD_SETTINGS
+        for key in DEAD_SETTINGS:
+            assert key not in SpiderSettingsSchema.model_fields, (
+                f"{key} is still a declared field; either it is implemented "
+                f"(remove it from DEAD_SETTINGS) or the field is stale"
+            )
 
     @pytest.mark.unit
     def test_concurrent_requests_bounds(self):
