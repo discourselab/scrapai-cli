@@ -98,7 +98,9 @@ def test_pueue_active_task_dedup(monkeypatch):
     assert crawl_mod._pueue_active_task("scrapai:proj:a_org") == "1"
     assert crawl_mod._pueue_active_task("scrapai:proj:b_org") is None
 
-    finished = {"1": {"label": "scrapai:proj:a_org", "status": {"Done": {"result": "Success"}}}}
+    finished = {
+        "1": {"label": "scrapai:proj:a_org", "status": {"Done": {"result": "Success"}}}
+    }
     monkeypatch.setattr(crawl_mod.subprocess, "run", fake_status(finished))
     assert crawl_mod._pueue_active_task("scrapai:proj:a_org") is None
 
