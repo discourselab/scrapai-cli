@@ -125,10 +125,10 @@ def _overview_env(tmp_path, monkeypatch):
 
 
 def _opts(only):
-    class O:
+    class Opts:
         pass
 
-    o = O()
+    o = Opts()
     o.only = only
     o.thin_chars = 200
     return o
