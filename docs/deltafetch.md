@@ -47,7 +47,7 @@ This deletes `.scrapy/deltafetch/<project>/<spider>.db` and removes the spider's
 ## Combining with Other Features
 
 ```json
-{ "DELTAFETCH_ENABLED": true, "CLOUDFLARE_ENABLED": true, "CLOUDFLARE_STRATEGY": "hybrid" }
+{ "DELTAFETCH_ENABLED": true, "CLOUDFLARE_ENABLED": true }
 ```
 
 ```json

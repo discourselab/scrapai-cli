@@ -315,7 +315,6 @@ class SpiderSettingsSchema(BaseModel):
     CONCURRENT_REQUESTS: Optional[int] = Field(default=None, ge=1, le=32)
     DOWNLOAD_DELAY: Optional[float] = Field(default=None, ge=0, le=60)
     CLOUDFLARE_ENABLED: Optional[bool] = Field(default=None)
-    CLOUDFLARE_STRATEGY: Optional[str] = Field(default=None)
     DELTAFETCH_ENABLED: Optional[bool] = Field(default=None)
     PLAYWRIGHT_WAIT_SELECTOR: Optional[str] = Field(default=None)
     INFINITE_SCROLL: Optional[bool] = Field(default=None)
@@ -350,18 +349,6 @@ class SpiderSettingsSchema(BaseModel):
                     raise ValueError(
                         f"Unknown extractor: {extractor}. Allowed: {allowed}"
                     )
-        return v
-
-    @field_validator("CLOUDFLARE_STRATEGY")
-    @classmethod
-    def validate_cloudflare_strategy(cls, v):
-        """Validate Cloudflare strategy is valid."""
-        if v is not None:
-            allowed = {"hybrid", "browser_only"}
-            if v.lower() not in allowed:
-                raise ValueError(
-                    f"Invalid Cloudflare strategy: {v}. Allowed: {allowed}"
-                )
         return v
 
 

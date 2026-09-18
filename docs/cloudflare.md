@@ -63,9 +63,9 @@ same path. Setting both is harmless — they are aliases.
 **Hybrid mode (automatic):**
 1. **Browser opens once** → solves Cloudflare challenge → extracts cookies
 2. **HTTP requests with cookies** → 20-100x faster than keeping browser open
-3. **Auto-refresh cookies** every 10 minutes (configurable)
+3. **Re-verify only when needed** — when a host has no cookie yet, or when an HTTP response comes back blocked. There is no time-based refresh and no interval to configure. On a block every request holds at one gate, one re-verifies, and the rest retry.
 
-**Performance:** 8min for 1000 pages vs 2+ hours with browser-only mode.
+**Performance:** ~8min for 1000 pages.
 
 **Headed by default** for maximum stealth. On headless servers, Xvfb is auto-handled by the CLI (never use `xvfb-run` manually).
 
@@ -109,29 +109,27 @@ No changes needed. The `--browser` flag is just a simpler way to enable it from 
 
 ## Advanced Configuration
 
-### Custom Settings (Optional)
+### Configuration
 
-Fine-tune browser behavior in spider settings:
-
-```json
-{
-  "CLOUDFLARE_ENABLED": true,
-  "CLOUDFLARE_STRATEGY": "hybrid",           // "hybrid" (default) or "browser_only"
-  "CLOUDFLARE_HEADLESS": false,              // false (default, best stealth) or true (no GUI)
-  "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 600 // seconds (10 min default)
-}
-```
-
-### Browser-Only Mode
-
-Only use if hybrid mode fails. **Slow** - keeps browser open for every request.
+Cloudflare handling is a single hybrid path — verify once in the browser, then
+reuse the cookies over ordinary HTTP. It takes one setting:
 
 ```json
 {
-  "CLOUDFLARE_STRATEGY": "browser_only",
-  "CONCURRENT_REQUESTS": 1  // Required for browser-only
+  "CLOUDFLARE_ENABLED": true
 }
 ```
+
+`CLOUDFLARE_HEADLESS`, `CLOUDFLARE_COOKIE_REFRESH_THRESHOLD` and the `CF_*`
+keys are **not read by anything** — see *Accepted but not read* below.
+`spiders import` warns if a config sets one.
+
+If hybrid verification fails, the levers that do work are `--proxy-type <name>`
+(when the server IP is what's blocked), `CURL_CFFI_ENABLED` (TLS fingerprint,
+no JS) and `CONCURRENT_REQUESTS` / `DOWNLOAD_DELAY` for politeness.
+
+> **Hybrid is the only Cloudflare path.** A config declaring
+> `CLOUDFLARE_STRATEGY` imports fine and runs hybrid; the key is ignored.
 
 ### All Settings
 
@@ -140,15 +138,24 @@ Only use if hybrid mode fails. **Slow** - keeps browser open for every request.
 | `CLOUDFLARE_ENABLED` | false | Enable browser mode (Cloudflare intent) |
 | `BROWSER_ENABLED` | false | Enable browser mode (plain JS-render intent); alias of `CLOUDFLARE_ENABLED` |
 | `CURL_CFFI_ENABLED` | false | Use curl_cffi TLS impersonation instead of the browser (try first; takes precedence over browser settings) |
-| `CLOUDFLARE_STRATEGY` | "hybrid" | "hybrid" (fast) or "browser_only" (slow) |
-| `CLOUDFLARE_HEADLESS` | false | Headless mode (true = no GUI, worse stealth) |
-| `CLOUDFLARE_COOKIE_REFRESH_THRESHOLD` | 600 | Seconds before cookie refresh |
-| `CF_MAX_RETRIES` | 5 | Max verification attempts |
-| `CF_RETRY_INTERVAL` | 1 | Seconds between retries |
-| `CF_POST_DELAY` | 5 | Seconds after successful verification |
-| `CF_WAIT_SELECTOR` | — | CSS selector to wait for |
-| `CF_WAIT_TIMEOUT` | 10 | Selector wait timeout (seconds) |
-| `CONCURRENT_REQUESTS` | 16 | Must be 1 for browser-only mode |
+| `CONCURRENT_REQUESTS` | 16 | Standard Scrapy concurrency (see the throughput guidance in CLAUDE.md) |
+
+### Accepted but not read
+
+Nothing in the codebase reads these, so setting one has no effect — inert, not a
+knob with a sensible default. `spiders import` warns when a config declares one.
+Remove them.
+
+| Setting | Status |
+|---------|--------|
+| `CLOUDFLARE_STRATEGY` | hybrid is the only Cloudflare path |
+| `CLOUDFLARE_HEADLESS` | headless is handled by automatic Xvfb wrapping |
+| `CLOUDFLARE_COOKIE_REFRESH_THRESHOLD` | cookies are reused without time-based re-verification |
+| `CF_MAX_RETRIES` | no reader |
+| `CF_RETRY_INTERVAL` | no reader |
+| `CF_POST_DELAY` | no reader |
+| `CF_WAIT_SELECTOR` | no reader |
+| `CF_WAIT_TIMEOUT` | no reader |
 
 ---
 
@@ -162,21 +169,18 @@ Only use if hybrid mode fails. **Slow** - keeps browser open for every request.
 1. Check browser actually opens (test with `--browser` flag on inspector first)
 2. On headless servers, verify Xvfb is installed (`sudo apt-get install xvfb`) — CLI auto-wraps with `xvfb-run`
 3. Check system resources (CPU, memory)
-4. Test with different `CLOUDFLARE_STRATEGY` (try browser_only)
+4. Try `--proxy-type <name>` if the server IP itself is being blocked
 
 ### Wrong Content Extracted
 
-**Symptom:** Titles show "Related Articles" instead of actual title.
+**Symptom:** Titles show "Related Articles" instead of the actual title.
 
-**Solution:** Set `CF_WAIT_SELECTOR` to the main title element:
+**Solution:** Add an explicit `title` selector to the spider's section, so the
+field does not depend on the generic reader:
 
 ```json
-{
-  "CF_WAIT_SELECTOR": "h1.article-title"
-}
+{ "title": {"css": "h1.article-title::text"} }
 ```
-
-This captures HTML before related content loads.
 
 ### Blocked Despite Cookies
 
@@ -186,15 +190,15 @@ This captures HTML before related content loads.
 
 **If repeated:** Consider:
 1. IP reputation issue (try residential proxy: `--proxy-type residential`)
-2. Switch to browser-only mode
+2. Try `CURL_CFFI_ENABLED` — TLS fingerprint impersonation, a different signature than the browser
 3. Site may have additional detection beyond Cloudflare
 
 ---
 
 ## Performance Tips
 
-1. **Start with hybrid mode** (default) - 20-100x faster
-2. **Only use browser-only if hybrid fails** - fallback for tough sites
+1. **Hybrid is the only mode** and the default
+2. **If hybrid fails**, reach for `--proxy-type` or `CURL_CFFI_ENABLED`, not a Cloudflare setting
 3. **Use --limit for testing** - verify extraction works before full crawl
 4. **Monitor logs** - "Cached N cookies" = hybrid working
 

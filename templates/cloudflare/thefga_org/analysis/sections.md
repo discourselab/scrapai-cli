@@ -267,16 +267,11 @@ These URL patterns should be **excluded** from crawling (utility/navigation page
 ### Cloudflare Protection
 - **Status:** Active (HTTP 403 on direct requests)
 - **Bypass Method:** Cloudflare browser bypass (--cloudflare flag)
-- **Strategy:** Hybrid mode (browser once per 10min, then HTTP with cookies)
+- **Strategy:** Hybrid — the browser verifies a host once, then HTTP requests reuse the cookies. Re-verification happens when a host has no cookie yet, or when a response comes back blocked.
 - **Settings Required:**
   ```json
   {
-    "CLOUDFLARE_ENABLED": true,
-    "CLOUDFLARE_STRATEGY": "hybrid",
-    "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 600,
-    "CF_MAX_RETRIES": 5,
-    "CF_RETRY_INTERVAL": 1,
-    "CF_POST_DELAY": 5
+    "CLOUDFLARE_ENABLED": true
   }
   ```
 
@@ -308,12 +303,7 @@ These URL patterns should be **excluded** from crawling (utility/navigation page
   "start_urls": ["https://thefga.org/"],
   "settings": {
     "EXTRACTOR_ORDER": ["trafilatura", "newspaper"],
-    "CLOUDFLARE_ENABLED": true,
-    "CLOUDFLARE_STRATEGY": "hybrid",
-    "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 600,
-    "CF_MAX_RETRIES": 5,
-    "CF_RETRY_INTERVAL": 1,
-    "CF_POST_DELAY": 5
+    "CLOUDFLARE_ENABLED": true
   }
 }
 ```
