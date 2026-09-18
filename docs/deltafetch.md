@@ -2,7 +2,12 @@
 
 Skips pages unchanged since last crawl. First crawl scrapes everything; subsequent crawls only process new/changed pages.
 
-**✓ Enabled by default** in scrapai - all crawls automatically use incremental crawling.
+**✓ Enabled by default** for **production** crawls — they automatically use incremental crawling.
+
+**`--limit` test crawls run with DeltaFetch OFF.** They neither
+mark URLs seen nor skip any, so a test never suppresses URLs from the later production crawl,
+and a re-test always refetches its items. Consequence when verifying a fix: an unchanged
+re-test is a real failure — it is never dedupe.
 
 ## Configuration
 
@@ -62,6 +67,7 @@ This deletes `.scrapy/deltafetch/<project>/<spider>.db` and removes the spider's
 
 **"Skipping pages that should be re-crawled":**
 - Reset the cache: `./scrapai crawl spider --project proj --reset-deltafetch`
+- Only production crawls skip; a `--limit` test crawl always refetches.
 
 **Monitoring:** Look for log lines: `[scrapy_deltafetch] DEBUG: Ignoring already fetched: <url>`
 

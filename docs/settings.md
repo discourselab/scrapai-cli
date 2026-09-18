@@ -192,7 +192,7 @@ Sitemap mode works with **either** format: add `"USE_SITEMAP": true` to a `secti
 
 ## DeltaFetch (incremental crawling)
 
-See [deltafetch.md](deltafetch.md). Enabled by default — subsequent crawls skip already-seen URLs.
+See [deltafetch.md](deltafetch.md). Enabled by default for production crawls — subsequent production crawls skip already-seen URLs. `--limit` test crawls run with DeltaFetch off and always refetch.
 
 ```json
 { "DELTAFETCH_ENABLED": false }
