@@ -199,7 +199,7 @@ Minimum shape (include `source_url` when processing from the queue) — a `secti
 **Start when:** Phase 3 is done (both JSON files ready).
 **Goal:** prove extraction on 5 pages, then import.
 
-- **4A — test (never skip):** `spiders import test_spider.json --project <p>` → `crawl <name> --project <p> --limit 5` → `show <name> --project <p> --limit 5` → verify **every `required: true` field is non-null on every item.** Bad → fix selectors, re-test. (Reminder, rule 2: `--limit` is mandatory.)
+- **4A — test (never skip):** `spiders import test_spider.json --project <p>` → `crawl <name> --project <p> --limit 5` → `show <name> --project <p> --limit 5 --source db` → verify **every `required: true` field is non-null on every item.** Bad → fix selectors, re-test. (Reminder, rule 2: `--limit` is mandatory.)
 - **4B — import:** `spiders import final_spider.json --project <p>` (same name auto-updates). The spider is ready; the **user** runs the production crawl.
 
 **Done when:** the `--limit 5` test passed, `show` verified, final spider imported. Spider is reusable — done.
