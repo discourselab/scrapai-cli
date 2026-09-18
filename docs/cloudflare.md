@@ -63,7 +63,7 @@ same path. Setting both is harmless — they are aliases.
 **Hybrid mode (automatic):**
 1. **Browser opens once** → solves Cloudflare challenge → extracts cookies
 2. **HTTP requests with cookies** → 20-100x faster than keeping browser open
-3. **Auto-refresh cookies** every 10 minutes (configurable)
+3. **Re-verify only when needed** — when a host has no cookie yet, or when an HTTP response comes back blocked. There is no time-based refresh and no interval to configure. On a block every request holds at one gate, one re-verifies, and the rest retry.
 
 **Performance:** 8min for 1000 pages vs 2+ hours with browser-only mode.
 
@@ -116,11 +116,13 @@ Fine-tune browser behavior in spider settings:
 ```json
 {
   "CLOUDFLARE_ENABLED": true,
-  "CLOUDFLARE_STRATEGY": "hybrid",           // "hybrid" (default) or "browser_only"
-  "CLOUDFLARE_HEADLESS": false,              // false (default, best stealth) or true (no GUI)
-  "CLOUDFLARE_COOKIE_REFRESH_THRESHOLD": 600 // seconds (10 min default)
+  "CLOUDFLARE_STRATEGY": "hybrid"  // "hybrid" (default) or "browser_only"
 }
 ```
+
+`CLOUDFLARE_HEADLESS`, `CLOUDFLARE_COOKIE_REFRESH_THRESHOLD`, `CF_MAX_RETRIES`,
+`CF_RETRY_INTERVAL` and `CF_POST_DELAY` are **not read by anything** — see
+*Accepted but not read* below. `spiders import` warns if a config sets one.
 
 ### Browser-Only Mode
 
@@ -141,14 +143,22 @@ Only use if hybrid mode fails. **Slow** - keeps browser open for every request.
 | `BROWSER_ENABLED` | false | Enable browser mode (plain JS-render intent); alias of `CLOUDFLARE_ENABLED` |
 | `CURL_CFFI_ENABLED` | false | Use curl_cffi TLS impersonation instead of the browser (try first; takes precedence over browser settings) |
 | `CLOUDFLARE_STRATEGY` | "hybrid" | "hybrid" (fast) or "browser_only" (slow) |
-| `CLOUDFLARE_HEADLESS` | false | Headless mode (true = no GUI, worse stealth) |
-| `CLOUDFLARE_COOKIE_REFRESH_THRESHOLD` | 600 | Seconds before cookie refresh |
-| `CF_MAX_RETRIES` | 5 | Max verification attempts |
-| `CF_RETRY_INTERVAL` | 1 | Seconds between retries |
-| `CF_POST_DELAY` | 5 | Seconds after successful verification |
-| `CF_WAIT_SELECTOR` | — | CSS selector to wait for |
+| `CF_WAIT_SELECTOR` | — | CSS selector to wait for before the browser captures a page (every page in browser-only mode; in hybrid, only the pages the browser renders while verifying) |
 | `CF_WAIT_TIMEOUT` | 10 | Selector wait timeout (seconds) |
 | `CONCURRENT_REQUESTS` | 16 | Must be 1 for browser-only mode |
+
+### Accepted but not read
+
+Nothing in the codebase reads these, so setting one has no effect. `spiders
+import` warns when a config declares one. Remove them.
+
+| Setting | Status |
+|---------|--------|
+| `CLOUDFLARE_HEADLESS` | headless is handled by automatic Xvfb wrapping |
+| `CLOUDFLARE_COOKIE_REFRESH_THRESHOLD` | cookies are reused without time-based re-verification |
+| `CF_MAX_RETRIES` | no reader |
+| `CF_RETRY_INTERVAL` | no reader |
+| `CF_POST_DELAY` | no reader |
 
 ---
 
@@ -176,7 +186,9 @@ Only use if hybrid mode fails. **Slow** - keeps browser open for every request.
 }
 ```
 
-This captures HTML before related content loads.
+This captures HTML before related content loads. In hybrid mode it applies only
+to pages the browser renders; pages fetched over HTTP with the cookie are not
+affected, so use browser-only mode if every page needs it.
 
 ### Blocked Despite Cookies
 

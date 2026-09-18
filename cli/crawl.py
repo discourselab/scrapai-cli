@@ -683,7 +683,7 @@ def _run_spider(
 
     if cf_enabled:
         # CloakBrowser visible by default (easier debugging)
-        # On headless servers: use Xvfb or set CLOUDFLARE_HEADLESS=true
+        # On headless servers the headed browser needs Xvfb
         from utils.display_helper import needs_xvfb, has_xvfb
 
         if needs_xvfb():
@@ -708,8 +708,9 @@ def _run_spider(
                 click.echo("  1. Install Xvfb (recommended):")
                 click.echo("     sudo apt-get update && sudo apt-get install -y xvfb")
                 click.echo("")
-                click.echo("  2. Or force headless mode (worse stealth):")
-                click.echo("     Add to spider settings: CLOUDFLARE_HEADLESS=true")
+                click.echo("  2. Or skip the browser entirely, if the site allows it:")
+                click.echo("     set CURL_CFFI_ENABLED on the spider (TLS")
+                click.echo("     impersonation, no JS, no display needed)")
                 click.echo("")
                 sys.exit(1)
 
