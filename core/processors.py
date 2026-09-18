@@ -140,12 +140,15 @@ def parse_datetime_processor(
     Resolution order:
       1. If `format` is given, use strptime (explicit wins).
       2. Else try dateparser (handles relative dates, 200+ languages, fuzzy text).
+         When `languages` is set but nothing parses, retry with auto-detect.
       3. Else fall back to dateutil.
 
     Args:
         value: Input datetime string
         format: Optional strptime format string
-        languages: Optional language hints for dateparser (e.g. ["en", "de"])
+        languages: Preferred languages for dateparser (e.g. ["en", "de"]). These are
+            tried first; if none of them parse the value, dateparser is retried with
+            auto-detect, so a wrong value costs an extra attempt rather than the date.
 
     Returns datetime object or None if parsing fails.
     """
@@ -174,6 +177,12 @@ def parse_datetime_processor(
             parsed = _dateparser.parse(
                 value, languages=languages, settings={"DATE_ORDER": "MDY"}
             )
+            if parsed is None and languages:
+                # `languages` narrows dateparser's candidate set, so a value the
+                # page does not match returns None. Retry unrestricted: the
+                # setting is a preference, not a filter, and auto-detect reads
+                # non-English month names on its own.
+                parsed = _dateparser.parse(value, settings={"DATE_ORDER": "MDY"})
             if parsed is not None:
                 return parsed
         except Exception as e:

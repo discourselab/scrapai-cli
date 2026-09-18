@@ -201,6 +201,18 @@ class TestParseDatetimeProcessor:
         assert result.month == 3
         assert result.day == 15
 
+    def test_mismatched_language_still_parses(self):
+        """`languages` is a preference: a wrong value retries with auto-detect."""
+        result = parse_datetime_processor("15. Januar 2024", languages=["en"])
+        assert isinstance(result, datetime)
+        assert (result.year, result.month, result.day) == (2024, 1, 15)
+
+    def test_language_preference_does_not_need_to_be_set(self):
+        """Auto-detect reads non-English month names without help."""
+        result = parse_datetime_processor("15. Januar 2024")
+        assert isinstance(result, datetime)
+        assert (result.year, result.month, result.day) == (2024, 1, 15)
+
     def test_format_takes_precedence_over_dateparser(self):
         """Explicit format wins; dateparser is not consulted."""
         # An ambiguous string resolved by format
