@@ -47,6 +47,7 @@ Outputs under `data/<project>/_audit/`:
 | `--per-cap N` / `--global-cap N` | max sitemap fetches per spider (80) / overall (2000) |
 | `--no-browser-retry` | don't retry failed sitemap fetches with `--browser` |
 | `--no-html` | skip building the HTML dashboard |
+| `--verbose` / `-v` | full detail: per-spider lines and per-organisation compliance output. Default output is minimal — stage markers, progress bar and the completion summary |
 
 ### Status taxonomy
 
