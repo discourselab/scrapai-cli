@@ -41,22 +41,17 @@ there is no separate PR counter: **the request number is the PR** (branch
 `pr/<nn>-<slug>`), continuing the ledger; 15 was withdrawn, so the wave starts
 at 16.
 
+Requests 16–21 and 23 ship on their own branches and are not carried here.
+The one that belongs to this PR:
+
 | PR | Request doc | Change | Files |
 |---|---|---|---|
-| 16 | [16-dead-proxy-fail-open.md](16-dead-proxy-fail-open.md) | bugfix: dead-proxy detection + fail-open to direct; compliance probes can't poison a domain | `middlewares.py`, `tests/` |
-| 17 | [17-browser-crawl-reliability.md](17-browser-crawl-reliability.md) | bugfix+feature: all-exception browser crawls exit failed; browser crawls get their own Pueue group | `extensions/browser_wedge.py`, `cli/crawl.py`, `settings.py`, `tests/` |
-| 18 | [18-crawl-output-hygiene.md](18-crawl-output-hygiene.md) | bugfix ×2: `--limit` test crawls no longer poison DeltaFetch; same-day reset re-runs supersede today's file only (no append dupes; version history preserved) | `cli/crawl.py`, `tests/` |
-| 19 | [19-use-sitemap-replaces-link-following.md](19-use-sitemap-replaces-link-following.md) | bugfix: loud warning that `USE_SITEMAP` disables link-following + docs correction (hybrid crawl = follow-up) | `cli/crawl.py`, `CLAUDE.md` |
-| 20 | [20-show-production-output.md](20-show-production-output.md) | bugfix: `show` reads production `crawls/*.jsonl` (DB fallback + `--source`) | `cli/show.py`, `tests/` |
-| 21 | [21-jsonapi-repository-harvest.md](21-jsonapi-repository-harvest.md) | feature port: JSON:API / paginated-JSON repository harvest spider | `spiders/repository_spider.py`, `cli/crawl.py`, `tests/` |
 | → PR 5 | [22-audit-measurement-and-quiet.md](22-audit-measurement-and-quiet.md) | bugfix bundle: audit measurement accuracy (liveness, PDF-provenance "versions", media locs, CF robots) + quiet default output | `core/quality/`, `cli/audit.py` |
-| → PR 3 | [23-sitemap-crawl-denominator.md](23-sitemap-crawl-denominator.md) | bugfix: crawl-recorded sitemap denominator counts unique, non-media pages | `spiders/sitemap_spider.py`, `tests/` |
 
-"→ PR 3 / → PR 5" = fixes to code still in review, appended to those open PRs
-rather than opened as new ones. PRs 16–21 are independent of the quality-tool
-stack and of each other. (15 was considered — default `ROBOTSTXT_OBEY` to
-True — and withdrawn as a framework change: it's a per-project preference,
-handled by setting `"ROBOTSTXT_OBEY": true` in that project's spider configs.)
+"→ PR 5" = fixes to code still in review, appended to this PR rather than
+opened as a new one. (15 was considered — default `ROBOTSTXT_OBEY` to True —
+and withdrawn as a framework change: it's a per-project preference, handled
+by setting `"ROBOTSTXT_OBEY": true` in that project's spider configs.)
 
 Requests that existed in the old (frozen) repo but do NOT travel to this
 instance — superseded by upstream or orthogonal local work — are documented in
