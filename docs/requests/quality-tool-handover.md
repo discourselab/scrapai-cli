@@ -166,6 +166,4 @@ scan-cache `pdf`/`pdf_hosts` fields are unchanged.
 
 **Verification:** suite 540 → 561 passed (21 new tests: sitemap wiring, corpus
 pdf classification + cache migration, scoring split/flags, external_pdf lens,
-dashboard/overview surfaces, an engine-level synthetic-project flow) — plus the
-open flag `docs/requests/11-sitemapindex-deny-regression.md` (possible upstream
-Drupal-deny regression, found during the graft; needs an owner).
+dashboard/overview surfaces, an engine-level synthetic-project flow).

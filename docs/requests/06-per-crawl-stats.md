@@ -43,7 +43,7 @@ rules) and `closed()` writes them into the SAME `crawl_stats/<spider>.json` —
 giving the audit the coverage denominator the crawl actually faced, at the
 crawl's own point in time (no sitemap re-fetch, no drift).
 
-- **Status:** PARTIALLY RE-GRAFTED IN THIS INSTANCE (2026-07-09). Upstream independently adopted the deny support + relative-loc fix (different code), so only the audit COUNTERS (`_sm_total`/`_sm_eligible` → crawl_stats) were grafted onto upstream's rewritten `sitemap_filter`. CAVEAT: upstream's own deny logic runs `<sitemapindex>` entries through the filters — the original implementation deliberately did NOT (Drupal `?page=` children); see docs/requests/11-sitemapindex-deny-regression.md.
+- **Status:** PARTIALLY RE-GRAFTED IN THIS INSTANCE (2026-07-09). Upstream independently adopted the deny support + relative-loc fix (different code), so only the audit COUNTERS (`_sm_total`/`_sm_eligible` → crawl_stats) were grafted onto upstream's rewritten `sitemap_filter`.
 - **File:** `spiders/sitemap_spider.py` — `SitemapDatabaseSpider._get_sitemap_rules()` and `sitemap_filter()`
 - **Type:** framework change (sitemap spider)
 

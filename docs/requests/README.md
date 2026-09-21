@@ -31,7 +31,6 @@ quality tool), not by order of discovery.
 | 4 | [04-compliance-file-capture.md](04-compliance-file-capture.md) | crawl-time robots/llms witnesses (extension + settings wiring) | `extensions/compliance_files.py`, `settings.py` |
 | 5 | [quality-tool.md](quality-tool.md) | the quality tool: audit · overview · dedupe + dashboards + skills (incl. the `.gitignore` skills change, merged 13) | `core/quality/`, `cli/`, `tests/`, `docs/`, `.claude/commands/`, `.gitignore`, `CLAUDE.md`, `README.md` |
 | 6 | [14-crawl-all-pueue.md](14-crawl-all-pueue.md) | `crawl-all` enqueues via Pueue (parallel, disconnect-safe) instead of running inline | `cli/crawl.py` |
-| — | [11-sitemapindex-deny-regression.md](11-sitemapindex-deny-regression.md) | ⚠ file as an ISSUE, not a PR: possible regression — denies applied to `<sitemapindex>` entries | `spiders/sitemap_spider.py` (verify) |
 
 PRs 1–2 and 6 are small and independent (review-first); 3–4 are the tool's
 framework producers (their consumer arrives in PR 5); PR 5 degrades gracefully
