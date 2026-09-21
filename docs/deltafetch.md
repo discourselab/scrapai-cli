@@ -11,7 +11,7 @@ re-test is a real failure — it is never dedupe.
 
 ## Configuration
 
-**Already enabled!** DeltaFetch is ON by default in `settings.py`. No configuration needed.
+**Already enabled for production crawls.** DeltaFetch is ON by default in `settings.py`; `--limit` test crawls run with it off. No configuration needed.
 
 **To disable (if needed):**
 
