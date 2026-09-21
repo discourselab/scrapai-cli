@@ -142,7 +142,7 @@ Our contribution is the orchestration: the CLI, the database-first spider manage
 
 **AI-assisted health checks.** `./scrapai health --project news` tests all spiders with 5 sample items, detects extraction vs crawling failures, and generates a markdown report for the agent to fix. Run monthly via cron to catch breakage early. When a site redesigns, the agent re-analyzes, updates selectors, and verifies the fix in 5-10 minutes vs 45 minutes manual.
 
-**Project-wide quality auditing.** `./scrapai audit --project news` scores every spider's coverage (scraped vs sitemap-declared pages) and extraction quality, checks compliance signals (robots.txt, legal pages), analyzes where organisations host their PDFs, and renders it all into a self-contained HTML dashboard. `overview` profiles each spider's content (sections, date spans, field coverage); `dedupe` reversibly consolidates duplicate crawl output. Three agent skills (`/spider-review`, `/spider-align`, `/spider-slow`) act on the audit's findings. See [docs/quality.md](docs/quality.md).
+**Project-wide quality auditing.** `./scrapai audit --project news` scores every spider's coverage (scraped vs sitemap-declared pages) and extraction quality, checks compliance signals (robots.txt, legal pages), and renders it all into a self-contained HTML dashboard. `overview` profiles each spider's content (sections, date spans, field coverage); `dedupe` reversibly consolidates duplicate crawl output. Three agent skills (`/spider-review`, `/spider-align`, `/spider-slow`) act on the audit's findings. See [docs/quality.md](docs/quality.md).
 
 ## Quick Start
 

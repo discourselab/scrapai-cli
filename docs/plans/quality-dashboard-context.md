@@ -10,7 +10,7 @@
 
 | Command | Output file | Renderer | Tabs / shape |
 |---|---|---|---|
-| `./scrapai audit --project <p>` | `data/<p>/_audit/dashboard_<p>.html` | `core/quality/dashboard.py` | 3 tabs: **Coverage · Compliance · PDFs** |
+| `./scrapai audit --project <p>` | `data/<p>/_audit/dashboard_<p>.html` | `core/quality/dashboard/` | 2 tabs: **Coverage · Compliance** |
 | `./scrapai overview --project <p>` | `data/<p>/_audit/overview_<p>.html` | `core/quality/overview_dashboard.py` | 1 table: per-spider **content profile** |
 
 Both are **self-contained single HTML files** (inline CSS/JS, no server, no dependency).
