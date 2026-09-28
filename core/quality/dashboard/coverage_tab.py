@@ -5,7 +5,11 @@ all-spiders grid · notes & definitions — plus the copy-paste dedupe command b
 import re
 
 from core.quality.crawl_audit import LEGEND, STATUS_LEADS, fix_hints
-from core.quality.crawl_audit.report import sitemap_anchor
+from core.quality.crawl_audit.report import (
+    REJECTED_NOTE,
+    rejects_folder,
+    sitemap_anchor,
+)
 from core.quality.crawl_audit.scoring import OUTCOME_BASIS
 
 from .widgets import (
@@ -481,10 +485,11 @@ def _status_section(project, label, rows):
     return "".join(out)
 
 
-def _sitemaps_section(rows):
+def _sitemaps_section(rows, project=None):
     """The MD's 'Sitemaps given to spiders' section: one block per USE_SITEMAP
-    spider (given first, then not given) — top-level, not in a collapsed
-    drawer, so the sitemap-cell links always land on a visible block."""
+    spider (given first, then not given, and any sitemap the crawl rejected) —
+    top-level, not in a collapsed drawer, so the sitemap-cell links always
+    land on a visible block."""
     srt = sorted(
         (r for r in rows if r.get("sitemap") == "yes"),
         key=lambda r: str(r.get("spider", "")).lower(),
@@ -499,13 +504,16 @@ def _sitemaps_section(rows):
         "the sitemap indexes its robots.txt declares, plus any declared leaf "
         "sitemap. "
         "<i>not listed in root index</i> = given, but not among those. "
-        "<code>?</code> = the site's total is unknown (see the note).</p>"
+        "<code>?</code> = the site's total is unknown (see the note). "
+        "<b>rejected</b> = the crawl fetched it but could not parse it as a "
+        "sitemap (flag <code>sitemap rejected (N)</code>).</p>"
     ]
     for r in srt:
         spider = str(r.get("spider", ""))
         total = r.get("sitemaps_total", "?")
         items = r.get("sitemap_list") or []
         note = r.get("sitemaps_note") or ""
+        rejected = r.get("sitemap_rejected") or []
         anchor = _esc(sitemap_anchor(spider), quote=True)
         given_n = _esc(str(r.get("sitemaps_given", "")))
         out.append(
@@ -515,6 +523,14 @@ def _sitemaps_section(rows):
             + (f" Note: {_esc(note)}." if note else "")
             + "</p>"
         )
+        if rejected:
+            lis = "".join(f"<li>{_link(u, u)} — <b>rejected</b></li>" for u in rejected)
+            folder = _esc(rejects_folder(project, spider))
+            out.append(
+                f'<p class="rejected"><b>Rejected by the crawl ({len(rejected)}):'
+                f"</b> {_esc(REJECTED_NOTE)} Bodies kept in "
+                f"<code>{folder}</code>.</p><ul>{lis}</ul>"
+            )
         for given in (True, False):
             part = [e for e in items if bool(e.get("given")) == given]
             if not part:
@@ -525,6 +541,8 @@ def _sitemaps_section(rows):
                 tag = ""
                 if given and not e.get("in_index", True) and total != "?":
                     tag = " — <i>not listed in root index</i>"
+                if url in rejected:
+                    tag += " — <b>rejected</b>"
                 lis.append(f"<li>{_link(url, url)}{tag}</li>")
             head = "Given" if given else "Not given"
             out.append(f"<p>{head} ({len(part)}):</p><ul>{''.join(lis)}</ul>")

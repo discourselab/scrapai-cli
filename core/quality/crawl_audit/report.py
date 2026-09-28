@@ -69,6 +69,7 @@ CSV_FIELDS = {
     "sitemaps_total": int,
     "sitemap_list": list,
     "sitemaps_note": str,
+    "sitemap_rejected": list,
     "eligible": str,
     "scraped": int,
     "pdf": int,
@@ -295,9 +296,24 @@ def sitemap_cell(r):
     return f"[{n}](#{sitemap_anchor(r['spider'])})"
 
 
-def write_sitemaps_section(fh, srt):
+def rejects_folder(project, spider):
+    """Where the crawl kept the bodies of the sitemaps it rejected."""
+    return f"data/{project or '<project>'}/_audit/sitemap_rejects/{spider}/"
+
+
+REJECTED_NOTE = (
+    "Answered, but not as a sitemap Scrapy could parse (e.g. an HTML view or "
+    "a block page served as 200): the crawl dropped every URL they list. "
+    "Where the coverage denominator is the crawl's own sitemap count, those "
+    "URLs are missing from it, so it is short and coverage reads higher than "
+    "it is."
+)
+
+
+def write_sitemaps_section(fh, srt, project=None):
     """One block per USE_SITEMAP spider: which of the site's sitemaps it was
-    given (first) and which it wasn't — where the sitemap-cell links land."""
+    given (first) and which it wasn't — where the sitemap-cell links land —
+    plus any sitemap the crawl rejected, marked as such."""
     rows = [r for r in srt if r["sitemap"] == "yes"]
     if not rows:
         return
@@ -308,10 +324,12 @@ def write_sitemaps_section(fh, srt):
         "indexes its robots.txt declares, plus any declared leaf sitemap. "
         "*not listed in root index* = given, but not among those (e.g. a "
         "nested index's child). `?` = the site's total is unknown (see the "
-        "note).\n\n"
+        "note). *rejected* = the crawl fetched it but could not parse it as a "
+        "sitemap (flag `sitemap rejected (N)`).\n\n"
     )
     for r in rows:
         items = r.get("sitemap_list") or []
+        rejected = r.get("sitemap_rejected") or []
         total = r.get("sitemaps_total", "?")
         anchor = html.escape(sitemap_anchor(r["spider"]))
         fh.write(f'<a id="{anchor}"></a>\n\n')
@@ -320,6 +338,13 @@ def write_sitemaps_section(fh, srt):
         if r.get("sitemaps_note"):
             fh.write(f" Note: {r['sitemaps_note']}.")
         fh.write("\n\n")
+        if rejected:
+            folder = rejects_folder(project, r["spider"])
+            fh.write(f"**Rejected by the crawl ({len(rejected)}):** {REJECTED_NOTE}")
+            fh.write(f" Bodies kept in `{folder}`.\n\n")
+            for u in rejected:
+                fh.write(f"- {u} — **rejected**\n")
+            fh.write("\n")
         for given in (True, False):
             part = [e for e in items if bool(e.get("given")) == given]
             if not part:
@@ -329,6 +354,8 @@ def write_sitemaps_section(fh, srt):
                 tag = ""
                 if given and not e.get("in_index", True) and total != "?":
                     tag = " — not listed in root index"
+                if e.get("url") in rejected:
+                    tag += " — **rejected**"
                 fh.write(f"- {e.get('url', '')}{tag}\n")
             fh.write("\n")
 
@@ -383,7 +410,7 @@ def write_outputs(project, rows, config_warnings=(), compliance=None):
             write_compliance_section(fh, project, compliance)
 
         write_all_spiders(fh, srt)
-        write_sitemaps_section(fh, srt)
+        write_sitemaps_section(fh, srt, project)
 
 
 def write_compliance_section(fh, project, compliance):

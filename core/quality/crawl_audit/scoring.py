@@ -554,6 +554,14 @@ def score_spider(name, sp, c, ctx):
             if outcome_flagged(outcomes["failed"], base):
                 flags.append(f"failed {failed_cell}")
                 concern = True  # review trigger (timeouts / dead proxy)
+    # Sitemaps the crawl fetched but Scrapy refused to parse (an HTML view or a
+    # block page served as 200): every URL in them was dropped and never
+    # counted, so the crawl-recorded denominator is short. A file without the
+    # key predates it: unknown, no flag.
+    rejected = (outcomes or {}).get("sitemap_rejected") or []
+    if rejected:
+        flags.append(f"sitemap rejected ({len(rejected)})")
+        concern = True  # review trigger (coverage denominator short)
     if content_med and content_med < THIN_CHARS and status != "extraction broken":
         flags.append(f"thin? {_human_k(content_med)}")  # over-broad rules / junk?
         concern = True  # review trigger
@@ -645,6 +653,8 @@ def score_spider(name, sp, c, ctx):
         "sitemaps_total": listing["total"] if listing else "",
         "sitemap_list": listing["list"] if listing else [],
         "sitemaps_note": listing["note"] if listing else "",
+        # sitemap URLs the crawl's Scrapy rejected (crawl-stats sitemap_rejected)
+        "sitemap_rejected": rejected,
         "eligible": eligible_cell,
         "scraped": urls,  # unique HTML article URLs
         "unique": unique_total,  # ALL unique URLs incl. pdf rows (dupe math)

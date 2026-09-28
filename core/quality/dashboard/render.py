@@ -99,7 +99,7 @@ def render_dashboard(
             + _dupes_section(project, coverage_rows)
             + clean_sections
             + _all_spiders_table(project, coverage_rows)
-            + _sitemaps_section(coverage_rows)
+            + _sitemaps_section(coverage_rows, project)
             + _notes_definitions()
         )
         if coverage_rows

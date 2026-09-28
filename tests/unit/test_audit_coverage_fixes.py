@@ -202,6 +202,7 @@ def test_failed_excludes_retried_and_ignorerequest(data):
         "final": True,
         "resumed": False,
         "summed": False,
+        "sitemap_rejected": None,  # a file without the key: unknown
     }
     row = score_spider("example_org", _sp(), _corpus(100), _ctx(data))
     assert row["failed"] == "3 (2.9%)"
@@ -897,3 +898,105 @@ def test_rss_directive_not_counted(data, monkeypatch):
     )
     assert fake.calls == [RSS] and note == f"not a sitemap: {RSS}"
     assert sitemaps.collect_pages("s3", cache) == set()
+
+
+# ------------------------------------ sitemaps the crawl rejected (crawl-stats)
+REJECTED = _kids("post")[0]
+REJECTS_DIR = "data/proj/_audit/sitemap_rejects/example_org/"
+
+
+def _rejected_row(data, **stats):
+    """A USE_SITEMAP spider given post + page of the site's three sitemaps,
+    90 of 100 eligible scraped (clean `ok` on its own), with `stats` added to
+    its crawl-stats file."""
+    _robots_snapshot(data, [INDEX])
+    cache = str(_cache(data))
+    sitemaps._save_manifest(INDEX, cache, _index_xml(_kids("post", "page", "tag")))
+    _final_stats(data, "example_org", **stats)
+    sp = _sp(start_urls=_kids("post", "page"))
+    return score_spider("example_org", sp, _corpus(90), _ctx(data))
+
+
+def test_sitemap_rejected_flags_manual_review(data):
+    row = _rejected_row(data, sitemap_rejected=[REJECTED])
+    out = spiders_db.crawl_stats_outcomes("proj", "example_org")
+    assert out["sitemap_rejected"] == [REJECTED]
+    assert row["sitemap_rejected"] == [REJECTED]
+    assert "sitemap rejected (1)" in row["flags"].split(" · ")
+    assert row["status"] == "manual review"
+
+
+def test_sitemap_rejected_empty_list_does_not_flag(data):
+    row = _rejected_row(data, sitemap_rejected=[])
+    assert row["sitemap_rejected"] == []
+    assert "sitemap rejected" not in row["flags"]
+    assert row["status"] == "ok"
+
+
+def test_sitemap_rejected_missing_key_is_unknown(data):
+    # a crawl-stats file from before the key: unknown, never flagged
+    row = _rejected_row(data)
+    out = spiders_db.crawl_stats_outcomes("proj", "example_org")
+    assert out["sitemap_rejected"] is None
+    assert row["sitemap_rejected"] == []
+    assert "sitemap rejected" not in row["flags"]
+    assert row["status"] == "ok"
+
+
+def test_sitemap_rejected_shown_in_md(data):
+    from core.quality.crawl_audit.report import write_outputs
+
+    row = _rejected_row(data, sitemap_rejected=[REJECTED])
+    write_outputs("proj", [row])
+    md = (data / "proj" / "_audit" / "audit_proj.md").read_text()
+    block = md.split('<a id="sm-example_org"></a>', 1)[1]
+    assert "**Rejected by the crawl (1):**" in block
+    assert f"- {REJECTED} — **rejected**\n" in block
+    assert f"Bodies kept in `{REJECTS_DIR}`" in block
+    assert "the crawl's own sitemap count" in block
+    # the given entry itself is marked too; the one not rejected is not
+    given = block.split("Given (2):", 1)[1].split("Not given (1):", 1)[0]
+    assert f"- {REJECTED} — **rejected**" in given
+    assert f"- {_kids('page')[0]}\n" in given
+    # the flag in the table, and its entry in the md's flag glossary
+    assert "sitemap rejected (1)" in md.split("## Sitemaps given", 1)[0]
+    assert "- `sitemap rejected (N)` —" in md
+
+
+def test_sitemap_rejected_shown_in_html(data):
+    from core.quality.dashboard import render_dashboard
+    from core.quality.dashboard.widgets import GLOSSARY, _tip
+
+    row = _rejected_row(data, sitemap_rejected=[REJECTED])
+    html = render_dashboard("proj", [row], [])
+    block = html.split('id="sm-example_org"', 1)[1].split("</div>", 1)[0]
+    assert "Rejected by the crawl (1):" in block
+    assert f">{REJECTED}</a> — <b>rejected</b></li>" in block
+    assert f"<code>{REJECTS_DIR}</code>" in block
+    assert "the crawl&#x27;s own sitemap count" in block  # escaped
+    # the flag token carries the rejected-sitemap tooltip
+    meaning = dict(GLOSSARY)["sitemap rejected"]
+    span = html.split(">sitemap rejected (1)</span>", 1)[0].rsplit("<span", 1)[1]
+    assert _tip(meaning) in span
+
+
+def test_sitemap_rejected_glossary_matches_flag_token(data):
+    from core.quality.crawl_audit.text import NOTES_AND_DEFINITIONS
+    from core.quality.dashboard.widgets import GLOSSARY, _flag_title
+
+    row = _rejected_row(data, sitemap_rejected=[REJECTED, _kids("page")[0]])
+    token = next(t for t in row["flags"].split(" · ") if "rejected" in t)
+    assert token == "sitemap rejected (2)"
+    assert _flag_title(token) == dict(GLOSSARY)["sitemap rejected"]
+    assert "`sitemap rejected (N)`" in NOTES_AND_DEFINITIONS
+
+
+def test_sitemap_rejected_survives_only_merge(data, tmp_path):
+    from core.quality.crawl_audit.report import merge_only_rows, read_csv_rows
+    from core.quality.crawl_audit.report import write_csvs
+
+    row = _rejected_row(data, sitemap_rejected=[REJECTED])
+    write_csvs(str(tmp_path), [row])
+    back = merge_only_rows([], read_csv_rows(str(tmp_path)), {"example_org"})
+    assert back[0]["sitemap_rejected"] == [REJECTED]
+    assert "sitemap rejected (1)" in back[0]["flags"]

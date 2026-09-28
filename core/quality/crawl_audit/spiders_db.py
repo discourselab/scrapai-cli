@@ -117,7 +117,13 @@ def crawl_stats_outcomes(project, spider):
     crawl continued from a checkpoint); summed=True when it also stamped
     `"summed": true` — the writer added the earlier legs' counters in, so the
     figures are the whole crawl's. resumed without summed = the last leg
-    only (an earlier leg died before it could hand its counters on)."""
+    only (an earlier leg died before it could hand its counters on).
+
+    sitemap_rejected = the sitemap URLs the crawl fetched but Scrapy refused
+    to parse (a 200 whose body is not a urlset or sitemapindex): their URLs
+    were dropped and never counted, so the crawl-recorded sitemap_total /
+    eligible are short. [] = none rejected; None = the file predates the key
+    (unknown, never flagged)."""
     path = os.path.join(
         DATA_DIR,
         project,
@@ -132,6 +138,8 @@ def crawl_stats_outcomes(project, spider):
         return None
     if not isinstance(d, dict):
         return None
+    rejected = d.get("sitemap_rejected")
+    rejected = [str(u) for u in rejected] if isinstance(rejected, list) else None
     if "responses" in d:
         final_status = d.get("final_status") or {}
         retries = d.get("retries") or {}
@@ -148,6 +156,7 @@ def crawl_stats_outcomes(project, spider):
             "final": True,
             "resumed": bool(d.get("resumed")),
             "summed": bool(d.get("summed")),
+            "sitemap_rejected": rejected,
         }
     status = d.get("status") or {}
     attempts = sum(int(v or 0) for v in status.values())
@@ -159,6 +168,7 @@ def crawl_stats_outcomes(project, spider):
         "final": False,
         "resumed": bool(d.get("resumed")),
         "summed": bool(d.get("summed")),
+        "sitemap_rejected": rejected,
     }
 
 

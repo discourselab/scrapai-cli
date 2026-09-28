@@ -77,6 +77,15 @@ GLOSSARY = [
     ),
     ("sitemap-empty", "A configured USE_SITEMAP matched 0 of the spider's rule URLs."),
     (
+        "sitemap rejected",
+        "The crawl fetched N sitemaps that Scrapy could not parse (an HTML "
+        "view or a block page served as 200) and dropped every URL in them; "
+        "where the coverage denominator is the crawl's own sitemap count, it "
+        "is short. See the spider's block under "
+        "Sitemaps given to spiders; the bodies are kept in "
+        "_audit/sitemap_rejects/<spider>/.",
+    ),
+    (
         "sitemap-cap-hit",
         "Sitemap fetch hit the global cap → the denominator is truncated.",
     ),

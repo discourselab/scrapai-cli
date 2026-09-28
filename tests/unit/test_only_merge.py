@@ -39,6 +39,7 @@ def _row(spider, **over):
             _entry("https://a.test/tag-sitemap.xml", False),
         ],
         "sitemaps_note": "",
+        "sitemap_rejected": [],
         "eligible": "100",
         "scraped": 90,
         "pdf": 3,
