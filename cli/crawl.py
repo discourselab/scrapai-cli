@@ -5,6 +5,7 @@ import os
 import shutil
 import pickle
 import shlex
+import tempfile
 import json
 import time
 from pathlib import Path
@@ -199,7 +200,7 @@ def crawl(
     detached,
 ):
     """Run a spider"""
-    _run_spider(
+    rc = _run_spider(
         project,
         spider,
         output,
@@ -212,6 +213,8 @@ def crawl(
         save_html,
         detached,
     )
+    if rc:
+        sys.exit(rc)
 
 
 @click.command()
@@ -373,6 +376,47 @@ def crawl_status(spider, project):
     # (e.g. the agent): force a wide width so columns aren't truncated to 80.
     console = Console(width=None if sys.stdout.isatty() else 140)
     console.print(table)
+
+
+def _upload_crawl_file(output_file, project_name, spider_name, keep_local=False):
+    """Upload a production crawl file to S3, when S3 is configured.
+
+    keep_local: leave the local file in place after the upload. A crawl the
+    CLI stopped early keeps it, so a same-day re-run appends to it (one file
+    per day) and that run's upload, to the same key, holds both runs' rows.
+    """
+    from utils.s3_upload import is_s3_configured, upload_to_s3
+
+    if not is_s3_configured():
+        return
+    click.echo("📤 Uploading to S3...")
+    try:
+        # Determine S3 key (path in bucket)
+        # Preserve project/spider structure: project/spider/crawls/filename
+        output_path = Path(output_file)
+        if project_name:
+            s3_key = f"{project_name}/{spider_name}/crawls/{output_path.name}"
+        else:
+            s3_key = f"{spider_name}/crawls/{output_path.name}"
+
+        success = upload_to_s3(
+            output_file,
+            s3_key=s3_key,
+            compress=True,
+            delete_after_upload=not keep_local,
+        )
+
+        if success:
+            click.echo("✅ Upload to S3 completed")
+        else:
+            click.echo("⚠️  S3 upload failed (file kept locally)")
+
+    except ImportError:
+        click.echo("⚠️  boto3 not installed")
+        click.echo("   Run: pip install -r requirements.txt")
+    except Exception as e:
+        click.echo(f"⚠️  S3 upload error: {e}")
+        click.echo("   File kept locally")
 
 
 def _run_spider(
@@ -718,6 +762,14 @@ def _run_spider(
         else:
             click.echo("🌐 Browser enabled via spider settings")
 
+    # extensions/site_block.py writes this marker when it stopped the crawl
+    # because the site is blocking it (docs/requests/29).
+    block_marker = (
+        Path(tempfile.gettempdir()) / f"scrapai-site-block-{os.getpid()}.json"
+    )
+    block_marker.unlink(missing_ok=True)
+    cmd.extend(["-s", f"SITE_BLOCK_MARKER={block_marker}"])
+
     # Add custom Scrapy arguments if provided
     if scrapy_args:
         extra_args = shlex.split(scrapy_args)
@@ -727,42 +779,62 @@ def _run_spider(
     result = subprocess.run(cmd)
 
     # Cleanup checkpoint on successful completion (production mode only)
-    if checkpoint_dir and result.returncode == 0:
+    if checkpoint_dir and result.returncode == 0 and not block_marker.exists():
         checkpoint_path = Path(checkpoint_dir)
         if checkpoint_path.exists():
             shutil.rmtree(checkpoint_path)
             click.echo("✓ Checkpoint cleaned up (successful completion)")
 
+    # Stopped because the site is blocking the crawl: exit 4 so it shows as
+    # failed, and delete the checkpoint — a resume would skip every URL that
+    # failed (already in its seen-set), while a fresh run re-requests exactly
+    # the pages DeltaFetch has no item for (docs/requests/29). Trade-off: a
+    # link that exists only on an already-captured item page, and was still
+    # queued at the stop, is not rediscovered by a plain re-run — only by
+    # --reset-deltafetch.
+    if block_marker.exists():
+        try:
+            info = json.loads(block_marker.read_text())
+        except (OSError, ValueError):
+            info = {}
+        block_marker.unlink()
+        window = info.get("window_counts", {})
+        totals = info.get("totals", {})
+        click.echo("")
+        click.echo("=" * 70)
+        click.echo("🛑 SITE IS BLOCKING THE CRAWL — stopped to protect access")
+        click.echo(
+            f"   {sum(window.values())} of the last {info.get('window', '?')} "
+            f"downloads were blocked: {window.get('site_blocked', 0)} still "
+            f"challenged after a browser re-verify, {window.get('http_429', 0)} "
+            "HTTP 429."
+        )
+        click.echo(
+            f"   Whole crawl: {totals.get('site_blocked', 0)} still-challenged "
+            f"pages, {totals.get('http_429', 0)} HTTP 429 responses; "
+            f"{info.get('items', '?')} items saved before the stop."
+        )
+        # The partial crawl file goes to S3 as a finished one would.
+        if output_file and not limit:
+            _upload_crawl_file(output_file, project_name, spider_name, keep_local=True)
+        if checkpoint_dir and Path(checkpoint_dir).exists():
+            shutil.rmtree(checkpoint_dir)
+            click.echo("   Checkpoint deleted: the next run starts fresh.")
+        click.echo("   What to do:")
+        click.echo("   1. Wait before crawling this site again.")
+        click.echo(
+            "   2. Then re-run the same command. Pages that produced an item are"
+        )
+        click.echo("      skipped; start, listing and navigation pages are requested")
+        click.echo("      again, as are pages that failed.")
+        click.echo("   3. Use --reset-deltafetch only if pages are still missing after")
+        click.echo("      that re-run.")
+        click.echo("   4. If blocks recur, slow the spider (DOWNLOAD_DELAY,")
+        click.echo("      CONCURRENT_REQUESTS) or add a proxy (--proxy-type).")
+        click.echo("   Exiting 4 so this shows as FAILED, not done.")
+        click.echo("=" * 70)
+        return 4
+
     # Upload to S3 if configured (production mode only)
     if output_file and not limit and result.returncode == 0:
-        from utils.s3_upload import is_s3_configured, upload_to_s3
-
-        if is_s3_configured():
-            click.echo("📤 Uploading to S3...")
-            try:
-                # Determine S3 key (path in bucket)
-                # Preserve project/spider structure: project/spider/crawls/filename
-                output_path = Path(output_file)
-                if project_name:
-                    s3_key = f"{project_name}/{spider_name}/crawls/{output_path.name}"
-                else:
-                    s3_key = f"{spider_name}/crawls/{output_path.name}"
-
-                success = upload_to_s3(
-                    output_file,
-                    s3_key=s3_key,
-                    compress=True,
-                    delete_after_upload=True,
-                )
-
-                if success:
-                    click.echo("✅ Upload to S3 completed")
-                else:
-                    click.echo("⚠️  S3 upload failed (file kept locally)")
-
-            except ImportError:
-                click.echo("⚠️  boto3 not installed")
-                click.echo("   Run: pip install -r requirements.txt")
-            except Exception as e:
-                click.echo(f"⚠️  S3 upload error: {e}")
-                click.echo("   File kept locally")
+        _upload_crawl_file(output_file, project_name, spider_name)
