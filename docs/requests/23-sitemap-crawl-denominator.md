@@ -40,3 +40,25 @@ skips cleanly when the quality tool is absent).
 - `site12_org`-class phantom "missing" pages and inflated `eligible`
   counts disappear from the audit once the spider re-crawls.
 - Reported numbers only — no crawl or data behaviour changes.
+
+## Follow-up (2026-09-28)
+
+Later commits on this PR extend the same stats file; the audit side is in the
+quality-tool PR (request 06, request 22):
+
+- **Final request outcomes.** The writer also stores Scrapy's raw counters —
+  `responses`, `final_status`, `exceptions`, `retries` — so the audit can show
+  dead / blocked / failed per crawl without re-crawling. Always present, `{}` /
+  0 when empty.
+- **Resumed crawls.** A checkpointed crawl that stops early keeps its counters
+  in its own JOBDIR (`crawl_stats_leg.json`); the leg that resumes takes them
+  and writes whole-crawl numbers marked `summed`. The sitemap denominator stays
+  withheld on resumed crawls.
+- **Rejected sitemaps.** A sitemap Scrapy ignores (a non-XML 200 body, e.g. an
+  XSL-rendered view or an error page) dropped its URLs silently and made this
+  denominator short. It is now counted (`sitemap/rejected`), listed in
+  `sitemap_rejected`, and its body kept for diagnosis under
+  `_audit/sitemap_rejects/<spider>/` (at most 20 files × 256 KB, cleared on
+  each fresh crawl). The cause is framework code and is not fixed here.
+- The writer's tests stub both spider-lookup shapes, so they pass with or
+  without PR 28 (spider lookups scoped per project).
