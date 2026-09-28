@@ -154,7 +154,23 @@ class BaseDBSpiderMixin:
         crawls write: an item-capped run (--limit / health) is skipped by
         SETTING, not close reason — a test crawl that runs out of items UNDER
         its limit still ends "finished" and must not overwrite a real crawl's
-        numbers."""
+        numbers.
+
+        Alongside the attempt-level `status` histogram we store Scrapy's RAW
+        outcome counters, uninterpreted, so the audit can derive per-crawl
+        outcomes (and fix its formula later) without re-crawling:
+        - responses: response_received_count — final responses only; `status`
+          counts every download attempt, retried ones included.
+        - final_status: {code: n} from httperror/response_ignored_status_count
+          — final non-2xx responses after retry/proxy handling (compliance
+          witness fetches set handle_httpstatus_all, so they never land here).
+        - exceptions: {class: n} from downloader/exception_type_count —
+          attempt-level, includes retried attempts and IgnoreRequest raised
+          from process_request.
+        - retries: {reason: n} from retry/reason_count — exception class names
+          as above, or "<code> <Reason>" for HTTP-code retries.
+        All four are always written ({} / 0 when empty) so a reader can tell a
+        new-format file with nothing to report from an older file."""
         if reason != "finished":
             return
         try:
@@ -167,17 +183,34 @@ class BaseDBSpiderMixin:
                 getattr(getattr(self, "spider_config", None), "project", None)
                 or "default"
             )
-            status = {
-                k.rsplit("/", 1)[-1]: v
-                for k, v in stats.items()
-                if "downloader/response_status_count/" in k
-            }
+
+            def by_suffix(prefix):
+                # Strip the prefix verbatim: class/reason names contain dots
+                # and spaces ("503 Service Unavailable").
+                return {
+                    k.replace(prefix, "", 1): v
+                    for k, v in stats.items()
+                    if isinstance(k, str) and k.startswith(prefix)
+                }
+
+            status = by_suffix("downloader/response_status_count/")
+            ignored = "httperror/response_ignored_status_count/"
+            final_status = by_suffix(ignored)
             data = {
                 "spider": self.spider_name,
                 "reason": reason,
                 "items": stats.get("item_scraped_count", 0),
                 "requests": stats.get("downloader/request_count", 0),
                 "status": status,  # {"200": 4890, "404": 210, ...}
+                # Raw outcome counters (see docstring). Written on resumed
+                # legs too: like items/requests they cover this leg only,
+                # which the `resumed` marker below already flags; unlike the
+                # sitemap figures they are never mistaken for a whole-site
+                # denominator, so there is nothing to withhold.
+                "responses": stats.get("response_received_count", 0),
+                "final_status": final_status,
+                "exceptions": by_suffix("downloader/exception_type_count/"),
+                "retries": by_suffix("retry/reason_count/"),
             }
             # A resumed crawl (checkpoint) restores its request queue from disk
             # but every in-memory counter restarts at zero, so this leg's
