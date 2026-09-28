@@ -54,3 +54,8 @@ item-limit pagination cutoff. Suite: 494 passed; black + flake8 clean.
 - First user: `site31_edu` (news_archive) — see its `analysis/NOTES.md` for
   the full site investigation (broken OAI, Turnstile, JSON:API discovery) and the
   exact `REPOSITORY_SOURCE` mapping.
+- Project scope (2026-09-28): spider names are unique per project only, so the
+  spider takes an optional `project` and loads its row by name and project
+  when given; without one, a unique name still resolves and an ambiguous name
+  raises. This matches request 28, which makes the CLI pass `-a project=<p>` to
+  every spider class. Either PR can merge first.
