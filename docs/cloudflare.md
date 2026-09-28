@@ -180,9 +180,13 @@ This captures HTML before related content loads.
 
 ### Blocked Despite Cookies
 
-**Symptom:** Logs show "Blocked despite cookies - re-verifying CF"
+**Symptom:** Logs show "Blocked on <host> - holding to reverify"
 
-**What happens:** System auto-retries with fresh cookies, then falls back to browser if still blocked.
+**What happens:** Requests for that host hold while the browser re-verifies once, then retry with the fresh cookie. A page still challenged after that is a real block: it raises `SiteBlockedError` ("Still blocked after reverify"), is logged as `[site-block]` and counted in the crawl stats as `blocked/site_blocked`, and is **not** retried in-crawl — each retry would be one more request to a site that is refusing us. A plain re-run fetches it later.
+
+If 60 of the last 100 downloads are blocks, the crawl stops at once and exits 4 with `🛑 SITE IS BLOCKING THE CRAWL`. In a browser crawl that means still-challenged pages: this handler reports every page it returns as 200, so 429s never show. In a plain HTTP crawl it means HTTP 429 on any attempt, retried or not — except a direct 429 while a configured proxy has not yet been tried for that site, so the proxy escalation still gets its chance. Its checkpoint is deleted; wait, then re-run the same command — pages that produced an item are skipped. 403 does not count (login-only sections return dense runs of it on healthy crawls).
+
+A transport failure — no response at all, e.g. a TLS or connection error — is not a block and never counts. The handler falls back to the browser's render of that URL, which often captures the page; it raises `HttpTransportError` only if that fails too.
 
 **If repeated:** Consider:
 1. IP reputation issue (try residential proxy: `--proxy-type residential`)
