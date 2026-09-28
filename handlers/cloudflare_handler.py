@@ -31,6 +31,30 @@ from twisted.internet import threads
 logger = logging.getLogger(__name__)
 
 
+class SiteBlockedError(Exception):
+    """The site still served a challenge or block page right after a fresh
+    browser re-verify: a real block (IP or rate limit), not a stale cookie.
+
+    Deliberately NOT retried in-crawl (not an OSError, so not in Scrapy's
+    RETRY_EXCEPTIONS). A retry is one more request at a site that is refusing
+    us, and Scrapy queues retries behind every page not yet fetched
+    (RETRY_PRIORITY_ADJUST=-1), so under a total block about twice the pages
+    would be requested before the first retry gave up. Each one is logged and
+    counted instead; extensions/site_block.py stops the crawl when they are
+    dense, and a plain re-run fetches the pages (docs/requests/29).
+    """
+
+
+class HttpTransportError(Exception):
+    """The cookie-carrying HTTP fetch got no response at all (TLS, connection
+    or proxy failure). Not a block: it never counts toward the block window.
+    The handler first falls back to the browser's render of the URL (the
+    re-verify renders exactly that page, and often captures it); this is
+    raised only when that fallback yields nothing either. Not retried
+    in-crawl, as before; a plain re-run fetches the page (docs/requests/29).
+    """
+
+
 def _make_response(url: str, body: str, request):
     """Pick the right Scrapy response class based on URL pattern.
 
@@ -267,15 +291,30 @@ class CloudflareDownloadHandler:
             return reused
 
         # Fast path: HTTP with the cached cookie.
-        html = await self._fetch_with_http(request.url, cached)
+        try:
+            html = await self._fetch_with_http(request.url, cached)
+            transport_error = None
+        except HttpTransportError as e:
+            html, transport_error = None, e
 
         is_utility_file = request.url.endswith(("robots.txt", "sitemap.xml", ".ico"))
-        if not is_utility_file and self._is_blocked(html):
+        if transport_error and is_utility_file:
+            raise transport_error
+        blocked = not transport_error and not is_utility_file and self._is_blocked(html)
+        if transport_error:
+            # No response at all: not a block, but the browser's render of
+            # this URL (via the re-verify below) often still gets the page.
+            logger.warning(
+                f"[{spider_name}] HTTP fetch failed for {request.url} "
+                "- falling back to the browser render"
+            )
+        elif blocked:
             # Blocked: hold + reverify once + retry with the fresh cookie.
             logger.warning(
                 f"[{spider_name}] Blocked on {urlparse(request.url).hostname} "
                 "- holding to reverify"
             )
+        if transport_error or blocked:
             await self._reverify(key, request.url, spider, used_seq=cached.get("seq"))
             cached = CloudflareDownloadHandler._cookie_cache[key]
             # The reverify just rendered THIS exact URL in the browser (real HTML,
@@ -289,9 +328,14 @@ class CloudflareDownloadHandler:
             else:
                 html = await self._fetch_with_http(request.url, cached)
             if self._is_blocked(html):
-                # Still blocked right after a fresh verify => a real block
-                # (IP/rate limit), not a stale cookie. Surface it.
-                raise Exception(f"Still blocked after reverify: {request.url}")
+                # A challenge/block page right after a fresh verify => a real
+                # block (IP/rate limit), not a stale cookie — whichever way we
+                # got here. Not retried in-crawl; see SiteBlockedError. (A
+                # second transport failure above raises HttpTransportError.)
+                raise SiteBlockedError(
+                    f"Still blocked after reverify: {request.url} (the site "
+                    f"served a challenge/block page again, {len(html)} bytes)"
+                )
 
         return html
 
@@ -412,8 +456,12 @@ class CloudflareDownloadHandler:
             raise Exception(f"Browser service failed to verify CF for {url}")
         return resp["html"], resp["cookies"], resp["user_agent"]
 
-    async def _fetch_with_http(self, url: str, cached: Dict) -> Optional[str]:
-        """Fetch URL with HTTP + cached cookies using curl_cffi for TLS stealth."""
+    async def _fetch_with_http(self, url: str, cached: Dict) -> str:
+        """Fetch URL with HTTP + cached cookies using curl_cffi for TLS stealth.
+
+        Raises HttpTransportError when no response arrives at all, so the
+        caller can tell a transport failure from a challenge page.
+        """
         try:
             import curl_cffi.requests as curl_requests
 
@@ -448,7 +496,9 @@ class CloudflareDownloadHandler:
             return response.text
         except Exception as e:
             logger.error(f"HTTP fetch failed for {url}: {e}")
-            return None
+            raise HttpTransportError(
+                f"HTTP fetch failed for {url} (transport error, not a block): {e}"
+            ) from e
 
     def _session_expired(self, html, spider) -> bool:
         """A SESSION crawl that gets its auth-wall page = the saved login died.
