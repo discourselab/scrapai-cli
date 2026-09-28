@@ -397,6 +397,47 @@ def crawl_status(spider, project):
     console.print(table)
 
 
+def _upload_crawl_file(output_file, project_name, spider_name, keep_local=False):
+    """Upload a production crawl file to S3, when S3 is configured.
+
+    keep_local: leave the local file in place after the upload. A crawl the
+    CLI stopped early keeps it, so a same-day re-run appends to it (one file
+    per day) and that run's upload, to the same key, holds both runs' rows.
+    """
+    from utils.s3_upload import is_s3_configured, upload_to_s3
+
+    if not is_s3_configured():
+        return
+    click.echo("📤 Uploading to S3...")
+    try:
+        # Determine S3 key (path in bucket)
+        # Preserve project/spider structure: project/spider/crawls/filename
+        output_path = Path(output_file)
+        if project_name:
+            s3_key = f"{project_name}/{spider_name}/crawls/{output_path.name}"
+        else:
+            s3_key = f"{spider_name}/crawls/{output_path.name}"
+
+        success = upload_to_s3(
+            output_file,
+            s3_key=s3_key,
+            compress=True,
+            delete_after_upload=not keep_local,
+        )
+
+        if success:
+            click.echo("✅ Upload to S3 completed")
+        else:
+            click.echo("⚠️  S3 upload failed (file kept locally)")
+
+    except ImportError:
+        click.echo("⚠️  boto3 not installed")
+        click.echo("   Run: pip install -r requirements.txt")
+    except Exception as e:
+        click.echo(f"⚠️  S3 upload error: {e}")
+        click.echo("   File kept locally")
+
+
 def _run_spider(
     project_name,
     spider_name,
@@ -748,9 +789,10 @@ def _run_spider(
 
     result = subprocess.run(cmd)
 
-    # Fail loud on a wedged browser crawl: every request died as a handler
-    # exception, nothing was fetched — exit failed so Pueue shows it and it can
-    # be retried, instead of banking a 0-item "success" (docs/requests/17).
+    # Fail loud on a wedged browser crawl: the browser service failed for the
+    # whole crawl, or for 20 of 100 downloads mid-crawl (which stopped it) —
+    # exit failed so Pueue shows it and it can be re-run, instead of banking
+    # an empty or partial "success" (docs/requests/17).
     if wedge_marker and wedge_marker.exists():
         try:
             info = json.loads(wedge_marker.read_text())
@@ -759,17 +801,48 @@ def _run_spider(
         wedge_marker.unlink()
         click.echo("")
         click.echo("=" * 70)
+        if info.get("kind") == "partial":
+            click.echo(
+                f"💀 BROWSER CRAWL WEDGED — stopped mid-crawl: "
+                f"{info.get('window_errors', '?')} of the last "
+                f"{info.get('window', '?')} downloads failed in the browser service "
+                f"({info.get('responses', '?')} responses, "
+                f"{info.get('items', '?')} items before the stop)."
+            )
+        else:
+            stopped = " — stopped mid-crawl" if info.get("stopped") else ""
+            click.echo(
+                f"💀 BROWSER CRAWL WEDGED{stopped}: 0 responses, "
+                f"{info.get('service_errors', '?')} browser-service errors, 0 items."
+            )
         click.echo(
-            f"💀 BROWSER CRAWL WEDGED: 0 responses, "
-            f"{info.get('exceptions', '?')} downloader exceptions, 0 items."
+            "   The shared browser service kept failing (down, overloaded, or its"
         )
+        click.echo("   navigations timing out).")
+        # The partial crawl file goes to S3 as a finished one would.
+        if output_file and not limit:
+            _upload_crawl_file(output_file, project_name, spider_name, keep_local=True)
+        # A resume would skip every URL that failed (they are already in the
+        # checkpoint's seen-set); a fresh run re-requests exactly the pages
+        # DeltaFetch has no item for. Trade-off: a link that exists only on an
+        # already-captured item page, and was still queued at the stop, is not
+        # rediscovered by a plain re-run — only by --reset-deltafetch.
+        if checkpoint_dir and Path(checkpoint_dir).exists():
+            shutil.rmtree(checkpoint_dir)
+            click.echo("   Checkpoint deleted: the next run starts fresh.")
+        click.echo("   Check `./scrapai browser status`, then re-run this crawl; pages")
         click.echo(
-            "   The shared browser service was likely dead or overloaded for the"
+            "   already captured are skipped. Exiting non-zero (FAILED, not done)."
         )
-        click.echo("   whole crawl. Check `./scrapai browser status`, then re-run this")
-        click.echo("   crawl. Exiting non-zero so this shows as FAILED, not done.")
         click.echo("=" * 70)
         return 3
+
+    # Propagate a failed crawl's exit code (previously swallowed: any scrapy
+    # failure still exited 0, so Pueue marked failed crawls as successful).
+    # Nothing below runs for a failed crawl anyway: the checkpoint is kept for
+    # the resume and only a successful crawl is uploaded.
+    if result.returncode:
+        return result.returncode
 
     # Cleanup checkpoint on successful completion (production mode only)
     if checkpoint_dir and result.returncode == 0:
@@ -780,38 +853,4 @@ def _run_spider(
 
     # Upload to S3 if configured (production mode only)
     if output_file and not limit and result.returncode == 0:
-        from utils.s3_upload import is_s3_configured, upload_to_s3
-
-        if is_s3_configured():
-            click.echo("📤 Uploading to S3...")
-            try:
-                # Determine S3 key (path in bucket)
-                # Preserve project/spider structure: project/spider/crawls/filename
-                output_path = Path(output_file)
-                if project_name:
-                    s3_key = f"{project_name}/{spider_name}/crawls/{output_path.name}"
-                else:
-                    s3_key = f"{spider_name}/crawls/{output_path.name}"
-
-                success = upload_to_s3(
-                    output_file,
-                    s3_key=s3_key,
-                    compress=True,
-                    delete_after_upload=True,
-                )
-
-                if success:
-                    click.echo("✅ Upload to S3 completed")
-                else:
-                    click.echo("⚠️  S3 upload failed (file kept locally)")
-
-            except ImportError:
-                click.echo("⚠️  boto3 not installed")
-                click.echo("   Run: pip install -r requirements.txt")
-            except Exception as e:
-                click.echo(f"⚠️  S3 upload error: {e}")
-                click.echo("   File kept locally")
-
-    # Propagate the crawl's exit code (previously swallowed: any scrapy failure
-    # still exited 0, so Pueue marked failed crawls as successful).
-    return result.returncode
+        _upload_crawl_file(output_file, project_name, spider_name)
