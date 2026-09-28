@@ -188,19 +188,104 @@ def ai_bots_blocked(groups):
     return ai_bot_signals(groups)["full"]
 
 
+def _norm_rule(rule):
+    """A robots path rule for SAME-AS comparison only. Conservative: strip whitespace and a
+    trailing `*` run (robots rules are prefix matches, so `/x*` ≡ `/x`); a trailing `$`
+    or `/` is significant (`/account$` ≠ `/account/` ≠ `/account`) and is kept, and no
+    other rewriting is attempted — two rules count as the same only when they clearly
+    are, so a doubtful case stays a (flagged) difference."""
+    r = (rule or "").strip()
+    stripped = r.rstrip("*")
+    return stripped or r
+
+
+def _covers(rule, d):
+    """True if normalised robots rule `rule` matches every path normalised rule `d` matches:
+    they're identical, or `rule` is a plain prefix (no `*` / `$`) of d's literal lead (the
+    text before d's first `*` or `$`). A `rule` holding a wildcard or `$` covers only an
+    identical `d` — conservative, so a doubtful case stays a difference."""
+    if rule == d:
+        return True
+    if "*" in rule or "$" in rule:
+        return False
+    return re.split(r"[*$]", d, maxsplit=1)[0].startswith(rule)
+
+
+def _longest(rules, d):
+    """Length of the longest rule in `rules` covering `d`, or -1."""
+    return max((len(r) for r in rules if _covers(r, d)), default=-1)
+
+
+def _beyond_star(g, star):
+    """The Disallow rules of AI group `g` (original spelling) that restrict something the
+    `*` group doesn't. The rule, per rule `d` of `g` (all compared via _norm_rule):
+
+    - `d` is within `*`'s blocked set when a `*` Disallow covers it (a prefix of it, e.g.
+      `*` `/` covers `/private`) and no longer `*` Allow covers it (longest match wins);
+      otherwise `d` blocks a path `*` leaves open → AI-specific.
+    - a `*` Allow carved out INSIDE `d` (`*`: Disallow /wp-admin/ + Allow
+      /wp-admin/admin-ajax.php; `g`: Disallow /wp-admin/) that `g` lacks re-blocks that
+      path for the AI bot. That alone is NOT counted when `g` repeats the very `*`
+      Disallow the Allow is an exception to — the group copied `*`'s rule and dropped
+      its exception (CMS hygiene), not an AI opt-out. If `g`'s own, different rule is
+      what swallows the Allow (`*`: Disallow / + Allow /public/; `g`: Disallow /pub), it
+      blocks a path `*` opens → AI-specific.
+
+    `g`'s own Allow lines are ignored except to keep a `*` exception (so a looser group
+    can only read as stricter, never the reverse)."""
+    star_dis = [_norm_rule(s) for s in star.get("disallow", [])]
+    star_allow = [_norm_rule(a) for a in star.get("allow", [])]
+    own_dis = {_norm_rule(x) for x in g.get("disallow", [])}
+    own_allow = [_norm_rule(a) for a in g.get("allow", [])]
+    out = []
+    for raw in g.get("disallow", []):
+        d = _norm_rule(raw)
+        if _longest(star_dis, d) <= _longest(star_allow, d):
+            out.append(raw)  # blocks a path `*` leaves open
+            continue
+        for a in star_allow:
+            if a == d or not _covers(d, a) or _longest(own_allow, a) >= 0:
+                continue  # not carved out inside d, or g keeps the exception too
+            parent = max((s for s in star_dis if _covers(s, a)), key=len, default=None)
+            if parent is not None and parent not in own_dis:
+                out.append(raw)  # g's own rule swallows a path `*` opens
+                break
+    return out
+
+
+def _stricter_than_star(g, star):
+    """True if AI group `g` restricts anything the `*` group doesn't (see _beyond_star).
+    No `*` group → any Disallow is AI-specific. A group equal to or looser than `*` (a CMS
+    default that lists AI bots alongside `*` with identical rules) says nothing
+    AI-specific — it's the site's generic crawl hygiene."""
+    return star is None or bool(_beyond_star(g, star))
+
+
+def _partial_sample(g, star):
+    """Up to 4 sample paths for a partial group: only the rules beyond `*` (what makes it
+    AI-specific); all of its rules when there is no `*` group."""
+    return (g["disallow"] if star is None else _beyond_star(g, star))[:4]
+
+
 def ai_bot_signals(groups):
     """Richer AI-crawler read of robots, beyond whole-site bans. Returns
-      {full: [bots], partial: [(bot, sample_paths)], allowed: [bots],
-       heuristic: [ua], channel: [bots]}
+      {full: [bots], partial: [(bot, sample_paths)], partial_same: [(ua, sample_paths)],
+       allowed: [bots], heuristic: [ua], channel: [bots]}
     - full      = whole-site Disallow (the clear opt-out)
-    - partial   = some paths disallowed (not whole-site) — a softer signal
+    - partial   = some paths disallowed (not whole-site) AND stricter than the `*` group
+                  (or there is no `*` group) — a softer, but AI-specific, signal
+    - partial_same = some paths disallowed but no stricter than `*` (e.g. AI bots listed
+                  in the same group as `*`): kept for transparency, NEVER a block
     - allowed   = explicit `Allow: /` with no whole-site disallow
     - heuristic = an AI-ish UA group NOT in AI_BOTS (narrow match; excludes bare 'bot')
+                  with a whole-site ban or a partial one stricter than `*` (the same rule;
+                  a same-as-`*` heuristic group goes to partial_same)
     - channel   = AI answer-engine bots we feed (PerplexityBot…) that are blocked — flagged
                   by name because a block binds the exact bot our KB routes content to.
     """
-    full, partial, allowed, heuristic, channel = [], [], [], [], []
+    full, partial, same, allowed, heuristic, channel = [], [], [], [], [], []
     known = {b.lower() for b in AI_BOTS}
+    star = groups.get("*")
     for bot in AI_BOTS:
         g = groups.get(bot.lower())
         if not g:
@@ -210,7 +295,10 @@ def ai_bot_signals(groups):
             if bot in AI_CHANNEL_BOTS:
                 channel.append(bot)
         elif g["disallow"]:
-            partial.append((bot, g["disallow"][:4]))
+            if _stricter_than_star(g, star):
+                partial.append((bot, _partial_sample(g, star)))
+            else:
+                same.append((bot, g["disallow"][:4]))
         elif any((a or "").strip() in ("/", "/*") for a in g.get("allow", [])):
             allowed.append(bot)
     for agent, g in groups.items():
@@ -219,12 +307,16 @@ def ai_bot_signals(groups):
             and agent != "*"
             and agent not in known
             and AI_UA_HEURISTIC.search(agent)
-            and (blocks_whole_site(g["disallow"]) or g["disallow"])
+            and g["disallow"]
         ):
-            heuristic.append(agent)
+            if blocks_whole_site(g["disallow"]) or _stricter_than_star(g, star):
+                heuristic.append(agent)
+            else:
+                same.append((agent, g["disallow"][:4]))
     return {
         "full": full,
         "partial": partial,
+        "partial_same": same,
         "allowed": allowed,
         "heuristic": heuristic,
         "channel": channel,
@@ -234,8 +326,9 @@ def ai_bot_signals(groups):
 def ai_scrape_block_from(bots, ai_txt_present):
     """The ACCESS-axis AI-scraping signal: any robots AI-bot ban (whole-site,
     partial, or heuristic UA group) or a Spawning ai.txt opt-out. One formula,
-    shared by capture() and the rescued-robots path in build_report_data() so the
-    two sites can never drift."""
+    shared by capture() and the report-time recompute / rescued-robots paths in
+    build_report_data() so they can never drift. `partial_same` is deliberately
+    NOT read: a group no stricter than `*` is not an AI block."""
     return bool(bots["full"] or bots["partial"] or bots["heuristic"] or ai_txt_present)
 
 

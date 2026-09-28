@@ -124,7 +124,7 @@ def _capture_robots(fetch, base, project, domain, ua, browser):
         "sitemaps": [],
     }
     blocked = []
-    ai_bots = {"full": [], "partial": [], "allowed": [], "heuristic": [], "channel": []}
+    ai_bots = ai_bot_signals({})  # the empty shape (no robots groups)
     robots_comments = []
     if fetch_status == "ok":
         with open(os.path.join(base, "robots.txt"), "w") as fh:

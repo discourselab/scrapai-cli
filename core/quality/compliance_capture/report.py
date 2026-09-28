@@ -16,6 +16,7 @@ from .assess import (
     _cell,
     _color_rank,
     ai_bot_lines,
+    ai_scrape_flag,
     assess_crawl,
     assess_reuse,
     crawl_notes,
@@ -243,6 +244,38 @@ def _refresh_robots_derived(project, captured):
         # matchers apply to OLD snapshots without re-fetching (robots.txt itself is unchanged).
         rb["comments"] = robots_comment_signals(rtxt)
         rb["ai_bots"] = ai_bot_signals(parse_robots(rtxt)["groups"])
+        # …and write them through to the `ai` block every consumer reads (verdicts, notes,
+        # the dashboard evidence, the audit summary) — refreshing only rb["ai_bots"] left
+        # those on the capture-time values, so a matcher fix never reached the outputs.
+        _apply_ai_bot_signals(rec.setdefault("ai", {}), rb["ai_bots"])
+
+
+def _apply_ai_bot_signals(ai, bots):
+    """Write freshly derived AI-bot signals into a rec's `ai` block — the same fields and
+    formula capture() stores. machine_readable_prohibition also depends on the reuse
+    signals, so it is recomputed separately (_apply_machine_readable)."""
+    ai["ai_bot_signals"] = bots
+    ai["ai_bots_blocked"] = list(bots.get("full") or [])
+    ai["per_ai_bot"] = bool(bots.get("full"))  # legacy whole-site flag
+    ai["channel_blocked"] = list(bots.get("channel") or [])
+    ai["ai_scrape_block"] = ai_scrape_block_from(
+        bots, (ai.get("ai_txt") or {}).get("present")
+    )
+
+
+def _apply_machine_readable(ai):
+    """Recompute the aggregates that combine the ACCESS and REUSE axes, from the
+    (refreshed) concrete signals — capture()'s own formulas. Run after BOTH axes are
+    final: _rescan_legal_pages settles tdm_reserved/noai, and a crawl-robots rescue in
+    _join_cross_check can still change ai_scrape_block afterwards."""
+    scrape = bool(ai_scrape_flag(ai))
+    ai["machine_readable_prohibition"] = bool(
+        scrape
+        or ai.get("tdm_reserved")
+        or ai.get("noai")
+        or (ai.get("llms") or {}).get("verdict") in ("prohibits", "partial")
+    )
+    ai["ai_opt_out"] = bool(scrape or ai.get("ai_reuse_reserved"))
 
 
 def _rescan_legal_pages(project, captured):
@@ -296,6 +329,7 @@ def _rescan_legal_pages(project, captured):
         )
         ai["ai_reuse_reserved"] = reserved
         ai["site_wide_ai"] = reserved
+        _apply_machine_readable(ai)
 
 
 def _join_cross_check(project, captured):
@@ -317,12 +351,9 @@ def _join_cross_check(project, captured):
                 # the rescued robots may carry AI-bot bans the (blocked) independent capture
                 # never saw — refresh the robots-derived AI-scrape signal so the verdict/notes
                 # match the displayed robots.
-                ai, bots = rec.setdefault("ai", {}), rec["robots"]["ai_bots"]
-                ai["ai_bot_signals"] = bots
-                ai["channel_blocked"] = bots.get("channel") or []
-                ai["ai_scrape_block"] = ai_scrape_block_from(
-                    bots, (ai.get("ai_txt") or {}).get("present")
-                )
+                ai = rec.setdefault("ai", {})
+                _apply_ai_bot_signals(ai, rec["robots"]["ai_bots"])
+                _apply_machine_readable(ai)
         # llms display (for the dedicated clickable column): present from EITHER witness;
         # verdict from the independent snapshot, else classify the crawl-captured file.
         ai_llms = (rec.get("ai") or {}).get("llms") or {}
@@ -588,7 +619,7 @@ def _crawl_table(captured, unchecked, domains, broken=None, failed=None):
         "- **notes** — extra signals, shown **only when present** (blank = nothing notable):\n"
         "    - `AI-scrape blocked` — robots / ai.txt disallows AI crawlers\n"
         "    - `AI-scrape restricted on some paths (robots)` — robots disallows named AI "
-        "crawlers from some paths only (listed in the detail block)\n"
+        "crawlers from some paths beyond the `*` rules (listed in the detail block)\n"
         "    - `blocks PerplexityBot (your channel)` — blocks a bot our KB actually feeds\n"
         "    - `AI-reuse reserved (machine-readable)` — TDMRep / `noai` restricts AI *reuse*\n"
         "    - `no-AI-training (ToS, legal-only)` — a terms clause bars AI/ML training (not machine-readable)\n"

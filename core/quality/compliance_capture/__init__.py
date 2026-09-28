@@ -16,9 +16,11 @@ of automated processing). The lightweight robots fetch is retried with the brows
 blocked (Cloudflare/TLS); a truly unfetchable robots is flagged, not read as "open".
 AI signals are flagged ONLY as BLANKET opt-outs: a site-wide AI/TDM reservation (TDMRep
 file/meta, a `noai` meta, ai.txt, or a no-AI-training ToS clause) or "per-AI-bot bans" (named
-AI/training crawlers disallowed site-wide, or from some paths — two separate facts, never
-merged into one "disallowed" claim). Individual non-AI bot blocks (SEO/search) are ignored:
-they don't bind our UA and say nothing about reuse.
+AI/training crawlers disallowed site-wide, or from some paths beyond what the `*` group
+already disallows — two separate facts, never merged into one "disallowed" claim; an AI
+group no stricter than `*` is recorded as `partial_same` and is not a block). Individual
+non-AI bot blocks (SEO/search) are ignored: they don't bind our UA and say nothing about
+reuse.
 Copyright is kept in the evidence JSON but de-emphasised — absence of a notice means nothing
 (content is copyrighted by default); only a licence changes your reuse rights.
 

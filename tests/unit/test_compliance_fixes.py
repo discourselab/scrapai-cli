@@ -4,7 +4,8 @@ AI-reuse recompute (stored concrete evidence is honoured when the derived keys a
 absent), the llms.txt link honouring the recorded well-known path, and the report
 outputs: a partial (some-paths) AI-bot restriction rendered as its own fact, one bad
 snapshot degrading one row (not the whole dashboard tab / markdown report), and a
-capture failure shown as failed rather than "not checked".
+capture failure shown as failed rather than "not checked"; and an AI-bot partial robots
+restriction counting as a block only when stricter than `*`, recomputed at report time.
 """
 
 import importlib
@@ -466,3 +467,170 @@ def test_failed_unchecked_row_and_banner(no_net):
     assert "| ❓ | site03.example | **NOT CHECKED** |" in md
     # the markdown banner (already correct before) still lists it
     assert "**site02.example** — unreachable — timed out" in md
+
+
+# ---- AI-bot partials count as a block only when stricter than `*` ----------
+
+# a CMS-default robots (the shape a hosted site-builder serves): AI bots listed in the SAME
+# group as `*`, so they get exactly the generic rules every crawler gets
+_SAME_GROUP_ROBOTS = (
+    "User-agent: GPTBot\n"
+    "User-agent: ClaudeBot\n"
+    "User-agent: CCBot\n"
+    "User-agent: cohere-training-data-crawler\n"
+    "User-agent: *\n"
+    "Disallow: /config\n"
+    "Disallow: /search\n"
+    "Disallow: /account$\n"
+    "Disallow: /account/\n"
+    "Disallow: /api/\n"
+    "Allow: /api/ui-extensions/\n"
+)
+
+
+def _signals(txt):
+    return cc.ai_bot_signals(cc.parse_robots(txt)["groups"])
+
+
+def test_squarespace_same_group_not_block():
+    sig = _signals(_SAME_GROUP_ROBOTS)
+    assert sig["partial"] == [] and sig["heuristic"] == []
+    same = {bot for bot, _ in sig["partial_same"]}
+    assert same == {"GPTBot", "ClaudeBot", "CCBot", "cohere-training-data-crawler"}
+    assert cc.ai_scrape_block_from(sig, False) is False
+    # a separate AI group that merely repeats (a subset of) the `*` rules is no stricter;
+    # a trailing `*` is the same prefix rule
+    sub = "User-agent: GPTBot\nDisallow: /config*\n\nUser-agent: *\nDisallow: /config\n"
+    assert _signals(sub)["partial"] == []
+    assert cc.ai_scrape_block_from(_signals(sub), False) is False
+
+
+def test_stricter_bot_is_block():
+    txt = (
+        "User-agent: GPTBot\nDisallow: /config\nDisallow: /blog/\n\n"
+        "User-agent: *\nDisallow: /config\n"
+    )
+    sig = _signals(txt)
+    assert sig["partial"] == [("GPTBot", ["/blog/"])]  # the AI-specific rule leads
+    assert cc.ai_scrape_block_from(sig, False) is True
+    # conservative normalisation: `$` and a trailing slash are significant
+    anchored = (
+        "User-agent: GPTBot\nDisallow: /account\n\nUser-agent: *\nDisallow: /account$\n"
+    )
+    assert [b for b, _ in _signals(anchored)["partial"]] == ["GPTBot"]
+    # its own rule swallows a path `*` Allows (not a copied `*` rule) → stricter
+    swallow = (
+        "User-agent: GPTBot\nDisallow: /pub\n\n"
+        "User-agent: *\nDisallow: /\nAllow: /public/\n"
+    )
+    assert _signals(swallow)["partial"] == [("GPTBot", ["/pub"])]
+    # a rule inside a path `*` Allows → stricter
+    inside = (
+        "User-agent: GPTBot\nDisallow: /public/x\n\n"
+        "User-agent: *\nDisallow: /\nAllow: /public/\n"
+    )
+    assert _signals(inside)["partial"] == [("GPTBot", ["/public/x"])]
+    # a heuristic AI UA follows the same rule
+    heur = (
+        "User-agent: some-llm-crawler\nDisallow: /x/\n\nUser-agent: *\nDisallow: /y/\n"
+    )
+    assert _signals(heur)["heuristic"] == ["some-llm-crawler"]
+
+
+def test_looser_than_whole_site_star_is_not_block():
+    # `*` blocks everything; the AI group only /private → looser, nothing AI-specific
+    sig = _signals(
+        "User-agent: *\nDisallow: /\n\nUser-agent: GPTBot\nDisallow: /private\n"
+    )
+    assert sig["partial"] == []
+    assert sig["partial_same"] == [("GPTBot", ["/private"])]
+    assert cc.ai_scrape_block_from(sig, False) is False
+    # a prefix rule of `*` covers the AI group's longer rule
+    sub = "User-agent: *\nDisallow: /a\n\nUser-agent: GPTBot\nDisallow: /a/b$\n"
+    assert _signals(sub)["partial"] == []
+
+
+def test_dropped_allow_exception_is_same():
+    # WordPress default: the AI group repeats `*`'s Disallow but drops its Allow
+    # exception — the only difference is a missing Allow under a `*` Disallow
+    wp = (
+        "User-agent: *\nDisallow: /wp-admin/\nAllow: /wp-admin/admin-ajax.php\n\n"
+        "User-agent: GPTBot\nDisallow: /wp-admin/\n"
+    )
+    sig = _signals(wp)
+    assert sig["partial"] == []
+    assert sig["partial_same"] == [("GPTBot", ["/wp-admin/"])]
+    assert cc.ai_scrape_block_from(sig, False) is False
+    # plus a real AI-specific rule: partial, and the sample shows only that rule
+    # (never /wp-admin/, which `*` has too)
+    wp_plus = wp + "Disallow: /research/\n"
+    assert _signals(wp_plus)["partial"] == [("GPTBot", ["/research/"])]
+
+
+def test_no_star_group_partial_is_block():
+    sig = _signals("User-agent: GPTBot\nDisallow: /config\n")
+    assert sig["partial"] == [("GPTBot", ["/config"])]
+    assert sig["partial_same"] == []
+    assert cc.ai_scrape_block_from(sig, False) is True
+
+
+def test_old_snapshot_recomputed_at_report_time(no_net):
+    from core.quality.crawl_audit.engine import compliance_summary
+
+    dom = "site04.example"
+    _spider(no_net, dom)
+    d = os.path.join(
+        str(no_net), "proj", "_audit", "compliance", "site04_example", "2026-01-01"
+    )
+    os.makedirs(d)
+    with open(os.path.join(d, "robots.txt"), "w") as fh:
+        fh.write(_SAME_GROUP_ROBOTS)
+    stale_partial = [["GPTBot", ["/config", "/search", "/account$", "/account/"]]]
+    rec = {
+        "domain": dom,
+        "checked": "2026-01-01",
+        "source": "live",
+        "robots": {"fetched": True, "fetch_status": "ok", "disallow": ["/config"]},
+        "http_headers": {"fetch_status": "ok"},
+        "legal_pages": [],
+        # capture-time values from before the stricter-than-`*` rule: all stale
+        "ai": {
+            "ai_opt_out": True,
+            "per_ai_bot": False,
+            "ai_bots_blocked": [],
+            "ai_scrape_block": True,
+            "machine_readable_prohibition": True,
+            "ai_reuse_reserved": False,
+            "tdm_reserved": False,
+            "noai": False,
+            "channel_blocked": [],
+            "ai_bot_signals": {
+                "full": [],
+                "partial": stale_partial,
+                "allowed": [],
+                "heuristic": ["cohere-training-data-crawler"],
+                "channel": [],
+            },
+            "llms": {"present": False},
+        },
+    }
+    with open(os.path.join(d, "compliance.json"), "w") as fh:
+        json.dump(rec, fh)
+
+    ai = cc.build_report_data("proj")[0][dom][2]["ai"]
+    assert ai["ai_scrape_block"] is False
+    assert ai["machine_readable_prohibition"] is False
+    assert ai["ai_opt_out"] is False
+    assert ai["ai_bot_signals"]["partial"] == []
+    assert ai["ai_bot_signals"]["heuristic"] == []
+    assert {b for b, _ in ai["ai_bot_signals"]["partial_same"]} >= {"GPTBot"}
+
+    html = _html()
+    assert "AI crawlers restricted on some paths" not in html  # no AI-specific rule
+    md = _md()
+    row = next(ln for ln in md.splitlines() if f"[{dom}](https://" in ln)
+    assert row.startswith("| 🟢 |") and "AI-scrape" not in row  # crawl row, no note
+
+    s = compliance_summary("proj", {"site04_example": {"host": dom}})["site04_example"]
+    assert s["access"] == "🟢"
+    assert s["ai_scrape"] is False and s["mr_ban"] is False
