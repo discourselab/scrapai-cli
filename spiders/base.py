@@ -94,10 +94,19 @@ def _extract_pdf_text(pdf_bytes):
                 pass
 
 
+# Where a page can carry a PDF URL. `<a href>` is the common case; `<option
+# value>` covers themes that put the download behind a share/download modal
+# whose submit button is JS, so the URL never appears in an anchor
+# (docs/requests/27). The `.pdf` suffix test below is what keeps this safe:
+# ordinary option values are selection keys (language codes, years, slugs) and
+# carry no file extension at all, so they cannot pass it.
+_PDF_URL_SOURCES = "a::attr(href), option::attr(value)"
+
+
 def _pdf_links(response):
     """Absolute PDF URLs linked on an HTML page. [] for non-HTML responses."""
     try:
-        hrefs = response.css("a::attr(href)").getall()
+        hrefs = response.css(_PDF_URL_SOURCES).getall()
     except Exception:
         return []  # non-HTML response (a PDF, etc.) has no .css
     out, seen = [], set()

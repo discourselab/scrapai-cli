@@ -212,6 +212,8 @@ Controls what happens when the crawl encounters a `.pdf` link. Default is `links
 ```
 `links_only` (default) records each linked PDF URL as a URL-only item (title from the filename, empty content, `metadata_json.content_type = "pdf"`) without downloading the file.
 
+A page's PDF URLs are read from `<a href>` and from `<option value>` — the latter covers themes that hide the download behind a share/download modal whose submit button is JavaScript, so the URL never appears in an anchor. Only values ending in `.pdf` are taken, so ordinary dropdown values (language codes, years, sort keys) are ignored. Nothing here is per-spider configurable.
+
 ```json
 { "PDF_MODE": "extract" }
 ```
