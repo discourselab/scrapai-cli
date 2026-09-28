@@ -22,6 +22,11 @@ from .spiders_db import crawl_ran, crawl_stats_sitemap
 
 STALE_DAYS = 30  # newest crawl older than this -> a ⚠ mark in the `stale` column
 THIN_CHARS = 1000  # median content below this -> a `thin?` flag (over-broad rules?)
+OVER_EXPECTED_PCT = 115  # coverage above this -> `scraped more than expected`
+# ...but only once MORE than this many pages were scraped (drift's floor): 3
+# scraped against a 2-URL sitemap is 150% and says nothing about the yardstick,
+# while 60 against a 10-URL one does
+OVER_EXPECTED_MIN = 20
 
 
 def norm_url(u):
@@ -277,16 +282,23 @@ def score_spider(name, sp, c, ctx):
         eligible_cell = str(denom)
     status, cpct, cov = classify(denom, urls, content, est_cached)
 
-    # drift = scraped URLs barely intersect the sitemap → denominator unreliable
+    # Far more scraped than the sitemap says exists → the yardstick is suspect
+    # (a partial sitemap, or rules matching pages it never lists). Decided on
+    # the coverage figure itself, so it fires on the crawl-recorded path too —
+    # that path has no URL set, so drift below could never catch it there.
+    over_expected = (
+        cov is not None and cov > OVER_EXPECTED_PCT and urls > OVER_EXPECTED_MIN
+    )
+    # drift = scraped URLs barely intersect the sitemap → denominator unreliable.
+    # Only the set-intersection test: the count test (scraped > 115% of
+    # eligible) is over_expected's job, so one condition never flags twice.
     drift = (
         isinstance(eligible, int)
         and eligible > 0
         and urls > 20
         and isinstance(matched, int)
-        and (
-            urls > eligible * 1.15
-            or (matched < 0.3 * eligible and urls >= 0.5 * eligible)
-        )
+        and matched < 0.3 * eligible
+        and urls >= 0.5 * eligible
     )
     # ---- flags: the ONE attention column. Built FIRST; the set of *concern*
     #      flags then decides whether an otherwise-`ok` spider is truly clean
@@ -321,6 +333,9 @@ def score_spider(name, sp, c, ctx):
     if content_med and content_med < THIN_CHARS and status != "extraction broken":
         flags.append(f"thin? {_human_k(content_med)}")  # over-broad rules / junk?
         concern = True  # review trigger
+    if over_expected:
+        flags.append(f"scraped more than expected ({round(cov)}%)")
+        concern = True  # review trigger (coverage)
     # coverage unverifiable → say WHY (only meaningful for an `ok`-base spider)
     if status == "ok" and not (cov is not None and not drift):
         if drift:

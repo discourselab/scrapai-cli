@@ -7,6 +7,7 @@ import html
 import re
 
 from core.quality.crawl_audit import LEGEND
+from core.quality.crawl_audit.scoring import OVER_EXPECTED_MIN, OVER_EXPECTED_PCT
 
 _esc = html.escape
 
@@ -59,6 +60,13 @@ GLOSSARY = [
         "Median page is very short — possibly over-broad rules pulling in non-article junk.",
     ),
     (
+        "scraped more than expected",
+        f"Scraped over {OVER_EXPECTED_PCT}% of the eligible count (more than "
+        f"{OVER_EXPECTED_MIN} pages scraped) — the sitemap likely lists "
+        "only part of the site (or the rules match pages it never lists), so "
+        "coverage can't be verified against it.",
+    ),
+    (
         "sitemap-drift",
         "Scraped URLs barely intersect the sitemap — the denominator is unreliable.",
     ),
@@ -85,7 +93,10 @@ COLUMN_DEFS = {
     "domains — external repositories/citations.",
     "status": "Solution family — the single action this spider needs. Hover the chip for its meaning.",
     "sitemap": "Coverage-denominator source: yes (USE_SITEMAP) · found (auto-discovered) · ignored · no.",
-    "coverage": "scraped ÷ eligible — the fraction of the pages it should have that it actually got.",
+    "coverage": "scraped ÷ eligible — the fraction of the pages it should "
+    "have that it actually got. The bar stops at 100%; the number shows the "
+    f"true value (over {OVER_EXPECTED_PCT}% with more than {OVER_EXPECTED_MIN} "
+    "scraped is flagged).",
     "content": "Share of scraped pages with non-empty content (extraction success; independent of coverage).",
     "dupes": "Rows with the same URL AND identical content (re-run artifacts). Dedupe removes these.",
     "flags": "The one attention column; a clean row is empty. Hover a token for what it means.",
@@ -117,18 +128,21 @@ def _meter(pct, tip=None, invert=False):
     """A ratio as a coloured bar with its number. `tip` (e.g. the raw fraction) makes the % concrete
     on hover; defaults to the % itself. `invert=True` for lower-is-better metrics (null-date %,
     thin %): the bar width and label still show `pct`, but the colour judges 100-pct — without it
-    a 95% null-date rate rendered a GREEN bar."""
+    a 95% null-date rate rendered a GREEN bar. Only the bar is clamped to 0-100:
+    the label and default tip show the true value (300% coverage reads 300%)."""
     if pct is None or pct == "":
         return '<span class="na">n/a</span>'
     try:
-        p = max(0, min(100, int(pct)))
+        v = int(pct)
     except (TypeError, ValueError):
         return '<span class="na">n/a</span>'
+    p = max(0, min(100, v))
     good = 100 - p if invert else p
     band = "red" if good < 50 else "amber" if good < 90 else "green"
     return (
-        f'<span class="meter" {_tip(tip or f"{p}%")}><span class="bar {band}" style="width:{p}%"></span>'
-        f'<span class="mlabel">{p}%</span></span>'
+        f'<span class="meter" {_tip(tip or f"{v}%")}>'
+        f'<span class="bar {band}" style="width:{p}%"></span>'
+        f'<span class="mlabel">{v}%</span></span>'
     )
 
 

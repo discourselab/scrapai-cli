@@ -1,7 +1,7 @@
 """All human-facing prose: the status legend, per-status fix guidance, the
 review-config instruction strings, and the report's big static paragraphs."""
 
-from .scoring import STALE_DAYS, THIN_CHARS
+from .scoring import OVER_EXPECTED_MIN, OVER_EXPECTED_PCT, STALE_DAYS, THIN_CHARS
 
 # Self-documenting `_instructions` written into each project's _audit/ config and kept
 # current on every audit run (your entries are never touched). The `_instructions` key
@@ -97,7 +97,8 @@ _LEGEND_PARTS = [
         "manual review",
         "Review it carefully (`/spider-review`), then record the verdict.",
         "Extraction works and it ran, but a concern flag means it's not auto-clean — coverage can't be verified "
-        "(`no-sitemap` / `sitemap-empty` / `sitemap-drift` / `sitemap-cap-hit`) or content looks `thin?`. "
+        "(`no-sitemap` / `sitemap-empty` / `sitemap-drift` / `sitemap-cap-hit`"
+        " / `scraped more than expected`) or content looks `thin?`. "
         "This is NOT a quick glance — run the evidence-based `/spider-review` process (a bounded "
         "verification crawl, a ground-truth count check against the site's own totals, and coverage / temporal / "
         "PDF-URL checks) to decide whether it's a genuine problem or actually fine. If fine, record it with "
@@ -163,7 +164,8 @@ def fix_hints(project):
         f"`./scrapai show --project {project} --limit 5 <spider>`.\n"
         "- The flag says why: coverage can't be verified (no / empty / drifting sitemap — `sitemap-empty` "
         "on a CF site may be a block; `found` spiders are candidates for `USE_SITEMAP`), content looks "
-        "`thin?` (over-broad rules?).\n"
+        "`thin?` (over-broad rules?), or far more was scraped than the "
+        "sitemap lists (`scraped more than expected`).\n"
         "- If it's actually fine, record it in `_audit/audit_notes.json` (`status: ok` + `flag` + `note` "
         "+ `updated`) → it promotes to `ok` with `✓ reviewed`. Without a `status` the note is inert.",
     }
@@ -274,9 +276,11 @@ NOTES_AND_DEFINITIONS = (
     "sit in DeltaFetch, so the stale check compares against total uniques.\n"
     "- **coverage** — `scraped ÷ eligible` — the fraction of the pages it "
     "*should* have that it *actually* got. Can read > 100% when the spider scraped "
-    "more rule-matching pages than the sitemap lists; that and a poor scraped-"
-    "vs-sitemap overlap demote the row to `manual review` with a "
-    "`sitemap-drift` flag.\n"
+    "more rule-matching pages than the sitemap lists; above "
+    f"{OVER_EXPECTED_PCT}% (more than {OVER_EXPECTED_MIN} scraped) the row is "
+    "flagged `scraped more than expected` and demoted to `manual review`. A poor scraped-vs-sitemap "
+    "overlap raises `sitemap-drift` instead. The dashboard bar stops at "
+    "100% but its number shows the true value.\n"
     "- **content%** — share of scraped HTML pages with non-empty `content` "
     "(extraction success; independent of coverage — PDF rows never count for "
     "or against it). Empty when the spider harvested no HTML at all (see the "
@@ -315,6 +319,13 @@ NOTES_AND_DEFINITIONS = (
     "*manual review*: why completeness is unverifiable (none exists / a "
     "*configured* USE_SITEMAP matched 0 rule URLs / only m of e scraped URLs "
     "intersect the sitemap). **Triggers manual review.**\n"
+    "    - `scraped more than expected (N%)` — coverage above "
+    f"{OVER_EXPECTED_PCT}% (with more than {OVER_EXPECTED_MIN} pages scraped): the "
+    "spider got far more rule-matching pages than "
+    "the sitemap lists, so the sitemap is probably a partial yardstick (or "
+    "the rules reach pages it never lists). Checked on both the "
+    "crawl-recorded and the fetched-sitemap path. "
+    "**Triggers manual review.**\n"
     "    - `sitemap-cap-hit` — sitemap fetch hit the global cap so the "
     "denominator is truncated. **Triggers manual review.**\n"
     "    - on an `ignored` row (sitemap column), `flags` is the skip reason "

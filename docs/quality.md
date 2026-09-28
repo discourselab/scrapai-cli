@@ -68,9 +68,10 @@ The audit assesses **HTML vs PDF harvest separately**: `scraped`/`content%` cove
 
 Common flags: `thin? <median>` (over-broad rules?) · `no-sitemap` / `sitemap-empty` /
 `sitemap-drift (m/e)` / `sitemap-cap-hit` / `found sitemap empty` (why coverage is
-unverifiable) · `deltafetch-stale` (cache ≫ output → `--reset-deltafetch`). The
-report's *Notes & definitions* section and the dashboard glossary tooltips define
-every flag precisely.
+unverifiable) · `scraped more than expected (N%)` (coverage over 115% with more than 20 pages scraped: the sitemap
+is likely a partial yardstick) · `deltafetch-stale` (cache ≫ output →
+`--reset-deltafetch`). The report's *Notes & definitions* section and the dashboard
+glossary tooltips define every flag precisely.
 
 Coverage is `scraped ÷ eligible`, where `eligible` is the full rule-matched sitemap
 count. URLs the crawl found dead (404) or blocked (403) are not subtracted: they are
