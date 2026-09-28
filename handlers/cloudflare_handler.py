@@ -48,6 +48,30 @@ def _start_event_loop(loop):
     loop.run_forever()
 
 
+# Navigation errors that come from the site or its network path, not from the
+# browser service: DNS, refused/reset connections, TLS, empty or looping
+# responses. Anything else (timeouts, a closed or crashed page) stays a
+# service error.
+_SITE_NET_ERRORS = (
+    "net::ERR_NAME_NOT_RESOLVED",
+    "net::ERR_CONNECTION_REFUSED",
+    "net::ERR_CONNECTION_RESET",
+    "net::ERR_CONNECTION_CLOSED",
+    "net::ERR_CERT_",
+    "net::ERR_SSL_",
+    "net::ERR_EMPTY_RESPONSE",
+    "net::ERR_TOO_MANY_REDIRECTS",
+)
+
+
+def _site_refused(reason: str) -> bool:
+    """True when the browser service's failure reason is the site's doing: a
+    challenge the browser could not pass, or a site-side navigation error."""
+    return reason.startswith("challenge not passed") or any(
+        code in reason for code in _SITE_NET_ERRORS
+    )
+
+
 class CloudflareDownloadHandler:
     """
     Hybrid Cloudflare handler with cookie caching.
@@ -406,7 +430,12 @@ class CloudflareDownloadHandler:
         if resp is None:
             return None  # couldn't reach or start the service -> local fallback
         if not resp.get("ok"):
-            raise Exception(f"Browser service failed to verify CF for {url}")
+            # Carry the service's reason into the log. When it is the site's
+            # doing, say so — a site beating the browser is not a service fault.
+            reason = resp.get("error") or "no reason given"
+            if _site_refused(reason):
+                raise Exception(f"Site refused the browser for {url}: {reason}")
+            raise Exception(f"Browser service failed to verify CF for {url}: {reason}")
         return resp["html"], resp["cookies"], resp["user_agent"]
 
     async def _fetch_with_http(self, url: str, cached: Dict) -> Optional[str]:

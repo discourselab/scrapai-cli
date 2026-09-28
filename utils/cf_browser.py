@@ -47,6 +47,11 @@ class CloudflareBrowserClient:
             html2 = await browser.fetch("https://example.com/page2")
     """
 
+    # Why the last fetch() returned None, for the browser service to report:
+    # "challenge not passed" (the site beat the browser) or "navigation error:
+    # <reason>". None when there is nothing to report.
+    last_error = None
+
     def __init__(
         self,
         headless: bool = False,
@@ -205,6 +210,7 @@ class CloudflareBrowserClient:
             logger.debug("Waiting for CF challenge to resolve...")
             max_retries = 24  # 24 retries × 5s = 120s per proxy level
             turnstile_clicked = False
+            challenge_seen = False  # did a poll ever show the challenge?
             for attempt in range(max_retries):
                 await asyncio.sleep(5)  # Wait 5s between checks
 
@@ -234,6 +240,7 @@ class CloudflareBrowserClient:
                         if len(html_check) < 35000:
                             cf_blocked = True
                     if cf_blocked:
+                        challenge_seen = True
                         logger.debug(
                             f"CF challenge still active after {(attempt + 1) * 5}s "
                             f"(attempt {attempt + 1}/{max_retries}), waiting..."
@@ -266,6 +273,7 @@ class CloudflareBrowserClient:
                             f"Geo-blocked after CF bypass with proxy {self.proxy_url} - "
                             f"will escalate to next proxy"
                         )
+                        self.last_error = "challenge not passed (geo-blocked)"
                         return False
 
                     # Check for generic "Access Denied" that isn't CF
@@ -282,6 +290,7 @@ class CloudflareBrowserClient:
                             logger.warning(
                                 f"Access denied (geo-block) with proxy {self.proxy_url}"
                             )
+                            self.last_error = "challenge not passed (access denied)"
                             return False
 
                     # CF challenge passed
@@ -302,10 +311,18 @@ class CloudflareBrowserClient:
                         raise
 
             logger.warning(f"CF challenge not resolved after {max_retries * 5}s")
+            if challenge_seen:
+                self.last_error = f"challenge not passed after {max_retries * 5}s"
+            else:  # every poll hit a navigation in progress: never settled
+                self.last_error = (
+                    f"navigation error: page still navigating after "
+                    f"{max_retries * 5}s"
+                )
             return False
 
         except Exception as e:
             logger.error(f"Error during navigation: {e}")
+            self.last_error = f"navigation error: {e}"
             return False
 
     async def _click_turnstile(self) -> bool:
@@ -507,6 +524,7 @@ class CloudflareBrowserClient:
 
         # Use lock to ensure sequential fetching (reusing same page)
         async with self.fetch_lock:
+            self.last_error = None
             # First request - verify CF, escalating through proxy chain if needed
             if not self.cf_verified:
                 success = False
@@ -588,6 +606,7 @@ class CloudflareBrowserClient:
 
             except Exception as e:
                 logger.error(f"Error fetching {url}: {e}")
+                self.last_error = f"navigation error: {e}"
                 return None
 
     async def _body_or_dom(self, response) -> str:
