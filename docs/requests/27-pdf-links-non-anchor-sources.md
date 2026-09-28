@@ -124,3 +124,10 @@ as a follow-up in [12-sitemap-pdf-collection.md](12-sitemap-pdf-collection.md),
 and the fix it proposes — a single post-processing hook on yielded responses —
 would close both. Left out of scope here: this request is one selector, that one
 touches every parse path.
+
+The change covers the default `PDF_MODE=links_only` only. Under
+`PDF_MODE=extract` PDFs are not recorded from `_pdf_links()` but followed by the
+rules' `LinkExtractor`, which reads anchors (`a`/`area` `href`), so a PDF offered
+only as an `<option value>` is still not followed in extract mode. No spider in
+this working copy uses extract mode; left as is rather than widening the rules'
+link extraction.
