@@ -117,7 +117,8 @@ def sitemap_listing(name, sp, ctx):
 
     The site's sitemaps = the union of every declared index's children plus the
     declared leaf sitemaps (robots `Sitemap:` lines, read from disk first; the
-    index URLs themselves aren't counted). A start_url that is robots.txt gives
+    index URLs themselves aren't counted, nor is a declared URL whose content
+    isn't a sitemap, such as an RSS feed). A start_url that is robots.txt gives
     them all; one that IS a declared index gives all its children, and so does
     one whose cached copy (the spider's own sitemap fetch) is a sitemap index —
     e.g. /sitemap.xml serving the same index robots declares as
@@ -158,11 +159,17 @@ def sitemap_listing(name, sp, ctx):
     known = {}  # norm → url, in the site's own order
     children = {}  # declared index (norm) → its children (norm)
     unknown = set()  # declared sitemaps whose children we don't know
+    skipped = set()  # declared URLs whose content isn't a sitemap
     for u in declared or []:
         m, why = index_manifest(u, *fetch_args, on_disk=on_disk)
         if m is None:
             unknown.add(norm_url(u))
             notes.append(f"{u}: {why}")
+        elif m.get("not_sitemap"):
+            # robots advertises it on a Sitemap: line, but its content is
+            # something else (an RSS feed): not one of the site's sitemaps
+            skipped.add(u)
+            notes.append(f"{u}: not a sitemap, skipped")
         elif m.get("is_index"):
             kids = m.get("children") or []
             children[norm_url(u)] = [norm_url(k) for k in kids]
@@ -215,7 +222,7 @@ def sitemap_listing(name, sp, ctx):
     # while a declared sitemap is unread, a given one can't be called "not
     # listed" — it may be among that sitemap's children; and a site that
     # declares none has no root index to be missing from
-    judged = complete and bool(declared)
+    judged = complete and bool(set(declared) - skipped)
     for u in extra.values():
         listed.append({"url": u, "given": True, "in_index": not judged})
     listed += [
@@ -225,6 +232,8 @@ def sitemap_listing(name, sp, ctx):
     ]
     if declared == []:
         notes.append("the site declares no sitemap (robots.txt, /sitemap.xml)")
+    elif declared and not set(declared) - skipped:
+        notes.append("robots.txt declares no sitemap, only non-sitemap URLs")
     return {
         "given": sum(1 for e in listed if e["given"]),
         "total": len(listed) if complete else "?",

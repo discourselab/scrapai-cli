@@ -107,8 +107,9 @@ cached. Only what isn't on disk is fetched, once, on the listing's own small bud
 that is robots.txt, or is itself a declared index, counts as giving all of it, and so
 does one whose cached copy is a sitemap index (e.g. `/sitemap.xml` serving the
 declared `/sitemap_index.xml`); a cache-busted copy (`?v=2`) of a given sitemap counts
-once. A given sitemap the site doesn't list is added to the total and marked *not
-listed in root index*. `?` = the total is unknown (not fetched under `--no-fetch`, or
+once. A declared URL whose content isn't a sitemap (an RSS feed on a `Sitemap:`
+line) is skipped with a note, never counted. A given sitemap the site doesn't list
+is added to the total and marked *not listed in root index*. `?` = the total is unknown (not fetched under `--no-fetch`, or
 a fetch or the sitemap discovery failed — retried only by `--fetch-all`). The cell
 links to the spider's list in *Sitemaps given to spiders*, at the end of the report
 and under the coverage tables in the dashboard.

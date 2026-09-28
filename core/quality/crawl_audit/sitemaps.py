@@ -14,6 +14,9 @@ from urllib.parse import urlparse
 from core.quality import _env
 
 LOC_RE = re.compile(r"<loc>\s*(.*?)\s*</loc>", re.I | re.S)
+_CDATA = re.compile(r"<!\[CDATA\[(.*?)\]\]>", re.S)
+_SITEMAP_ROOT = re.compile(r"<(sitemapindex|urlset)[\s>/]", re.I)
+_FEED_ROOT = re.compile(r"<(rss|feed|rdf:rdf)[\s>/]", re.I)
 SITEMAP_DIRECTIVE = re.compile(r"(?im)^\s*sitemap:\s*(\S+)")
 
 # Media URLs sometimes appear as plain <loc>s (WordPress image/attachment
@@ -104,7 +107,7 @@ def _discover(
         # a valid robots.txt with no Sitemap: directive, masking a real sitemap.
         def usable(text):
             if needs_loc:
-                return bool(text) and bool(LOC_RE.search(text))
+                return _has_locs(text)
             return bool(text) and not _looks_like_html(text)
 
         out = os.path.join(cache_dir, spider + suffix)
@@ -122,7 +125,7 @@ def _discover(
     sm = sitemap_text
     if sm is None:
         sm = probe(base + "/sitemap.xml", "_smprobe", needs_loc=True)
-    if sm and LOC_RE.search(sm):
+    if _has_locs(sm):
         return [base + "/sitemap.xml"], True, sm
     return [], robots_ok and bool(sm), sm
 
@@ -224,11 +227,37 @@ def fetch_once(url, outdir, project, browser, state, retry, usable, budget=None)
     return text
 
 
-def parse_sitemap(text):
+def loc_url(raw):
+    """A <loc> body as its URL: a CDATA section is unwrapped as-is (All in One
+    SEO writes `<loc><![CDATA[https://...]]></loc>`; CDATA holds no entities),
+    anything else has `&amp;` decoded. The ONE place loc text is read."""
+    s = raw.strip()
+    m = _CDATA.fullmatch(s)
+    return m.group(1).strip() if m else s.replace("&amp;", "&")
+
+
+def sitemap_kind(text):
+    """'index' / 'urlset' for a sitemap document, 'other' for a document that
+    is plainly something else — an RSS/Atom feed, which robots.txt sometimes
+    advertises on a `Sitemap:` line — or None when there is no telling (no
+    body, an HTML page: a challenge or error page, never an answer)."""
     if not text:
+        return None
+    m = _SITEMAP_ROOT.search(text)
+    if m:
+        return "index" if m.group(1).lower() == "sitemapindex" else "urlset"
+    if _looks_like_html(text):
+        return None
+    return "other" if _FEED_ROOT.search(text[:4000]) else None
+
+
+def parse_sitemap(text):
+    """(is_index, locs) for a sitemap document; (False, []) for anything that
+    isn't one (a feed's <link>s, or an HTML page, are never sitemap URLs)."""
+    kind = sitemap_kind(text)
+    if kind not in ("index", "urlset"):
         return False, []
-    locs = [loc.replace("&amp;", "&").strip() for loc in LOC_RE.findall(text)]
-    return ("<sitemapindex" in text.lower()), locs
+    return kind == "index", [loc_url(loc) for loc in LOC_RE.findall(text)]
 
 
 # sub-sitemaps that list taxonomy/archive pages, not content — excluded from the
@@ -268,7 +297,14 @@ def next_sitemap_page(url):
 
 
 def _has_locs(text):
-    return bool(text) and bool(LOC_RE.search(text))
+    """A usable sitemap answer: a sitemap document with at least one <loc>."""
+    return bool(parse_sitemap(text)[1])
+
+
+def _answered(text):
+    """No browser retry: a sitemap came back, or a document that plainly isn't
+    one (a feed) — retrying it can't turn it into a sitemap."""
+    return _has_locs(text) or sitemap_kind(text) == "other"
 
 
 def fetch_spider_sitemaps(spider, sp, project, cache_dir, state, browser_retry):
@@ -300,12 +336,15 @@ def fetch_spider_sitemaps(spider, sp, project, cache_dir, state, browser_retry):
         idx += 1
         fetches += 1
         text = fetch_once(
-            url, outdir, project, browser, state, browser_retry, _has_locs
+            url, outdir, project, browser, state, browser_retry, _answered
         )  # CF/JS retry inside
         if text:
             with open(os.path.join(outdir, URL_FILE), "w") as fh:
                 fh.write(url)  # lets the sitemap listing reuse this copy
         is_index, locs = parse_sitemap(text)
+        if sitemap_kind(text) == "other":
+            notes.append(f"not a sitemap: {url}")  # e.g. an RSS feed
+            continue
         if not locs:
             notes.append(f"0 locs: {url}")
             continue
@@ -412,7 +451,9 @@ def spider_cached_urls(spider, cache_dir):
 
 def _save_manifest(url, cache_dir, text):
     """Record a fetched sitemap's own <loc>s as its manifest (clearing any
-    failure marker) and return the manifest."""
+    failure marker) and return the manifest. A declared URL whose content is
+    plainly not a sitemap (an RSS feed on a `Sitemap:` line) is recorded as
+    not_sitemap, so it is skipped — never counted — without another fetch."""
     d = _index_dir(cache_dir, url)
     is_index, locs = parse_sitemap(text)
     manifest = {
@@ -421,6 +462,8 @@ def _save_manifest(url, cache_dir, text):
         "children": locs if is_index else [],
         "fetched": datetime.date.today().isoformat(),
     }
+    if sitemap_kind(text) == "other":
+        manifest["not_sitemap"] = True
     _write_json(os.path.join(d, "manifest.json"), manifest)
     try:
         os.remove(d + ".failed.json")
@@ -445,7 +488,7 @@ def index_manifest(url, project, cache_dir, state, mode, browser, retry, on_disk
         # fetched earlier in THIS run (the spider's coverage fetch): reuse it
         seen.add(url)
         text = read_page(done[url]) if done[url] else None
-        if _has_locs(text):
+        if _answered(text):
             return _save_manifest(url, cache_dir, text), None
         prior = _read_json(mf)
         if prior is not None:
@@ -457,7 +500,7 @@ def index_manifest(url, project, cache_dir, state, mode, browser, retry, on_disk
         if cached is not None:
             return cached, None
         text = read_page((on_disk or {}).get(url))
-        if _has_locs(text):
+        if _answered(text):
             return _save_manifest(url, cache_dir, text), None
         marker = _read_json(failed)
         if marker is not None:
@@ -470,8 +513,8 @@ def index_manifest(url, project, cache_dir, state, mode, browser, retry, on_disk
     if not _budget_left(budget):
         return None, "fetch budget exhausted"
     seen.add(url)
-    text = fetch_once(url, d, project, browser, state, retry, _has_locs, budget)
-    if _has_locs(text):
+    text = fetch_once(url, d, project, browser, state, retry, _answered, budget)
+    if _answered(text):
         return _save_manifest(url, cache_dir, text), None
     prior = _read_json(mf)  # a failed refresh keeps the previous manifest
     if prior is not None:
@@ -567,10 +610,10 @@ def collect_pages(spider, cache_dir):
             continue
         with open(fp, encoding="utf-8", errors="replace") as fh:
             text = fh.read()
-        if "<sitemapindex" in text.lower():
+        is_index, locs = parse_sitemap(text)  # a feed or HTML page → no locs
+        if is_index:
             continue
-        for loc in LOC_RE.findall(text):
-            loc = loc.replace("&amp;", "&").strip()
+        for loc in locs:
             if is_media_loc(loc):
                 continue  # image/AV attachment loc — media, not a content page
             pages.add(loc)
