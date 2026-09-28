@@ -1,12 +1,16 @@
 from scrapy.spiders import SitemapSpider
+from scrapy.utils.sitemap import Sitemap
 from core.db import get_db
 from core.models import Spider
 from .base import BaseDBSpiderMixin
 from dateutil import parser as dateutil_parser
 from datetime import datetime, timedelta
 from urllib.parse import urljoin, urlparse
+import json
 import logging
+import os
 import re
+import shutil
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +47,46 @@ def _is_media_loc(url):
     return u.endswith(_MEDIA_EXT)
 
 
+# Bodies of rejected sitemaps kept per crawl, so they can never pile up.
+REJECTS_MAX_FILES = 20
+REJECTS_MAX_BYTES = 256 * 1024
+
+
+def _has_no_root(body):
+    """True when a sitemap body has no root element at all (plain text such
+    as "Forbidden"): Scrapy's Sitemap() then raises instead of typing it."""
+    try:
+        Sitemap(body)
+    except Exception:
+        return True
+    return False
+
+
+def _scrapy_rejects(body):
+    """True when Scrapy's SitemapSpider._parse_sitemap (2.17) ignores a sitemap
+    with this body as "Ignoring invalid sitemap": _get_sitemap_body() gave it
+    nothing, or the root element is neither <urlset> nor <sitemapindex>. A body
+    with no root at all is rejected too (see _parse_sitemap)."""
+    if not body:
+        return True
+    try:
+        return Sitemap(body).type not in ("urlset", "sitemapindex")
+    except Exception:
+        return True
+
+
+def _reject_file_number(name):
+    """The NN of a kept body named NN_<slug>.txt, else 0."""
+    m = re.match(r"^(\d+)_", name)
+    return int(m.group(1)) if m else 0
+
+
+def _reject_file_name(n, url):
+    tail = url.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1]
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "_", tail)[:60] or "sitemap"
+    return f"{n:02d}_{slug}.txt"
+
+
 class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
     """Spider for crawling sites via sitemap.xml files."""
 
@@ -70,6 +114,13 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
         self._sm_total = 0
         self._sm_eligible = 0
         self._sm_seen = set()
+        # Sitemaps Scrapy rejected (see _parse_sitemap); their URLs never reach
+        # sitemap_filter, so a non-empty list means _sm_total is short.
+        self._sm_rejected = []
+        self._sm_rejects_dir = None  # set by _open_sitemap_rejects; None = keep none
+        self._sm_rejects_index = []
+        self._sm_rejects_next = 1  # number of the next kept body file
+        self._sm_last_body = None
         self._load_config()
         super().__init__(*args, **kwargs)
 
@@ -168,7 +219,151 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
             crawler, *args, **kwargs
         )
         cls._apply_cf_to_crawler(spider, crawler)
+        spider._open_sitemap_rejects(crawler)
         return spider
+
+    def _open_sitemap_rejects(self, crawler):
+        """Prepare data/<project>/_audit/sitemap_rejects/<spider>/ for this
+        crawl's rejected-sitemap bodies. A capped run (--limit) keeps nothing
+        and leaves the folder alone. A fresh production crawl starts it empty;
+        a resumed leg keeps the earlier legs' files and continues their index,
+        so the per-crawl cap spans every leg, and takes the URLs that index
+        lists into sitemap_rejected: an earlier leg that died before handing
+        its counters on still has its rejections reported. Runs after
+        _apply_cf_to_crawler, which sets _resumed.
+
+        The folder is only used (and cleared) when it is a direct child of
+        sitemap_rejects/: a spider name such as "" or ".." would otherwise
+        point the rmtree at the audit folder itself."""
+        self._sm_rejects_dir = None
+        self._sm_rejects_index = []
+        self._sm_rejects_next = 1
+        try:
+            if crawler.settings.getint("CLOSESPIDER_ITEMCOUNT"):
+                return
+            base = self._audit_dir("sitemap_rejects")
+            name = str(self.spider_name or "")
+            folder = os.path.join(base, name)
+            if name in ("", ".", "..") or os.path.dirname(
+                os.path.realpath(folder)
+            ) != os.path.realpath(base):
+                logger.warning(
+                    f"Not keeping rejected-sitemap bodies: spider name {name!r} "
+                    f"does not give a folder directly under {base}"
+                )
+                return
+            if getattr(self, "_resumed", False):
+                try:
+                    with open(os.path.join(folder, "index.json")) as fh:
+                        index = json.load(fh)
+                    if isinstance(index, list):
+                        self._sm_rejects_index = index
+                except (OSError, ValueError):
+                    pass
+                for entry in self._sm_rejects_index:
+                    url = entry.get("url") if isinstance(entry, dict) else None
+                    if url and url not in self._sm_rejected:
+                        self._sm_rejected.append(url)
+                # Continue after the highest body already kept, so an index
+                # that could not be read never leads to overwriting one.
+                try:
+                    kept = os.listdir(folder)
+                except OSError:
+                    kept = []
+                self._sm_rejects_next = 1 + max(
+                    [len(self._sm_rejects_index)]
+                    + [_reject_file_number(n) for n in kept]
+                )
+            else:
+                shutil.rmtree(folder, ignore_errors=True)
+            self._sm_rejects_dir = folder
+        except Exception as e:
+            logger.warning(f"Could not prepare the rejected-sitemap folder: {e}")
+
+    def _get_sitemap_body(self, response):
+        # Unchanged Scrapy behaviour; the body is only noted for _parse_sitemap.
+        body = super()._get_sitemap_body(response)
+        self._sm_last_body = body
+        return body
+
+    def _parse_sitemap(self, response):
+        """Scrapy's own parse, then note a sitemap it rejected.
+
+        Scrapy logs "Ignoring invalid sitemap" and drops every URL in a
+        sitemap whose body is not a urlset or sitemapindex (an HTML view of
+        the sitemap, a block page served as 200). Nothing counts that, and
+        sitemap_filter() never sees those URLs, so sitemap_total undercounts
+        silently. The one change to Scrapy's handling: a body with no root
+        element at all, on which Scrapy raises, is ignored as a rejection
+        instead of surfacing as a spider error. Valid sitemaps yield exactly
+        what Scrapy yields, and robots.txt goes through its path untouched."""
+        self._sm_last_body = None
+        robots = response.url.endswith("/robots.txt")
+        try:
+            # Materialised here: older Scrapy versions return a generator, and
+            # the body is only fetched (and noted) once it is iterated.
+            result = list(super()._parse_sitemap(response))
+        except Exception:
+            # A body with no root element (plain text such as "Forbidden" at
+            # a .xml URL) makes Scrapy's Sitemap() raise StopIteration, which
+            # surfaced as a spider error. It is dropped either way; treat it
+            # as the rejection it is. Anything else is re-raised unchanged.
+            body, self._sm_last_body = self._sm_last_body, None
+            if robots or not body or not _has_no_root(body):
+                raise
+            logger.warning(f"Ignoring invalid sitemap: {response} (no root element)")
+            self._note_rejected_sitemap(response)
+            return ()
+        if not robots:
+            body, self._sm_last_body = self._sm_last_body, None
+            try:
+                if _scrapy_rejects(body):
+                    self._note_rejected_sitemap(response)
+            except Exception as e:
+                logger.warning(f"Could not record rejected sitemap: {e}")
+        self._sm_last_body = None
+        return result
+
+    def _note_rejected_sitemap(self, response):
+        size = len(response.body or b"")
+        if response.url not in self._sm_rejected:
+            self._sm_rejected.append(response.url)
+        crawler = getattr(self, "crawler", None)
+        if crawler is not None:
+            crawler.stats.inc_value("sitemap/rejected")
+        logger.warning(
+            f"Sitemap rejected: {response.url} (status {response.status}, "
+            f"{size} bytes) is not a urlset or sitemapindex, so Scrapy drops "
+            "every URL in it and sitemap_total is short"
+        )
+        self._keep_rejected_body(response, size)
+
+    def _keep_rejected_body(self, response, size):
+        """Keep the body for the audit: at most REJECTS_MAX_FILES per crawl,
+        each cut at REJECTS_MAX_BYTES, listed in index.json."""
+        folder = self._sm_rejects_dir
+        if not folder or self._sm_rejects_next > REJECTS_MAX_FILES:
+            return
+        try:
+            os.makedirs(folder, exist_ok=True)
+            name = _reject_file_name(self._sm_rejects_next, response.url)
+            self._sm_rejects_next += 1
+            with open(os.path.join(folder, name), "wb") as fh:
+                fh.write((response.body or b"")[:REJECTS_MAX_BYTES])
+            ctype = response.headers.get(b"Content-Type") or b""
+            self._sm_rejects_index.append(
+                {
+                    "file": name,
+                    "url": response.url,
+                    "status": response.status,
+                    "bytes": size,
+                    "content_type": ctype.decode("latin-1"),
+                }
+            )
+            with open(os.path.join(folder, "index.json"), "w") as fh:
+                json.dump(self._sm_rejects_index, fh, indent=2)
+        except Exception as e:
+            logger.warning(f"Could not keep rejected sitemap body: {e}")
 
     async def parse_article(self, response):
         async for item in self._extract_article(

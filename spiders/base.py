@@ -126,6 +126,10 @@ def _add_leg_counts(data, earlier):
         for name, n in (earlier.get(key) or {}).items():
             merged[name] = merged.get(name, 0) + n
         data[key] = merged
+    # Rejected sitemaps: the union over legs, earlier legs first, each URL once.
+    union = list(earlier.get("sitemap_rejected") or [])
+    union += [u for u in data.get("sitemap_rejected") or [] if u not in union]
+    data["sitemap_rejected"] = union
 
 
 class BaseDBSpiderMixin:
@@ -192,17 +196,19 @@ class BaseDBSpiderMixin:
         A checkpointed crawl that stops early keeps its counters in its own
         JOBDIR (LEG_STATS_FILE); the leg that resumes takes them and adds its
         own, so a crawl finished over several legs reports whole-crawl numbers,
-        marked `summed`. The file goes when the CLI removes the checkpoint."""
+        marked `summed`. The file goes when the CLI removes the checkpoint.
+
+        sitemap_rejected lists the sitemap URLs Scrapy refused to parse (a 200
+        whose body is not a urlset or sitemapindex, such as an HTML view or a
+        block page; sitemap_spider.py). Their URLs were never counted, so a
+        non-empty list means sitemap_total / eligible are short. Both are still
+        written; the list is what tells the audit so. Always present ([] when
+        none, and on rule-based spiders); summed legs take the union. The kept
+        bodies are in data/<project>/_audit/sitemap_rejects/<spider>/."""
         try:
             if self.crawler.settings.getint("CLOSESPIDER_ITEMCOUNT"):
                 return
-            from core.config import DATA_DIR
-
             stats = self.crawler.stats.get_stats()
-            project = (
-                getattr(getattr(self, "spider_config", None), "project", None)
-                or "default"
-            )
 
             def by_suffix(prefix):
                 # Strip the prefix verbatim: class/reason names contain dots
@@ -231,6 +237,7 @@ class BaseDBSpiderMixin:
                 "final_status": final_status,
                 "exceptions": by_suffix("downloader/exception_type_count/"),
                 "retries": by_suffix("retry/reason_count/"),
+                "sitemap_rejected": list(getattr(self, "_sm_rejected", None) or []),
             }
             # A resumed crawl (checkpoint) restores its request queue from disk
             # but every in-memory counter restarts at zero, so this leg's
@@ -261,13 +268,24 @@ class BaseDBSpiderMixin:
             if sm_total and not resumed:
                 data["sitemap_total"] = sm_total
                 data["eligible"] = getattr(self, "_sm_eligible", 0)
-            out_dir = os.path.join(DATA_DIR, project, "_audit", "crawl_stats")
+            out_dir = self._audit_dir("crawl_stats")
             os.makedirs(out_dir, exist_ok=True)
             with open(os.path.join(out_dir, f"{self.spider_name}.json"), "w") as fh:
                 json.dump(data, fh, indent=2)
             logger.info(f"Wrote crawl stats → {out_dir}/{self.spider_name}.json")
         except Exception as e:
             logger.warning(f"Could not write crawl stats: {e}")
+
+    def _audit_dir(self, *parts):
+        """data/<project>/_audit/<parts>: where this spider's audit records go.
+        The crawl-stats file and the kept rejected-sitemap bodies both resolve
+        here, so they always land in the same project."""
+        from core.config import DATA_DIR
+
+        project = (
+            getattr(getattr(self, "spider_config", None), "project", None) or "default"
+        )
+        return os.path.join(DATA_DIR, project, "_audit", *parts)
 
     @staticmethod
     def _resumed_from_checkpoint(crawler):
