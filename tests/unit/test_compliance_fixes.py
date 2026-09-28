@@ -2,8 +2,9 @@
 domains get a failure marker, never a 'checked today' snapshot), the legacy-snapshot
 AI-reuse recompute (stored concrete evidence is honoured when the derived keys are
 absent), the llms.txt link honouring the recorded well-known path, and the report
-outputs: a partial (some-paths) AI-bot restriction rendered as its own fact, and one
-bad snapshot degrading one row (not the whole dashboard tab / markdown report).
+outputs: a partial (some-paths) AI-bot restriction rendered as its own fact, one bad
+snapshot degrading one row (not the whole dashboard tab / markdown report), and a
+capture failure shown as failed rather than "not checked".
 """
 
 import importlib
@@ -165,6 +166,21 @@ def test_summary_still_failed_without_witness(tmp_data):
     cc.mark_capture_failed("proj", dom, "unreachable")
     summary = compliance_summary("proj", {"dark_example": {"host": dom}})
     assert summary["dark_example"]["failed"] is True
+
+
+def test_audit_md_failed_row_shows_reason(tmp_data):
+    # the audit md's compliance section names the reason, as the compliance md does
+    import io
+
+    from core.quality.crawl_audit.engine import compliance_summary
+    from core.quality.crawl_audit.report import write_compliance_section
+
+    cc.mark_capture_failed("proj", "dark.example", "unreachable — timed out")
+    summary = compliance_summary("proj", {"dark_example": {"host": "dark.example"}})
+    assert summary["dark_example"]["fail_reason"] == "unreachable — timed out"
+    fh = io.StringIO()
+    write_compliance_section(fh, "proj", summary)
+    assert "| dark_example | ‼️ failed: unreachable — timed out |" in fh.getvalue()
 
 
 def _seed_snapshot(tmp_path, org, ai_block):
@@ -416,3 +432,37 @@ def test_empty_data_still_says_no_snapshots(no_net, monkeypatch):
     ):
         assert "No compliance snapshots yet" in html
         assert "couldn't be displayed" not in html
+
+
+def _spider(tmp_path, dom):
+    """A minimal spider config, so `dom` is an in-scope project domain."""
+    d = os.path.join(str(tmp_path), "proj", cc.store.slug(dom), "analysis")
+    os.makedirs(d)
+    with open(os.path.join(d, "final_spider.json"), "w") as fh:
+        json.dump({"allowed_domains": [dom], "start_urls": [f"https://{dom}/"]}, fh)
+
+
+def test_failed_unchecked_row_and_banner(no_net):
+    _spider(no_net, "site02.example")  # capture tried and failed (no crawl witness)
+    _spider(no_net, "site03.example")  # never attempted
+    cc.mark_capture_failed("proj", "site02.example", "unreachable — timed out")
+
+    html = _html()
+    # the failure banner fires
+    assert "‼️ Compliance capture failed — <code>site02.example</code>" in html
+    assert "<b>capture failed: unreachable — timed out</b>" in html
+    assert html.count("<b>NOT CHECKED</b>") == 1  # only the never-attempted domain
+    assert "<code>site03.example</code>" not in html  # not in the failure banner
+
+    md = _md()
+    assert "not checked: 1  ·  ‼️ capture failed: 1" in md
+    assert (
+        "| ‼️ | [site02.example](https://site02.example/robots.txt) | ‼️ **capture failed:** "
+        "unreachable — timed out |" in md
+    )
+    assert (
+        "| ‼️ | site02.example | ‼️ **capture failed:** unreachable — timed out |" in md
+    )
+    assert "| ❓ | site03.example | **NOT CHECKED** |" in md
+    # the markdown banner (already correct before) still lists it
+    assert "**site02.example** — unreachable — timed out" in md

@@ -4,6 +4,7 @@ scan, per-spider scoring loop, and the compliance summary joined into the report
 import argparse
 import glob
 import io
+import json
 import os
 import sys
 import time
@@ -391,9 +392,19 @@ def _check_behind_crawl(project, spider, snapshot_date):
     return max(os.path.getmtime(f) for f in files) > snap + 86400
 
 
+def _capture_fail_reason(project, host):
+    """The recorded reason of a domain's capture-failure marker ("unreachable" when
+    the marker holds none or can't be read)."""
+    try:
+        with open(cc._failed_marker_path(project, host)) as fh:
+            return json.load(fh).get("reason") or "unreachable"
+    except (OSError, ValueError, AttributeError):
+        return "unreachable"
+
+
 def compliance_summary(project, spiders, compliance_data=None):
     """{spider: {domain, checked, access, reuse, license, ai_scrape, ai_reuse, mr_ban, llms,
-    conflicts, failed, stale}} for the audit's Compliance section. Each spider maps to its
+    conflicts, failed, fail_reason, stale}} for the audit's Compliance section. Each spider maps to its
     PRIMARY domain (host). Reuses build_report_data's already-refined recs — INCLUDING the
     crawl-robots rescue for capture-failed CF/proxy domains — so a domain answered via its
     crawl-captured robots is NOT reported 'failed' here, keeping this and
@@ -425,6 +436,8 @@ def compliance_summary(project, spiders, compliance_data=None):
             "domain": host,
             "checked": date,
             "failed": failed,
+            # the marker's reason, shown beside ‼️ failed like the compliance outputs
+            "fail_reason": _capture_fail_reason(project, host) if failed else None,
             "access": None,
             "reuse": None,
             "license": None,

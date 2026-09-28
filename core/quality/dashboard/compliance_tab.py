@@ -177,7 +177,10 @@ def build_compliance_rows(project, data=None):
     captured, unchecked, failures = (
         data if data is not None else cc.build_report_data(project)
     )
-    failed_domains = {f.get("domain") for f in failures}
+    # capture-failure markers by normalised domain (the marker stores norm_domain(); the
+    # lookup normalises too so a legacy raw spelling still matches)
+    failed_by_dom = {cc.norm_domain(f.get("domain") or ""): f for f in failures}
+    failed_domains = set(failed_by_dom)
     rows = []
     for dom, (org, date, rec) in captured.items():
         # one malformed snapshot must degrade ITS row, not the whole tab (write_dashboard
@@ -191,7 +194,18 @@ def build_compliance_rows(project, data=None):
             row["error"] = f"{type(e).__name__}: {e}"
             rows.append(row)
     for dom in unchecked:
-        rows.append(_no_data_row(dom))
+        row = _no_data_row(dom)
+        f = failed_by_dom.get(dom)
+        if f:
+            # the capture TRIED and couldn't reach it — a failure (‼️ + reason, and the
+            # failure banner fires), not a domain nobody has checked yet
+            row.update(
+                failed=True,
+                fail_reason=f.get("reason") or "unreachable",
+                first_failed=f.get("first_failed"),
+                last_attempt=f.get("last_attempt"),
+            )
+        rows.append(row)
 
     def _no_data_rank(e):
         # no-data rows lead: ‼️ capture-failed first (most actionable), then ⚠️ rows whose
@@ -347,6 +361,14 @@ def _compliance_table(rows, error=None):
                 detail = (
                     "The snapshot for this domain couldn't be rendered: "
                     f"<code>{_esc(e['error'])}</code>. Other rows are unaffected."
+                )
+            elif e.get("failed"):
+                lead, status = "‼️", "capture failed: " + e.get("fail_reason", "")
+                detail = (
+                    f"Compliance capture failed: {_esc(e.get('fail_reason', ''))} "
+                    f"(first failed {_esc(str(e.get('first_failed') or '?'))}, last "
+                    f"tried {_esc(str(e.get('last_attempt') or '?'))}). Re-run with "
+                    "<code>--refresh</code> (and <code>--browser</code> / a proxy)."
                 )
             else:
                 lead, status = "❓", "NOT CHECKED"

@@ -342,8 +342,11 @@ def write_compliance_section(fh, project, compliance):
         checked, key=lambda n: (_COMPL_SEV.get(compl_lead(checked[n]), 5), n)
     ):
         e = checked[name]
+        when = cell(e.get("checked"))
+        if e.get("failed"):
+            when = "‼️ failed: " + cell(e.get("fail_reason") or "unreachable")
         fh.write(
-            f"| {compl_lead(e)} | {name} | {cell(e.get('checked')) if not e.get('failed') else '‼️ failed'} "
+            f"| {compl_lead(e)} | {name} | {when} "
             f"| {e.get('access') or '❓'} | {e.get('reuse') or '❓'} | "
             f"{cell(e.get('license'))} | {cell(compl_notes(e))} |\n"
         )

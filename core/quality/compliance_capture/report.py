@@ -496,8 +496,11 @@ def _split_broken(project, captured):
     return ok, broken
 
 
-def _header_lines(project, domains, captured, unchecked, broken=None):
-    """Report title, intro and counts — the lead-in before the two tables."""
+def _header_lines(project, domains, captured, unchecked, broken=None, failed=None):
+    """Report title, intro and counts — the lead-in before the two tables. `failed` =
+    {domain: failure marker}; an unchecked domain with a marker counts as capture-failed,
+    not as not-checked."""
+    n_failed = sum(1 for d in unchecked if d in (failed or {}))
     lines = [
         f"# {project} — compliance report\n",
         "Auto-generated **overview** of each domain's robots / licence / AI signals, from "
@@ -517,7 +520,8 @@ def _header_lines(project, domains, captured, unchecked, broken=None):
         "detection covers the home page + linked legal pages only; ⚠ on a licence = "
         "low-confidence (bare CC link, no grant wording)._\n",
         f"**Domains:** {len(domains)}  ·  checked: {len(captured)}  ·  "
-        f"not checked: {len(unchecked)}"
+        f"not checked: {len(unchecked) - n_failed}"
+        + (f"  ·  ‼️ capture failed: {n_failed}" if n_failed else "")
         + (f"  ·  ⚠️ couldn't display: {len(broken)}" if broken else "")
         + "\n",
     ]
@@ -542,7 +546,20 @@ def _failure_banner(failures):
     return lines
 
 
-def _crawl_table(captured, unchecked, domains, broken=None):
+def _unchecked_rows(unchecked, failed):
+    """The unchecked domains, capture-failed first: [(domain, marker-or-None)]. A domain
+    the capture tried and couldn't reach is a different state from one never attempted.
+    """
+    failed = failed or {}
+    return sorted(((d, failed.get(d)) for d in unchecked), key=lambda x: x[1] is None)
+
+
+def _failed_cell(f):
+    """The `checked` cell of a capture-failed row: the recorded reason, not NOT CHECKED."""
+    return f"‼️ **capture failed:** {_cell(f.get('reason') or 'unreachable')}"
+
+
+def _crawl_table(captured, unchecked, domains, broken=None, failed=None):
     """The Crawl table; also returns crawl_sorted (reused by the cross-check section)
     and crawl_flagged (the 🔴/🟡 rows the details section expands)."""
     # ---- CRAWL table ----
@@ -588,17 +605,26 @@ def _crawl_table(captured, unchecked, domains, broken=None):
         "|---|---|---|---|---|---|---|",
     ]
     crawl_flagged = []
-    # no-data rows lead (most actionable) — couldn't-display and NOT CHECKED before the
-    # graded 🔴→🟢 rows
+    # no-data rows lead (most actionable) — capture-failed, couldn't-display and NOT
+    # CHECKED before the graded 🔴→🟢 rows
+    unchecked_rows = _unchecked_rows(unchecked, failed)
+    for dom, f in unchecked_rows:
+        if f:
+            lines.append(
+                f"| ‼️ | [{dom}](https://{dom}/robots.txt) | {_failed_cell(f)} "
+                "| — | — | — | — |"
+            )
     for dom, err in sorted((broken or {}).items()):
         lines.append(
             f"| ⚠️ | [{dom}](https://{dom}/robots.txt) | **couldn't display:** "
             f"{_cell(err)} | — | — | — | — |"
         )
-    for dom in unchecked:
-        lines.append(
-            f"| ❓ | [{dom}](https://{dom}/robots.txt) | **NOT CHECKED** | — | — | — | — |"
-        )
+    for dom, f in unchecked_rows:
+        if not f:
+            lines.append(
+                f"| ❓ | [{dom}](https://{dom}/robots.txt) | **NOT CHECKED** "
+                "| — | — | — | — |"
+            )
     for dom in crawl_sorted:
         org, date, rec = captured[dom]
         tier, emoji, _ = assess_crawl(rec)
@@ -613,7 +639,7 @@ def _crawl_table(captured, unchecked, domains, broken=None):
     return lines, crawl_sorted, crawl_flagged
 
 
-def _reuse_table(captured, unchecked, domains, broken=None):
+def _reuse_table(captured, unchecked, domains, broken=None, failed=None):
     """The Reuse table; also returns reuse_sorted (reused by the grants / bespoke /
     discrepancy sections)."""
     # ---- REUSE table ----
@@ -626,7 +652,8 @@ def _reuse_table(captured, unchecked, domains, broken=None):
     )
     lines = [
         "\n## Reuse — may we store / republish the content?\n",
-        "NOT-CHECKED rows lead; the graded rows then run least-permissive → most-permissive. "
+        "No-data rows lead (‼️ capture failed, then ❓ NOT CHECKED); the graded rows then "
+        "run least-permissive → most-permissive. "
         "🔎 **needs human review** — no "
         "licence found AND the site blocked our probe, so a licence may have been missed "
         "· ⚪ no explicit grant (default ©, permission needed) · 🟡 licence with conditions "
@@ -639,12 +666,17 @@ def _reuse_table(captured, unchecked, domains, broken=None):
         "| | domain | checked | licence | found on | © ARR |",
         "|---|---|---|---|---|---|",
     ]
-    # no-data rows lead (most actionable) — couldn't-display and NOT CHECKED before the
-    # graded rows
+    # no-data rows lead (most actionable) — capture-failed, couldn't-display and NOT
+    # CHECKED before the graded rows
+    unchecked_rows = _unchecked_rows(unchecked, failed)
+    for dom, f in unchecked_rows:
+        if f:
+            lines.append(f"| ‼️ | {dom} | {_failed_cell(f)} | — | — | — |")
     for dom, err in sorted((broken or {}).items()):
         lines.append(f"| ⚠️ | {dom} | **couldn't display:** {_cell(err)} | — | — | — |")
-    for dom in unchecked:
-        lines.append(f"| ❓ | {dom} | **NOT CHECKED** | — | — | — |")
+    for dom, f in unchecked_rows:
+        if not f:
+            lines.append(f"| ❓ | {dom} | **NOT CHECKED** | — | — | — |")
     for dom in reuse_sorted:
         org, date, rec = captured[dom]
         _, emoji, _ = assess_reuse(rec)
@@ -845,13 +877,18 @@ def write_report(project, data=None):
     )
     captured, broken = _split_broken(project, captured)
     domains = set(captured) | set(unchecked) | set(broken)  # all in-scope domains
-    lines = _header_lines(project, domains, captured, unchecked, broken)
+    # capture-failure markers by (normalised) domain — an unchecked domain the capture
+    # tried and couldn't reach renders ‼️ with its reason, not a bare NOT CHECKED
+    failed = {norm_domain(f.get("domain") or ""): f for f in failures}
+    lines = _header_lines(project, domains, captured, unchecked, broken, failed)
     lines += _failure_banner(failures)
     crawl_lines, crawl_sorted, crawl_flagged = _crawl_table(
-        captured, unchecked, domains, broken
+        captured, unchecked, domains, broken, failed
     )
     lines += crawl_lines
-    reuse_lines, reuse_sorted = _reuse_table(captured, unchecked, domains, broken)
+    reuse_lines, reuse_sorted = _reuse_table(
+        captured, unchecked, domains, broken, failed
+    )
     lines += reuse_lines
     lines += _grants_section(captured, reuse_sorted)
     lines += _bespoke_section(captured, reuse_sorted)
