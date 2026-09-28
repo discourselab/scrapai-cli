@@ -471,7 +471,32 @@ def _date_cell(date, rec):
     )
 
 
-def _header_lines(project, domains, captured, unchecked):
+def _split_broken(project, captured):
+    """(displayable, broken) — run every per-row formatter the report uses on each rec up
+    front, so ONE malformed snapshot becomes one "couldn't display" row instead of an
+    exception that aborts the whole report. `broken` = {domain: "<Error>: <msg>"}; the
+    caller's `captured` (shared with the dashboard) is not mutated."""
+    ok, broken = {}, {}
+    for dom, (org, date, rec) in captured.items():
+        try:
+            assess_crawl(rec)
+            assess_reuse(rec)
+            crawl_robots_cell(rec)
+            crawl_pdf_cell(rec)
+            llms_cell(rec, dom)
+            crawl_notes(rec)
+            license_source_link(rec, dom)
+            license_review_needed(rec)
+            _date_cell(date, rec)
+            crawl_detail_block(project, org, dom, date, rec)
+        except Exception as e:
+            broken[dom] = f"{type(e).__name__}: {e}"
+            continue
+        ok[dom] = (org, date, rec)
+    return ok, broken
+
+
+def _header_lines(project, domains, captured, unchecked, broken=None):
     """Report title, intro and counts — the lead-in before the two tables."""
     lines = [
         f"# {project} — compliance report\n",
@@ -492,7 +517,9 @@ def _header_lines(project, domains, captured, unchecked):
         "detection covers the home page + linked legal pages only; ⚠ on a licence = "
         "low-confidence (bare CC link, no grant wording)._\n",
         f"**Domains:** {len(domains)}  ·  checked: {len(captured)}  ·  "
-        f"not checked: {len(unchecked)}\n",
+        f"not checked: {len(unchecked)}"
+        + (f"  ·  ⚠️ couldn't display: {len(broken)}" if broken else "")
+        + "\n",
     ]
     return lines
 
@@ -515,7 +542,7 @@ def _failure_banner(failures):
     return lines
 
 
-def _crawl_table(captured, unchecked, domains):
+def _crawl_table(captured, unchecked, domains, broken=None):
     """The Crawl table; also returns crawl_sorted (reused by the cross-check section)
     and crawl_flagged (the 🔴/🟡 rows the details section expands)."""
     # ---- CRAWL table ----
@@ -561,7 +588,13 @@ def _crawl_table(captured, unchecked, domains):
         "|---|---|---|---|---|---|---|",
     ]
     crawl_flagged = []
-    # no-data rows lead (most actionable) — NOT CHECKED before the graded 🔴→🟢 rows
+    # no-data rows lead (most actionable) — couldn't-display and NOT CHECKED before the
+    # graded 🔴→🟢 rows
+    for dom, err in sorted((broken or {}).items()):
+        lines.append(
+            f"| ⚠️ | [{dom}](https://{dom}/robots.txt) | **couldn't display:** "
+            f"{_cell(err)} | — | — | — | — |"
+        )
     for dom in unchecked:
         lines.append(
             f"| ❓ | [{dom}](https://{dom}/robots.txt) | **NOT CHECKED** | — | — | — | — |"
@@ -580,7 +613,7 @@ def _crawl_table(captured, unchecked, domains):
     return lines, crawl_sorted, crawl_flagged
 
 
-def _reuse_table(captured, unchecked, domains):
+def _reuse_table(captured, unchecked, domains, broken=None):
     """The Reuse table; also returns reuse_sorted (reused by the grants / bespoke /
     discrepancy sections)."""
     # ---- REUSE table ----
@@ -606,7 +639,10 @@ def _reuse_table(captured, unchecked, domains):
         "| | domain | checked | licence | found on | © ARR |",
         "|---|---|---|---|---|---|",
     ]
-    # no-data rows lead (most actionable) — NOT CHECKED before the graded rows
+    # no-data rows lead (most actionable) — couldn't-display and NOT CHECKED before the
+    # graded rows
+    for dom, err in sorted((broken or {}).items()):
+        lines.append(f"| ⚠️ | {dom} | **couldn't display:** {_cell(err)} | — | — | — |")
     for dom in unchecked:
         lines.append(f"| ❓ | {dom} | **NOT CHECKED** | — | — | — |")
     for dom in reuse_sorted:
@@ -807,14 +843,15 @@ def write_report(project, data=None):
     captured, unchecked, failures = (
         data if data is not None else build_report_data(project)
     )
-    domains = set(captured) | set(unchecked)  # all in-scope domains
-    lines = _header_lines(project, domains, captured, unchecked)
+    captured, broken = _split_broken(project, captured)
+    domains = set(captured) | set(unchecked) | set(broken)  # all in-scope domains
+    lines = _header_lines(project, domains, captured, unchecked, broken)
     lines += _failure_banner(failures)
     crawl_lines, crawl_sorted, crawl_flagged = _crawl_table(
-        captured, unchecked, domains
+        captured, unchecked, domains, broken
     )
     lines += crawl_lines
-    reuse_lines, reuse_sorted = _reuse_table(captured, unchecked, domains)
+    reuse_lines, reuse_sorted = _reuse_table(captured, unchecked, domains, broken)
     lines += reuse_lines
     lines += _grants_section(captured, reuse_sorted)
     lines += _bespoke_section(captured, reuse_sorted)

@@ -2,7 +2,8 @@
 domains get a failure marker, never a 'checked today' snapshot), the legacy-snapshot
 AI-reuse recompute (stored concrete evidence is honoured when the derived keys are
 absent), the llms.txt link honouring the recorded well-known path, and the report
-outputs: a partial (some-paths) AI-bot restriction rendered as its own fact.
+outputs: a partial (some-paths) AI-bot restriction rendered as its own fact, and one
+bad snapshot degrading one row (not the whole dashboard tab / markdown report).
 """
 
 import importlib
@@ -349,3 +350,69 @@ def test_partial_only_no_crash_and_rendered(no_net):
         "- **AI crawlers restricted on some paths:** GPTBot, CCBot (`/config`, "
         "`/search`, `/account$`, …)" in md
     )  # crawl detail block
+
+
+def _rec(**kw):
+    rec = {"robots": {}, "ai": {}, "legal_pages": []}
+    rec.update(kw)
+    return rec
+
+
+def test_one_bad_record_degrades_one_row(no_net):
+    from core.quality.compliance_capture import report as rpt
+    from core.quality.dashboard.compliance_tab import build_compliance_rows
+    from core.quality.dashboard.render import render_dashboard
+
+    # a malformed field (not iterable) that only the per-row formatters trip over
+    bad = _rec(robots={"fetched": False, "target_blocked_sample": 5})
+    data = (
+        {
+            "site01.example": ("site01_example", "2026-01-01", _rec()),
+            "site02.example": ("site02_example", "2026-01-01", bad),
+        },
+        [],
+        [],
+    )
+    rows = {r["domain"]: r for r in build_compliance_rows("proj", data=data)}
+    assert rows["site01.example"]["crawl_emoji"] == "🟢"  # unaffected
+    assert "TypeError" in rows["site02.example"]["error"]
+    html = render_dashboard("proj", [], list(rows.values()))
+    assert "<b>couldn&#x27;t display: TypeError" in html  # html-escaped status cell
+    assert "No compliance snapshots yet" not in html
+
+    md = open(rpt.write_report("proj", data=data), encoding="utf-8").read()
+    assert (
+        "| ⚠️ | [site02.example](https://site02.example/robots.txt) | **couldn't display:** TypeError"
+        in md
+    )
+    assert "| 🟢 | [site01.example](https://site01.example/robots.txt) |" in md
+    assert "⚠️ couldn't display: 1" in md
+
+
+def test_tab_failure_message(no_net, monkeypatch):
+    from core.quality.dashboard import render
+
+    def _broken(*a, **k):
+        raise ValueError("bad snapshot shape")
+
+    monkeypatch.setattr(render, "DATA_DIR", str(no_net))
+    monkeypatch.setattr(render, "build_compliance_rows", _broken)
+    html = open(render.write_dashboard("proj", {}), encoding="utf-8").read()
+    assert "Compliance data couldn't be displayed" in html
+    assert "ValueError: bad snapshot shape" in html
+    assert "No compliance snapshots yet" not in html
+
+
+def test_empty_data_still_says_no_snapshots(no_net, monkeypatch):
+    from core.quality.dashboard import render
+
+    monkeypatch.setattr(render, "DATA_DIR", str(no_net))
+    for html in (
+        render.render_dashboard("proj", [], []),
+        open(
+            render.write_dashboard("proj", {"_compliance_data": ({}, [], [])}),
+            encoding="utf-8",
+        ).read(),
+    ):
+        assert "No compliance snapshots yet" in html
+        assert "couldn't be displayed" not in html

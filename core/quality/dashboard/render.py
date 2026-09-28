@@ -19,10 +19,18 @@ from .coverage_tab import (
 from .widgets import _esc, _md_strip
 
 
-def render_dashboard(project, coverage_rows, compliance_rows, config_warnings=()):
+def render_dashboard(
+    project,
+    coverage_rows,
+    compliance_rows,
+    config_warnings=(),
+    *,
+    compliance_error=None,
+):
     """Render the full self-contained interactive HTML from the engines' structured data.
     Pure — no filesystem, no network; unit-testable. `coverage_rows` = crawl_audit rows;
-    `compliance_rows` = build_compliance_rows() output.
+    `compliance_rows` = build_compliance_rows() output; `compliance_error` = why those rows
+    couldn't be built (the tab says so instead of claiming there are no snapshots).
     """
     coverage_rows = coverage_rows or []
     compliance_rows = compliance_rows or []
@@ -122,7 +130,7 @@ def render_dashboard(project, coverage_rows, compliance_rows, config_warnings=()
   {warn}{coverage_body}
  </section>
  <section id="compliance">
-  {failbanner}{_compliance_table(compliance_rows)}
+  {failbanner}{_compliance_table(compliance_rows, compliance_error)}
  </section>
 </main>
 <script>{_JS}</script>
@@ -136,6 +144,7 @@ def write_dashboard(project, audit_result):
     audit_result = audit_result or {}
     coverage_rows = audit_result.get("rows", []) or []
     config_warnings = audit_result.get("config_warnings", []) or []
+    compliance_error = None
     try:
         # reuse the audit's already-computed snapshot data when present (single pass);
         # compute here otherwise (e.g. --no-compliance runs, standalone calls)
@@ -145,12 +154,20 @@ def write_dashboard(project, audit_result):
     except Exception as e:  # never let the dashboard break the audit
         print(f"      ⚠ dashboard: compliance detail unavailable ({e})", flush=True)
         compliance_rows = []
+        # …but say so on the tab — an empty list alone renders "No compliance snapshots yet"
+        compliance_error = f"{type(e).__name__}: {e}"
 
     out_dir = os.path.join(DATA_DIR, project, "_audit")
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, f"dashboard_{project}.html")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(
-            render_dashboard(project, coverage_rows, compliance_rows, config_warnings)
+            render_dashboard(
+                project,
+                coverage_rows,
+                compliance_rows,
+                config_warnings,
+                compliance_error=compliance_error,
+            )
         )
     return path

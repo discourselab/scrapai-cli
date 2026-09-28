@@ -151,6 +151,24 @@ def _flatten_compliance(project, dom, org, date, rec, failed):
     }
 
 
+def _no_data_row(dom, failed=False, checked=None):
+    """A row with no graded verdict (never captured, or its snapshot couldn't be
+    displayed) — rendered by _compliance_table's no-data branch."""
+    return {
+        "domain": dom,
+        "checked": checked,
+        "failed": failed,
+        "facet": "not-checked",
+        "crawl_emoji": "❓",
+        "crawl_sev": 3,
+        "crawl_reasons": [],
+        "reuse_emoji": "❓",
+        "reuse_sev": 5,
+        "reuse_reasons": [],
+        "unchecked": True,
+    }
+
+
 def build_compliance_rows(project, data=None):
     """Flatten every domain's latest snapshot (from cc.build_report_data) into plain dicts for
     the dashboard. Reads snapshots only. Unchecked domains are included as ❓ rows.
@@ -160,35 +178,32 @@ def build_compliance_rows(project, data=None):
         data if data is not None else cc.build_report_data(project)
     )
     failed_domains = {f.get("domain") for f in failures}
-    rows = [
-        _flatten_compliance(project, dom, org, date, rec, dom in failed_domains)
-        for dom, (org, date, rec) in captured.items()
-    ]
+    rows = []
+    for dom, (org, date, rec) in captured.items():
+        # one malformed snapshot must degrade ITS row, not the whole tab (write_dashboard
+        # would otherwise catch the exception and render no compliance rows at all)
+        try:
+            rows.append(
+                _flatten_compliance(project, dom, org, date, rec, dom in failed_domains)
+            )
+        except Exception as e:
+            row = _no_data_row(dom, failed=dom in failed_domains, checked=date)
+            row["error"] = f"{type(e).__name__}: {e}"
+            rows.append(row)
     for dom in unchecked:
-        rows.append(
-            {
-                "domain": dom,
-                "checked": None,
-                "failed": False,
-                "facet": "not-checked",
-                "crawl_emoji": "❓",
-                "crawl_sev": 3,
-                "crawl_reasons": [],
-                "reuse_emoji": "❓",
-                "reuse_sev": 5,
-                "reuse_reasons": [],
-                "unchecked": True,
-            }
-        )
+        rows.append(_no_data_row(dom))
 
     def _no_data_rank(e):
-        # no-data rows lead: ‼️ capture-failed first (most actionable), then ❓ not-checked,
-        # then the graded 🔴→🟢 rows — so problems sort to the TOP, not the bottom.
+        # no-data rows lead: ‼️ capture-failed first (most actionable), then ⚠️ rows whose
+        # snapshot couldn't be displayed, then ❓ not-checked, then the graded 🔴→🟢 rows —
+        # so problems sort to the TOP, not the bottom.
         if e.get("failed"):
             return 0
-        if e.get("checked") is None:
+        if e.get("error"):
             return 1
-        return 2
+        if e.get("checked") is None:
+            return 2
+        return 3
 
     rows.sort(
         key=lambda e: (
@@ -307,12 +322,16 @@ def _compliance_detail(e):
     return "".join(out) or '<div class="kv">No further detail.</div>'
 
 
-def _compliance_table(rows):
-    checked = [e for e in rows if e.get("checked") is not None or e.get("failed")]
-    unchecked = [
-        e for e in rows if not (e.get("checked") is not None or e.get("failed"))
-    ]
-    if not checked and not unchecked:
+def _compliance_table(rows, error=None):
+    """The Compliance tab body. `error` — why the rows couldn't be built at all (shown
+    instead of the empty-state hint, which would wrongly say nothing was captured)."""
+    if not rows:
+        if error:
+            return (
+                '<p class="empty">Compliance data couldn\'t be displayed: '
+                f"<code>{_esc(error)}</code>. The markdown report "
+                "<code>compliance_&lt;project&gt;.md</code> may still have it.</p>"
+            )
         return (
             '<p class="empty">No compliance snapshots yet. Run '
             "<code>./scrapai audit --project &lt;p&gt;</code> (captures new domains) "
@@ -323,23 +342,34 @@ def _compliance_table(rows):
         rid = f"m{i}"
         dom = e.get("domain", "")
         if e.get("unchecked"):
+            if e.get("error"):
+                lead, status = "⚠️", "couldn't display: " + e["error"]
+                detail = (
+                    "The snapshot for this domain couldn't be rendered: "
+                    f"<code>{_esc(e['error'])}</code>. Other rows are unaffected."
+                )
+            else:
+                lead, status = "❓", "NOT CHECKED"
+                detail = (
+                    "Not yet captured. Run the audit (default captures new domains) or "
+                    "<code>--refresh</code>."
+                )
             # all nine cells, each with a data-key matching the checked-row scheme —
             # a colspan here misaligned the sorter's column indexes, and keyless cells
             # sorted on the string "null"
             body.append(
                 f'<tr class="fx-row" data-id="{rid}" data-name="{_esc(dom)}" '
                 f'data-facet="not-checked" data-attention="0">'
-                f'<td data-key="3">❓</td>'
+                f'<td data-key="3">{lead}</td>'
                 f'<td class="mono" data-key="{_esc(dom.lower())}">{_esc(dom)}</td>'
                 f'<td class="r" data-key="-1"><span class="na">—</span></td>'
                 f'<td class="r" data-key="-1"><span class="na">—</span></td>'
-                f'<td data-key=""><b>NOT CHECKED</b></td>'
+                f'<td data-key=""><b>{_esc(status)}</b></td>'
                 f'<td data-key="3">❓</td><td data-key="5">❓</td>'
                 f'<td data-key="">—</td>'
                 f'<td class="flags">—</td></tr>'
                 f'<tr class="fx-detail" data-id="{rid}" hidden><td colspan="9">'
-                "Not yet captured. Run the audit (default captures new domains) or "
-                "<code>--refresh</code>.</td></tr>"
+                f"{detail}</td></tr>"
             )
             continue
         lead = (
@@ -439,7 +469,7 @@ def _compliance_table(rows):
     legend = (
         '<p class="hint">🔴 don’t fetch / can’t reuse · 🟡 needs a human check · '
         "🟢 open / permissive · ⚪ no reuse grant (default copyright) · 🔎 couldn’t verify · "
-        "❓ not checked · ‼️ capture failed. "
+        "❓ not checked · ‼️ capture failed · ⚠️ couldn’t display. "
         "Full evidence: <code>compliance_&lt;project&gt;.md</code>.</p>"
     )
     return (
