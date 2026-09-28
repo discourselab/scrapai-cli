@@ -57,7 +57,10 @@ def _make_spider(get_db_mock, stats, item_limit=0):
     rec.settings = []
     rec.project = PROJECT
     db = Mock()
-    db.query.return_value.filter.return_value.first.return_value = rec
+    filtered = db.query.return_value.filter.return_value
+    # Both lookup shapes: first() by name, all() when scoped per project.
+    filtered.first.return_value = rec
+    filtered.all.return_value = [rec]
     cm = MagicMock()
     cm.__enter__.return_value = db
     get_db_mock.return_value = cm
