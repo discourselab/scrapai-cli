@@ -187,3 +187,84 @@ async def test_parse_item_limit_stops_pagination():
     }
     results = [x async for x in spider.parse(make_response(doc))]
     assert not any(isinstance(r, Request) for r in results)
+
+
+# --- config lookup: name + project (docs/requests/28) ----------------------
+
+
+@pytest.fixture
+def db(monkeypatch):
+    """In-memory SQLite behind the spider's get_db(); never the working DB."""
+    from contextlib import contextmanager
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from core.models import Base
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine, autoflush=False, autocommit=False)()
+
+    @contextmanager
+    def fake_get_db():
+        yield session
+
+    monkeypatch.setattr("spiders.repository_spider.get_db", fake_get_db)
+    try:
+        yield session
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def add_repo_spider(db, project):
+    from core.models import Spider, SpiderSetting
+
+    spider = Spider(
+        name="example_org",
+        project=project,
+        allowed_domains=["repo.example"],
+        start_urls=[f"https://repo.example/{project}/jsonapi"],
+    )
+    db.add(spider)
+    db.flush()
+    setting = SpiderSetting(spider_id=spider.id, key="REPOSITORY_SOURCE")
+    setting.value, setting.type = json.dumps(BASIC_SOURCE), "json"
+    db.add(setting)
+    db.commit()
+    return spider
+
+
+def test_load_picks_the_row_of_the_given_project(db):
+    add_repo_spider(db, "news")
+    proj = add_repo_spider(db, "proj")
+
+    spider = RepositoryDatabaseSpider("example_org", project="proj")
+
+    assert spider.spider_config.id == proj.id
+    assert spider.start_urls == ["https://repo.example/proj/jsonapi"]
+
+
+def test_load_without_project_refuses_an_ambiguous_name(db):
+    add_repo_spider(db, "news")
+    add_repo_spider(db, "proj")
+
+    ambiguous = r"more than one project \(news, proj\)"
+    with pytest.raises(ValueError, match=ambiguous):
+        RepositoryDatabaseSpider(spider_name="example_org")
+
+
+def test_load_without_project_still_resolves_a_unique_name(db):
+    news = add_repo_spider(db, "news")
+
+    spider = RepositoryDatabaseSpider(spider_name="example_org")
+
+    assert spider.spider_config.id == news.id
+
+
+def test_load_with_project_not_holding_the_name_fails(db):
+    add_repo_spider(db, "news")
+
+    with pytest.raises(ValueError, match="not found in database"):
+        RepositoryDatabaseSpider("example_org", project="proj")

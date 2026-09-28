@@ -53,13 +53,16 @@ class RepositoryDatabaseSpider(BaseDBSpiderMixin, scrapy.Spider):
 
     name = "repository_database_spider"
 
-    def __init__(self, spider_name=None, *args, **kwargs):
+    def __init__(self, spider_name=None, *args, project=None, **kwargs):
         if not spider_name:
             spider_name = getattr(self.__class__, "_spider_name", None)
         if not spider_name:
             raise ValueError("spider_name argument is required")
 
         self.spider_name = spider_name
+        # Scopes the config lookup: names are unique per project only
+        # (docs/requests/28). The CLI passes -a project=<p> once 28 lands.
+        self.project = project
         self.name = spider_name  # per-spider DeltaFetch DB / output / attribution
         self._items_scraped = 0
         self._item_limit = None
@@ -69,9 +72,25 @@ class RepositoryDatabaseSpider(BaseDBSpiderMixin, scrapy.Spider):
 
     def _load_config(self):
         with get_db() as db:
-            spider = db.query(Spider).filter(Spider.name == self.spider_name).first()
-            if not spider:
-                raise ValueError(f"Spider '{self.spider_name}' not found in database")
+            # Same rules as _find_spider_record() in docs/requests/28: scoped
+            # by project when given; without one a unique name still resolves
+            # and a name held in several projects raises instead of guessing.
+            conditions = [Spider.name == self.spider_name]
+            if self.project:
+                conditions.append(Spider.project == self.project)
+            rows = db.query(Spider).filter(*conditions).all()
+            if not rows:
+                where = f" (project '{self.project}')" if self.project else ""
+                raise ValueError(
+                    f"Spider '{self.spider_name}' not found in database{where}"
+                )
+            if len(rows) > 1:
+                projects = ", ".join(sorted(str(r.project) for r in rows))
+                raise ValueError(
+                    f"Spider '{self.spider_name}' exists in more than one project "
+                    f"({projects}); pass -a project=<name> to choose one"
+                )
+            spider = rows[0]
             if not spider.active:
                 raise ValueError(f"Spider '{self.spider_name}' is inactive")
 
