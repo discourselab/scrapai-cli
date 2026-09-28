@@ -99,7 +99,7 @@ def load_notes(project):
     Whenever `status` is set a `flag` is REQUIRED, and it must be genuinely short — the
     1-2 most central points only, not a summary of the note; everything else goes in
     `note`/`note_long`. `note` should address EACH original auto-flag (thin?/small/
-    liveness/sitemap-drift/…) so a reader sees why it's a false alarm (e.g. 'thin? ->
+    sitemap-drift/…) so a reader sees why it's a false alarm (e.g. 'thin? ->
     genuinely short posts').
     Returns (notes_dict, warnings) — warnings mirror load_skip()."""
     warnings = []

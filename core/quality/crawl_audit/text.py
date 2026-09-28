@@ -1,7 +1,7 @@
 """All human-facing prose: the status legend, per-status fix guidance, the
 review-config instruction strings, and the report's big static paragraphs."""
 
-from .scoring import LIVENESS_FLAG_BELOW, STALE_DAYS, THIN_CHARS
+from .scoring import STALE_DAYS, THIN_CHARS
 
 # Self-documenting `_instructions` written into each project's _audit/ config and kept
 # current on every audit run (your entries are never touched). The `_instructions` key
@@ -81,9 +81,9 @@ _LEGEND_PARTS = [
         "Too little output to judge completeness — `never-ran` (0 pages, no crawl-stats: no production crawl; "
         "`--limit` test crawls write DB-only so this also covers spiders only tested at creation), `ran-empty` (0 "
         "pages but crawl-stats present: it DID run and came back empty — investigate, don't just re-run; check "
-        "`liveness`/`eligible` and `analysis/NOTES.md`), or `small/partial` (a small or stalled *production* crawl "
-        "with no sitemap to verify against — could be a small site); `pdf-only (N)` = no HTML articles but N PDF "
-        "links harvested — likely a document-repository site.",
+        "`eligible`, the HTTP status counts in its crawl-stats and `analysis/NOTES.md`), or `small/partial` (a "
+        "small or stalled *production* crawl with no sitemap to verify against — could be a small site); "
+        "`pdf-only (N)` = no HTML articles but N PDF links harvested — likely a document-repository site.",
     ),
     (
         "incomplete",
@@ -97,8 +97,8 @@ _LEGEND_PARTS = [
         "manual review",
         "Review it carefully (`/spider-review`), then record the verdict.",
         "Extraction works and it ran, but a concern flag means it's not auto-clean — coverage can't be verified "
-        "(`no-sitemap` / `sitemap-empty` / `sitemap-drift` / `sitemap-cap-hit`), content looks `thin?`, or "
-        "`liveness` is low. This is NOT a quick glance — run the evidence-based `/spider-review` process (a bounded "
+        "(`no-sitemap` / `sitemap-empty` / `sitemap-drift` / `sitemap-cap-hit`) or content looks `thin?`. "
+        "This is NOT a quick glance — run the evidence-based `/spider-review` process (a bounded "
         "verification crawl, a ground-truth count check against the site's own totals, and coverage / temporal / "
         "PDF-URL checks) to decide whether it's a genuine problem or actually fine. If fine, record it with "
         '`"status": "ok"` + a short `flag` in this project\'s `_audit/audit_notes.json` and it promotes to `ok` '
@@ -143,7 +143,7 @@ def fix_hints(project):
         "- `never-ran` = no production crawl yet (`--limit` test crawls don't write JSONL) → run the "
         f"full crawl: `./scrapai crawl --project {project} <spider>`.\n"
         "- `ran-empty` = it already ran but produced 0 output — re-running won't help; investigate "
-        "(`eligible` 0 = allow-rules match no sitemap URLs · low `liveness` = blocked / 403 · else "
+        "(`eligible` 0 = allow-rules match no sitemap URLs · many 403 / 429 in its crawl-stats = blocked · else "
         "dropped items — see `analysis/NOTES.md`).\n"
         "- `pdf-only (N)` = the crawl harvested only PDF links — a document repository. "
         "Confirm the site's content really is documents, then record an `audit_notes.json` "
@@ -163,7 +163,7 @@ def fix_hints(project):
         f"`./scrapai show --project {project} --limit 5 <spider>`.\n"
         "- The flag says why: coverage can't be verified (no / empty / drifting sitemap — `sitemap-empty` "
         "on a CF site may be a block; `found` spiders are candidates for `USE_SITEMAP`), content looks "
-        "`thin?` (over-broad rules?), or `liveness` is low.\n"
+        "`thin?` (over-broad rules?).\n"
         "- If it's actually fine, record it in `_audit/audit_notes.json` (`status: ok` + `flag` + `note` "
         "+ `updated`) → it promotes to `ok` with `✓ reviewed`. Without a `status` the note is inert.",
     }
@@ -233,8 +233,7 @@ NOTES_AND_DEFINITIONS = (
     "**Method.** `scraped` = unique URLs across `crawls/*.jsonl`. "
     "`content%` = share with non-empty content (page *length* surfaces only as "
     "a `thin?` flag). `eligible` = sitemap URLs matching the spider's allow-"
-    "rules, reduced to the live fraction when the crawl recorded HTTP-status "
-    "stats (the live% shows as a flag only when low). `coverage` = scraped ÷ "
+    "rules (URLs the crawl found dead or blocked still count). `coverage` = scraped ÷ "
     "eligible. `total`/`eligible` are read from the crawl when it recorded them "
     "(the sitemap spider counts its own URLs while parsing); otherwise the "
     "audit fetches the sitemap via `./scrapai inspect`, nested indexes capped "
@@ -256,13 +255,10 @@ NOTES_AND_DEFINITIONS = (
     "- **eligible** — the coverage denominator (just a number). Its base count "
     "(page URLs matching the spider's `allow` rules) comes from the crawl when "
     "recorded (same source as `total`), else from the fetched sitemap; it "
-    "equals `total` when the spider has no allow rules. When the crawl recorded "
-    "liveness, it's reduced to the live fraction (`round(rule-eligible × "
-    "live%)`, dead entries removed) — the live% itself shows only as a "
-    f"`liveness N%` flag, and only when below {LIVENESS_FLAG_BELOW}%. Liveness "
-    "comes **only** from a real crawl's own HTTP-status stats "
-    "(`.../crawl_stats/<spider>.json`, `live% = 2xx ÷ (2xx+4xx+5xx)`); no "
-    "sampling/probing. (For `found` spiders whose rules don't match the "
+    "equals `total` when the spider has no allow rules. It is never reduced "
+    "by what the crawl found: a sitemap URL that answered 404 or 403 is still "
+    "a page the spider should have got, so the loss shows as a coverage "
+    "shortfall rather than a smaller denominator. (For `found` spiders whose rules don't match the "
     "discovered sitemap, eligible = 0 → `manual review` + `sitemap-empty`.)\n"
     "- **scraped** — unique HTML article URLs in the spider's `crawls/*.jsonl` "
     "output (real on-disk data; the DB holds only test-crawl items). PDF "
@@ -277,8 +273,7 @@ NOTES_AND_DEFINITIONS = (
     "count as `pdf`, not `scraped`); in `PDF_MODE=extract` the fetched PDFs "
     "sit in DeltaFetch, so the stale check compares against total uniques.\n"
     "- **coverage** — `scraped ÷ eligible` — the fraction of the pages it "
-    "*should* have that it *actually* got (eligible already incorporates "
-    "liveness when crawl-stats exist). Can read > 100% when the spider scraped "
+    "*should* have that it *actually* got. Can read > 100% when the spider scraped "
     "more rule-matching pages than the sitemap lists; that and a poor scraped-"
     "vs-sitemap overlap demote the row to `manual review` with a "
     "`sitemap-drift` flag.\n"
@@ -312,9 +307,6 @@ NOTES_AND_DEFINITIONS = (
     "mode that writes JSONL).\n"
     "    - `deltafetch-stale` — DeltaFetch cache ≫ output (size estimate, ~8 "
     "URLs/KB) → output lost; re-crawl with `--reset-deltafetch`.\n"
-    f"    - `liveness N%` — shown only when live < {LIVENESS_FLAG_BELOW}%: the "
-    "sitemap lists many dead URLs (a high live% is silent). **Triggers manual "
-    "review.**\n"
     f"    - `thin? Xk` — median page < {THIN_CHARS} chars: likely over-broad "
     "rules pulling in non-article junk (content% can be 100% while pages are "
     "near-empty). A rough hint — short-form sites are legit. **Triggers manual "
@@ -349,8 +341,8 @@ NOTES_AND_DEFINITIONS = (
     "grouped so spiders needing the same action sit together: *extraction "
     "broken* (fix selectors), *too few pages* (run a full crawl / confirm it's "
     "a small site), *incomplete* (re-crawl / investigate the stall), *manual "
-    "review* (extraction fine but a concern flag — coverage unverifiable, "
-    "thin, or low liveness — needs a careful `/spider-review`, then a note), *ok* (verified or "
+    "review* (extraction fine but a concern flag — coverage unverifiable "
+    "or thin — needs a careful `/spider-review`, then a note), *ok* (verified or "
     "`✓ reviewed`, nothing to do), *discarded* (deliberately dropped via "
     "`audit_notes.json`). Precedence matters: extraction quality and "
     "'did a real crawl run' are decided BEFORE coverage, so an empty or odd "

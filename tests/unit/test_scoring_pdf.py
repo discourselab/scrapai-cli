@@ -14,7 +14,6 @@ pytestmark = pytest.mark.unit
 
 @pytest.fixture
 def ctx(tmp_path, monkeypatch):
-    monkeypatch.setattr(scoring, "crawl_stats_liveness", lambda p, s: None)
     monkeypatch.setattr(scoring, "crawl_ran", lambda p, s: True)
     monkeypatch.setattr(scoring, "crawl_stats_sitemap", lambda p, s: None)
     monkeypatch.setattr(scoring, "deltafetch_estimate", lambda p, s: 0)

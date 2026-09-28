@@ -218,7 +218,8 @@ def _cov_table(
     )
     tip_eligible = _tip(
         "How many pages this spider SHOULD have got — the sitemap URLs matching its "
-        "rules, minus dead ones. This is the denominator for coverage."
+        "rules, including any that were dead or blocked when crawled. This is "
+        "the denominator for coverage."
     )
     tip_scraped = _tip(
         "How many unique HTML pages we actually saved "
@@ -475,7 +476,7 @@ def _notes_definitions():
         '<details class="drawer"><summary>Notes &amp; definitions</summary>'
         "<p><b>Method.</b> <i>scraped</i> = unique URLs across <code>crawls/*.jsonl</code>. "
         "<i>content%</i> = share with non-empty content. <i>eligible</i> = sitemap URLs matching "
-        "the allow-rules, reduced to the live fraction when crawl-stats exist. <i>coverage</i> = "
+        "the allow-rules (dead or blocked ones still count). <i>coverage</i> = "
         "scraped ÷ eligible. <i>total</i>/<i>eligible</i> come from the crawl when it recorded "
         "them, else a fetched sitemap (nested indexes capped). <code>-</code> = no sitemap.</p>"
         "<p><b>Two independent axes:</b> <i>coverage</i> (did we get enough of the right pages?) "

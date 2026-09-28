@@ -18,13 +18,10 @@ from .sitemaps import (
     fetch_spider_sitemaps,
     spider_cache_dirs,
 )
-from .spiders_db import crawl_ran, crawl_stats_liveness, crawl_stats_sitemap
+from .spiders_db import crawl_ran, crawl_stats_sitemap
 
 STALE_DAYS = 30  # newest crawl older than this -> a ⚠ mark in the `stale` column
 THIN_CHARS = 1000  # median content below this -> a `thin?` flag (over-broad rules?)
-LIVENESS_FLAG_BELOW = (
-    90  # live% under this -> a flag (many dead sitemap URLs); above = silent
-)
 
 
 def norm_url(u):
@@ -125,7 +122,7 @@ class ScoreContext:
 def score_spider(name, sp, c, ctx):
     """Build ONE audit row for spider `name` (metadata `sp`, crawl-scan entry `c`):
     resolve the sitemap denominator (crawl-recorded, cached, fetched, or discovered),
-    compute coverage/liveness/flags, classify, and apply the review note. Returns the
+    compute coverage/flags, classify, and apply the review note. Returns the
     row dict run() appends."""
     project, args = ctx.project, ctx.opts
     cache_dir, state = ctx.cache_dir, ctx.state
@@ -269,21 +266,14 @@ def score_spider(name, sp, c, ctx):
     # 0 eligible there is a real misconfig.)
     found_no_content = label == "found" and isinstance(total, int) and total == 0
 
-    # Liveness: ONLY from a real crawl's own HTTP-status stats (no sampling).
-    rate = None
-    if label in ("yes", "found"):
-        cstats = crawl_stats_liveness(project, name)
-        if cstats:
-            rate = cstats["rate"]
-
     est_cached = deltafetch_estimate(project, name)
-    # eligible denominator (tidy = just the number). When the crawl recorded
-    # liveness it's reduced to the live fraction; the live% only shows (as a flag)
-    # when it's LOW — a high live% isn't worth the reader's attention.
+    # eligible denominator (tidy = just the number). It is the FULL rule-eligible
+    # sitemap count: a sitemap URL that answered 404 or 403 during the crawl is
+    # still a page the spider should have got, so it stays in the denominator
+    # and shows up as a shortfall — instead of being scaled away by a liveness
+    # rate, which also counted a 403 block as a "dead" URL.
     denom = eligible if isinstance(eligible, int) else 0
     if isinstance(eligible, int):
-        if rate is not None:
-            denom = round(eligible * rate)
         eligible_cell = str(denom)
     status, cpct, cov = classify(denom, urls, content, est_cached)
 
@@ -320,7 +310,7 @@ def score_spider(name, sp, c, ctx):
         elif urls == 0:
             # crawl_stats present → the crawl DID run, it just produced no
             # output (blocked, 0 rule-eligible URLs, or dropped items) — so
-            # 'never-ran' would be a lie. liveness already trusts this file.
+            # 'never-ran' would be a lie.
             flags.append("ran-empty" if crawl_ran(project, name) else "never-ran")
         else:
             flags.append("small/partial")
@@ -328,9 +318,6 @@ def score_spider(name, sp, c, ctx):
         # compared against TOTAL uniques: in extract mode fetched PDFs sit in
         # the DeltaFetch cache, and HTML-only counts would false-flag
         flags.append("deltafetch-stale")
-    if rate is not None and rate * 100 < LIVENESS_FLAG_BELOW:
-        flags.append(f"liveness {round(rate * 100)}%")  # many dead sitemap URLs
-        concern = True  # review trigger
     if content_med and content_med < THIN_CHARS and status != "extraction broken":
         flags.append(f"thin? {_human_k(content_med)}")  # over-broad rules / junk?
         concern = True  # review trigger

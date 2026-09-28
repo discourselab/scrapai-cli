@@ -21,6 +21,10 @@ def crawl_stats_liveness(project, spider):
     the spider's closed() handler), preferred over sampling. live = 2xx ÷ (2xx +
     4xx) across everything the crawl actually fetched — no extra requests.
 
+    No longer scales the coverage denominator (a 403 block read as a "dead"
+    URL and shrank eligible, hiding the shortfall); kept on the facade for
+    callers that read the crawl-stats writer's output.
+
     Only 4xx count as "dead" (the URL doesn't exist). 5xx are transient server
     errors — a 503/502/504 during the crawl says nothing about whether the URL is
     real — so they're excluded from the denominator entirely. Counting them as
@@ -43,8 +47,7 @@ def crawl_stats_liveness(project, spider):
 
 def crawl_ran(project, spider):
     """True if a real crawl recorded its own stats for this spider — proof it
-    actually executed, independent of whether it produced any output. Same file
-    liveness reads from, so if we trust it for liveness we can trust it here. Used
+    actually executed, independent of whether it produced any output. Used
     to tell 'never-ran' (no crawl_stats at all) apart from 'ran but came back
     empty' (crawl_stats present, but the crawls/*.jsonl is empty)."""
     path = os.path.join(DATA_DIR, project, "_audit", "crawl_stats", spider + ".json")

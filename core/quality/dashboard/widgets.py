@@ -55,10 +55,6 @@ GLOSSARY = [
         "DeltaFetch cache holds far more than the output → output lost; re-crawl with --reset-deltafetch.",
     ),
     (
-        "liveness",
-        "The sitemap lists many dead URLs (shown only when the live fraction is low).",
-    ),
-    (
         "thin?",
         "Median page is very short — possibly over-broad rules pulling in non-article junk.",
     ),

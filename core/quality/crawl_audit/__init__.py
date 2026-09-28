@@ -18,10 +18,9 @@ Usage (via the CLI — this module is the engine behind `./scrapai audit`):
 
 Sitemaps whose counts came from the crawl itself (crawl_stats) are never fetched.
 
-Liveness: only computed when a real crawl recorded its own HTTP-status stats
-(data/<project>/_audit/crawl_stats/<spider>.json, written by the spider's closed()
-handler). No sampling/probing — if those stats are absent, eligible is the plain
-rule-matched sitemap count.
+Coverage = scraped ÷ eligible, where eligible is the plain rule-matched sitemap
+count. Nothing is subtracted for URLs the crawl found dead or blocked — those are
+pages the spider should have got, so they show as a shortfall.
 
 Outputs: data/<project>/_audit/{audit_<project>.md, crawl_audit.csv, coverage.csv}
 Sitemap cache:    data/<project>/_audit/sitemap_cache/<spider>_<n>/page.html
