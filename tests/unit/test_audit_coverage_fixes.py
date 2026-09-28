@@ -3,6 +3,7 @@ rule-eligible denominator (no liveness scaling). Every test runs against a
 tmp DATA_DIR and a fetch guard — no test may reach the network."""
 
 import json
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -409,3 +410,417 @@ def test_outcome_columns_survive_only_merge(data, tmp_path):
     assert "| 3 (2.8%) | 9 (8.5%) | 6 (5.7%) |" in md
     # the fresh spider has no crawl-stats → the "not recorded" dash
     assert "| – | – | – |" in md
+
+
+# ---------------------------------------------------------------- item 1
+INDEX = "https://example.org/sitemap_index.xml"
+
+
+def _kids(*names):
+    return [f"https://example.org/{n}-sitemap.xml" for n in names]
+
+
+def _index_xml(urls):
+    locs = "".join(f"<sitemap><loc>{u}</loc></sitemap>" for u in urls)
+    return f"<sitemapindex>{locs}</sitemapindex>"
+
+
+class FakeFetch:
+    """Stands in for sitemaps.fetch: serves `pages`, counts every call, and
+    honours the fetch budget like the real one. Nothing leaves the process."""
+
+    def __init__(self, pages=None):
+        self.pages, self.calls = pages or {}, []
+
+    def __call__(self, url, outdir, project, browser, state):
+        self.calls.append(url)
+        if state["global"] >= state["global_cap"]:
+            return None
+        state["global"] += 1
+        text = self.pages.get(url)
+        if not text:
+            return None
+        os.makedirs(outdir, exist_ok=True)
+        with open(os.path.join(outdir, "page.html"), "w") as fh:
+            fh.write(text)
+        return text
+
+
+def _robots_snapshot(data, sitemaps_, host="example_org", date="2026-09-01"):
+    """A compliance snapshot on disk whose robots.txt declares `sitemaps_`."""
+    d = data / "proj" / "_audit" / "compliance" / host / date
+    d.mkdir(parents=True, exist_ok=True)
+    rec = {"robots": {"fetched": True, "sitemaps": list(sitemaps_)}}
+    (d / "compliance.json").write_text(json.dumps(rec))
+    lines = "".join(f"Sitemap: {u}\n" for u in sitemaps_)
+    (d / "robots.txt").write_text("User-agent: *\nDisallow:\n" + lines)
+
+
+def _yes_row(data, ctx, start_urls, spider="example_org"):
+    _stats(data, spider, status={"200": 90}, sitemap_total=100, eligible=100)
+    sp = _sp(start_urls=start_urls)
+    return score_spider(spider, sp, _corpus(90), ctx)
+
+
+def test_given_index_counts_all_children(data, monkeypatch):
+    kids = _kids("post", "page", "category", "event", "report")
+    fake = FakeFetch({INDEX: _index_xml(kids)})
+    monkeypatch.setattr(sitemaps, "fetch", fake)
+    _robots_snapshot(data, [INDEX])
+    # the given index is spelled differently (www, trailing slash): norm_url
+    given = ["https://www.example.org/sitemap_index.xml/"]
+    row = _yes_row(data, _ctx(data, no_fetch=False), given)
+    assert fake.calls == [INDEX]
+    assert (row["sitemaps_given"], row["sitemaps_total"]) == (5, 5)
+    assert [e["url"] for e in row["sitemap_list"]] == kids  # taxonomy counts
+    assert row["sitemap"] == "yes"  # the label itself never changes
+
+
+def test_given_not_in_index_added(data, monkeypatch):
+    kids = _kids("post", "page", "tag")
+    fake = FakeFetch({INDEX: _index_xml(kids)})
+    monkeypatch.setattr(sitemaps, "fetch", fake)
+    _robots_snapshot(data, [INDEX])
+    extra = "https://example.org/news/news-sitemap.xml"
+    row = _yes_row(data, _ctx(data, no_fetch=False), [kids[1], kids[0], extra])
+    assert (row["sitemaps_given"], row["sitemaps_total"]) == (3, 4)
+    lst = row["sitemap_list"]
+    # given first, then not given
+    assert [e["given"] for e in lst] == [True, True, True, False]
+    assert lst[2] == {"url": extra, "given": True, "in_index": False}
+    assert lst[3]["url"] == kids[2]
+
+
+def test_robots_sitemaps_read_from_disk_no_fetch(data):
+    # nothing on disk → None ("never looked"), not []
+    on_disk = spiders_db.robots_sitemaps_on_disk
+    assert on_disk("proj", "example.org", "x") is None
+    leaf = "https://example.org/pages-sitemap.xml"
+    _robots_snapshot(data, [INDEX])
+    crawls = data / "proj" / "example_org" / "crawls"
+    crawls.mkdir(parents=True)
+    witness = f"Sitemap: {leaf}\nSitemap: {INDEX}\n"
+    (crawls / "robots_27092026.txt").write_text(witness)
+    got = on_disk("proj", "www.example.org", "example_org")
+    assert got == [INDEX, leaf]
+    # manifests already cached → a default-mode run lists them with ZERO
+    # fetches (the fixture's fetch raises on any call)
+    cache = str(data / "proj" / "_audit" / "sitemap_cache")
+    sitemaps._save_manifest(INDEX, cache, _index_xml(_kids("post", "page")))
+    urlset = "<urlset><url><loc>x</loc></url></urlset>"
+    sitemaps._save_manifest(leaf, cache, urlset)
+    row = _yes_row(data, _ctx(data, no_fetch=False), [INDEX])
+    assert (row["sitemaps_given"], row["sitemaps_total"]) == (2, 3)
+
+
+def test_no_refetch_when_index_cached(data, monkeypatch):
+    fake = FakeFetch({INDEX: _index_xml(_kids("post", "page"))})
+    monkeypatch.setattr(sitemaps, "fetch", fake)
+    _robots_snapshot(data, [INDEX])
+    ctx = _ctx(data, no_fetch=False)
+    _yes_row(data, ctx, [INDEX], spider="example_org")
+    # a second spider on the same host shares the host-keyed manifest
+    _yes_row(data, ctx, _kids("post"), spider="site01_org")
+    assert fake.calls == [INDEX]
+    # next run (fresh budget state): still no fetch
+    row = _yes_row(data, _ctx(data, no_fetch=False), [INDEX])
+    assert fake.calls == [INDEX]
+    assert row["sitemaps_total"] == 2
+
+
+def test_failed_index_marker_blocks_refetch(data, monkeypatch):
+    fake = FakeFetch()  # the site answers nothing
+    monkeypatch.setattr(sitemaps, "fetch", fake)
+    _robots_snapshot(data, [INDEX])
+    row = _yes_row(data, _ctx(data, no_fetch=False), _kids("post"))
+    assert fake.calls == [INDEX]
+    assert row["sitemaps_total"] == "?"
+    assert "fetch failed" in row["sitemaps_note"]
+    host = data / "proj" / "_audit" / "sitemap_cache" / "_host" / "example.org"
+    assert list(host.glob("sm_*.failed.json"))
+    # every later default run remembers the failure: no fetch at all
+    monkeypatch.setattr(sitemaps, "fetch", _no_network)
+    row = _yes_row(data, _ctx(data, no_fetch=False), _kids("post"))
+    assert row["sitemaps_total"] == "?"
+    assert "fetch failed" in row["sitemaps_note"]
+
+
+def test_fetch_all_reprobes_failed(data, monkeypatch):
+    monkeypatch.setattr(sitemaps, "fetch", FakeFetch())
+    _robots_snapshot(data, [INDEX])
+    # a first run leaves a failure marker
+    _yes_row(data, _ctx(data, no_fetch=False), _kids("post"))
+    fake = FakeFetch({INDEX: _index_xml(_kids("post", "page"))})
+    monkeypatch.setattr(sitemaps, "fetch", fake)
+    ctx = _ctx(data, no_fetch=False, fetch_all=True)
+    row = _yes_row(data, ctx, _kids("post"))
+    _yes_row(data, ctx, _kids("page"), spider="site01_org")  # once per run
+    assert fake.calls == [INDEX]
+    assert (row["sitemaps_given"], row["sitemaps_total"]) == (1, 2)
+    host = data / "proj" / "_audit" / "sitemap_cache" / "_host" / "example.org"
+    assert not list(host.glob("sm_*.failed.json"))
+
+
+def test_no_fetch_shows_unknown_total(data):
+    _robots_snapshot(data, [INDEX])
+    kids = _kids("post", "page", "event", "report")
+    row = _yes_row(data, _ctx(data, no_fetch=True), kids)
+    assert (row["sitemaps_given"], row["sitemaps_total"]) == (4, "?")
+    assert "--no-fetch" in row["sitemaps_note"]
+    from core.quality.crawl_audit.report import sitemap_cell
+
+    assert sitemap_cell(row) == "[4/?](#sm-example_org)"
+    # a total that's unknown can't call anything "not listed"
+    assert all(e["in_index"] for e in row["sitemap_list"])
+
+
+def test_index_fetch_no_cap_hit_for_crawl_stats_spider(data, monkeypatch):
+    monkeypatch.setattr(
+        sitemaps, "fetch", FakeFetch({INDEX: _index_xml(_kids("post"))})
+    )
+    _robots_snapshot(data, [INDEX])
+    ctx = _ctx(data, no_fetch=False)
+    ctx.state["global_cap"] = 1
+    row = _yes_row(data, ctx, _kids("post"))
+    # coverage came from the crawl, so the cap can't have truncated it
+    assert "sitemap-cap-hit" not in row["flags"]
+
+
+def test_index_fetches_have_own_budget(data, monkeypatch):
+    # the listing's index fetch must not use up --global-cap: a LATER spider
+    # whose coverage does depend on fetches isn't flagged sitemap-cap-hit
+    monkeypatch.setattr(
+        sitemaps, "fetch", FakeFetch({INDEX: _index_xml(_kids("post"))})
+    )
+    _robots_snapshot(data, [INDEX])
+    ctx = _ctx(data, no_fetch=False)
+    ctx.state["global_cap"] = 1
+    _yes_row(data, ctx, _kids("post"))
+    assert ctx.state["global"] == 0
+    assert ctx.state["index_budget"]["global"] == 1
+    later = score_spider("site01_org", _sp(start_urls=_kids("post")), _corpus(60), ctx)
+    assert "sitemap-cap-hit" not in later["flags"]
+
+
+def _two_rows(data):
+    _robots_snapshot(data, [INDEX])
+    cache = str(data / "proj" / "_audit" / "sitemap_cache")
+    index = _index_xml(_kids("post", "page", "tag"))
+    sitemaps._save_manifest(INDEX, cache, index)
+    yes = _yes_row(data, _ctx(data), _kids("post", "page"))
+    sp = _sp(use_sitemap=False)
+    no = score_spider("site01_org", sp, _corpus(60), _ctx(data))
+    return [yes, no]
+
+
+def test_sitemap_list_survives_only_merge(data, tmp_path):
+    from core.quality.crawl_audit.report import merge_only_rows, read_csv_rows
+    from core.quality.crawl_audit.report import write_csvs
+
+    rows = _two_rows(data)
+    out = tmp_path / "csv"
+    out.mkdir()
+    write_csvs(str(out), rows)
+    present = {"example_org", "site01_org"}
+    back = merge_only_rows([], read_csv_rows(str(out)), present)
+    keys = ("sitemap", "sitemaps_given", "sitemaps_total", "sitemap_list")
+    for fresh, stored in zip(rows, back):
+        assert {k: stored[k] for k in keys} == {k: fresh[k] for k in keys}
+    assert back[0]["sitemap_list"][2] == {
+        "url": _kids("tag")[0],
+        "given": False,
+        "in_index": True,
+    }
+
+
+def test_coverage_csv_keeps_yes_rows(data, tmp_path):
+    import csv
+
+    from core.quality.crawl_audit.report import write_csvs
+
+    write_csvs(str(tmp_path), _two_rows(data))
+    with open(tmp_path / "coverage.csv", newline="") as fh:
+        cov = list(csv.DictReader(fh))
+    got = [(r["spider"], r["sitemap"]) for r in cov]
+    assert got == [("example_org", "yes")]
+    assert cov[0]["sitemaps_given"] == "2" and cov[0]["sitemaps_total"] == "3"
+
+
+def test_non_sitemap_spider_no_block(data):
+    from core.quality.crawl_audit.report import write_outputs
+    from core.quality.dashboard import render_dashboard
+
+    rows = _two_rows(data)
+    no = rows[1]
+    assert no["sitemap"] == "no" and no["sitemaps_given"] == ""
+    assert no["sitemap_list"] == []
+    write_outputs("proj", rows)
+    md = (data / "proj" / "_audit" / "audit_proj.md").read_text()
+    assert "sm-site01_org" not in md
+    assert "| site01_org | no |" in md
+    html = render_dashboard("proj", rows, [])
+    assert "sm-site01_org" not in html
+    assert "## Sitemaps given to spiders (1)" in md
+
+
+def test_md_and_html_anchor_links(data):
+    from core.quality.crawl_audit.report import write_outputs
+    from core.quality.dashboard import render_dashboard
+
+    rows = _two_rows(data)
+    write_outputs("proj", rows)
+    md = (data / "proj" / "_audit" / "audit_proj.md").read_text()
+    assert "| example_org | [2/3](#sm-example_org) |" in md
+    anchor = md.index('<a id="sm-example_org"></a>')
+    assert md.index("## all spiders") < anchor  # the section comes last
+    block = md[anchor:]
+    assert block.index("Given (2):") < block.index("Not given (1):")
+    html = render_dashboard("proj", rows, [])
+    assert '<a href="#sm-example_org">2/3</a>' in html
+    pos = html.index('id="sm-example_org"')
+    # top-level: not inside a (collapsed) <details> drawer
+    assert html.rfind("</details>", 0, pos) > html.rfind("<details", 0, pos)
+    assert pos < html.index("Notes &amp; definitions")
+
+
+def test_discovery_runs_once_per_host(data, monkeypatch):
+    # no robots on disk → discover (robots.txt, then /sitemap.xml) ONCE; the
+    # /sitemap.xml probe doubles as the manifest, so it isn't fetched twice
+    root = "https://example.org/sitemap.xml"
+    fake = FakeFetch({root: _index_xml(_kids("post", "page"))})
+    monkeypatch.setattr(sitemaps, "fetch", fake)
+    row = _yes_row(data, _ctx(data, no_fetch=False), _kids("post"))
+    assert fake.calls == ["https://example.org/robots.txt", root]
+    assert (row["sitemaps_given"], row["sitemaps_total"]) == (1, 2)
+    monkeypatch.setattr(sitemaps, "fetch", _no_network)
+    row = _yes_row(data, _ctx(data, no_fetch=False), _kids("post"))
+    assert (row["sitemaps_given"], row["sitemaps_total"]) == (1, 2)
+
+
+# ------------------------------------------- sitemap listing: politeness fixes
+ROOT = "https://example.org/sitemap.xml"
+ROBOTS = "https://example.org/robots.txt"
+
+
+def _cache(data):
+    return data / "proj" / "_audit" / "sitemap_cache"
+
+
+def _cached_page(data, name, text, url=None):
+    d = _cache(data) / name
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "page.html").write_text(text)
+    if url:
+        (d / "url.txt").write_text(url)
+
+
+def test_robots_on_disk_listing_none_not_refetched(data, monkeypatch):
+    # robots.txt on disk lists no sitemap and the spider's earlier /sitemap.xml
+    # probe is cached: the listing answers from disk with ZERO fetches
+    _robots_snapshot(data, [])
+    _cached_page(data, "example_org_smprobe", _index_xml(_kids("post", "page")))
+    row = _yes_row(data, _ctx(data, no_fetch=False), _kids("post"))
+    assert (row["sitemaps_given"], row["sitemaps_total"]) == (1, 2)
+    # nothing cached for /sitemap.xml: only it is fetched — never robots.txt
+    fake = FakeFetch({ROOT: _index_xml(_kids("post", "page"))})
+    monkeypatch.setattr(sitemaps, "fetch", fake)
+    row = _yes_row(data, _ctx(data, no_fetch=False), _kids("post"), spider="s2")
+    assert fake.calls == []  # the host's declared.json from the first row
+    (_cache(data) / "_host" / "example.org" / "declared.json").unlink()
+    (_cache(data) / "example_org_smprobe").rename(_cache(data) / "gone")
+    row = _yes_row(data, _ctx(data, no_fetch=False), _kids("post"))
+    assert fake.calls == [ROOT]
+    assert (row["sitemaps_given"], row["sitemaps_total"]) == (1, 2)
+
+
+def test_coverage_fetch_reused_by_listing(data, monkeypatch):
+    # a USE_SITEMAP spider without crawl-recorded counts: the coverage fetch
+    # pulls the root index into the spider cache; the listing reuses that copy
+    kids = _kids("post", "page")
+    pages = {INDEX: _index_xml(kids), ROBOTS: f"Sitemap: {INDEX}\n"}
+    pages.update(
+        {
+            k: "<urlset><url><loc>https://example.org/a</loc></url></urlset>"
+            for k in kids
+        }
+    )
+    fake = FakeFetch(pages)
+    monkeypatch.setattr(sitemaps, "fetch", fake)
+    _robots_snapshot(data, [INDEX])
+    ctx = _ctx(data, no_fetch=False)
+    ctx.should_fetch = lambda n: True
+    row = score_spider("example_org", _sp(start_urls=kids[:1]), _corpus(1), ctx)
+    assert (row["sitemaps_given"], row["sitemaps_total"]) == (1, 2)
+    assert sorted(fake.calls) == sorted(set(fake.calls))  # no URL twice
+    assert fake.calls.count(INDEX) == 1
+    # an older cache (no url.txt) can't be tied to a URL: never guessed —
+    # the declared index is fetched once into the host cache, then never again
+    for d in _cache(data).glob("example_org_[0-9]*"):
+        (d / "url.txt").unlink()
+    for d in (_cache(data) / "_host").glob("*/sm_*"):
+        for f in d.iterdir():
+            f.unlink()
+        d.rmdir()
+    fake = FakeFetch({INDEX: _index_xml(kids)})
+    monkeypatch.setattr(sitemaps, "fetch", fake)
+    row = _yes_row(data, _ctx(data, no_fetch=False), kids[:1])
+    assert fake.calls == [INDEX]
+    monkeypatch.setattr(sitemaps, "fetch", _no_network)
+    row = _yes_row(data, _ctx(data, no_fetch=False), kids[:1])
+    assert (row["sitemaps_given"], row["sitemaps_total"]) == (1, 2)
+
+
+def test_given_index_under_other_url_counts_children(data):
+    # start_url /sitemap.xml serves the same index robots declares as
+    # /sitemap_index.xml: its cached copy is an index → its children are given
+    kids = _kids("post", "page", "event")
+    _robots_snapshot(data, [INDEX])
+    cache = str(_cache(data))
+    sitemaps._save_manifest(INDEX, cache, _index_xml(kids))
+    _cached_page(data, "example_org_0", _index_xml(kids), url=ROOT)
+    row = _yes_row(data, _ctx(data), [ROOT])
+    assert (row["sitemaps_given"], row["sitemaps_total"]) == (3, 3)
+    assert all(e["in_index"] for e in row["sitemap_list"])
+
+
+def test_failed_discovery_not_stored_as_none(data, monkeypatch):
+    fake = FakeFetch()  # robots.txt and /sitemap.xml both fail
+    monkeypatch.setattr(sitemaps, "fetch", fake)
+    row = _yes_row(data, _ctx(data, no_fetch=False), _kids("post"))
+    assert row["sitemaps_total"] == "?"
+    assert "discovery failed" in row["sitemaps_note"]
+    host = _cache(data) / "_host" / "example.org"
+    assert not (host / "declared.json").exists()
+    assert (host / "declared.failed.json").exists()
+    # a later default run doesn't retry; --fetch-all does
+    monkeypatch.setattr(sitemaps, "fetch", _no_network)
+    row = _yes_row(data, _ctx(data, no_fetch=False), _kids("post"))
+    assert row["sitemaps_total"] == "?"
+    fake = FakeFetch({ROBOTS: "User-agent: *\nDisallow:\n", ROOT: "<html>404</html>"})
+    monkeypatch.setattr(sitemaps, "fetch", fake)
+    row = _yes_row(data, _ctx(data, no_fetch=False, fetch_all=True), _kids("post"))
+    # robots.txt read and /sitemap.xml answered without a sitemap: a fact
+    assert (row["sitemaps_given"], row["sitemaps_total"]) == (1, 1)
+    assert json.loads((host / "declared.json").read_text())["sitemaps"] == []
+    assert not (host / "declared.failed.json").exists()
+
+
+def test_cache_buster_duplicates_not_double_counted(data):
+    kids = _kids("post", "page", "event")
+    _robots_snapshot(data, [INDEX])
+    sitemaps._save_manifest(INDEX, str(_cache(data)), _index_xml(kids))
+    extra = "https://example.org/news-sitemap.xml"
+    given = [kids[0], kids[1], extra]
+    given += [u + "?v=2" for u in given]
+    row = _yes_row(data, _ctx(data), given)
+    assert (row["sitemaps_given"], row["sitemaps_total"]) == (3, 4)
+    not_listed = [e["url"] for e in row["sitemap_list"] if not e["in_index"]]
+    assert not_listed == [extra]
+
+
+def test_paged_extras_stay_distinct(data):
+    _robots_snapshot(data, [INDEX])
+    sitemaps._save_manifest(INDEX, str(_cache(data)), _index_xml(_kids("post")))
+    paged = [f"https://example.org/news.xml?page={i}" for i in (1, 2)]
+    row = _yes_row(data, _ctx(data), paged)
+    assert (row["sitemaps_given"], row["sitemaps_total"]) == (2, 3)

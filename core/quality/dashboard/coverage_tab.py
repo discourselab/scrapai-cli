@@ -5,6 +5,7 @@ all-spiders grid · notes & definitions — plus the copy-paste dedupe command b
 import re
 
 from core.quality.crawl_audit import LEGEND, STATUS_LEADS, fix_hints
+from core.quality.crawl_audit.report import sitemap_anchor
 from core.quality.crawl_audit.scoring import OUTCOME_BASIS
 
 from .widgets import (
@@ -16,6 +17,7 @@ from .widgets import (
     _esc,
     _flag_title,
     _flags_cell,
+    _link,
     _md_strip,
     _meter,
     _tip,
@@ -127,6 +129,20 @@ def _coverage_detail(project, r):
     return "".join(out)
 
 
+def _sitemap_cell(r):
+    """The sitemap column: `yes` spiders show `given/total`, linked to their
+    block in the sitemaps-given section (a row click ignores clicks on `a`);
+    every other row keeps its label. Sorting stays on the label."""
+    label = str(r.get("sitemap", ""))
+    given = r.get("sitemaps_given", "")
+    shown = _esc(label)
+    if label == "yes" and given not in ("", None):
+        n = f"{given}/{r.get('sitemaps_total', '?')}"
+        href = _esc("#" + sitemap_anchor(r.get("spider", "")), quote=True)
+        shown = f'<a href="{href}">{_esc(n)}</a>'
+    return f'<td data-key="{_esc(label)}">{shown}</td>'
+
+
 def _num_cell(v):
     """A raw right-aligned number cell (the MD columns the user built). '-'/'' pass through;
     non-numeric sorts to the bottom."""
@@ -179,7 +195,7 @@ def _cov_table(
             )
         cells += [
             f'<td class="mono" data-key="{_esc(spider.lower())}">{_esc(spider)} <span class="caret">▸</span></td>',
-            f'<td data-key="{_esc(str(r.get("sitemap", "")))}">{_esc(str(r.get("sitemap", "")))}</td>',
+            _sitemap_cell(r),
             _num_cell(r.get("sitemap_total", "-")),
             _num_cell(r.get("eligible", "-")),
             _num_cell(r.get("scraped", 0)),
@@ -461,6 +477,58 @@ def _status_section(project, label, rows):
     out.append(
         _cov_table(project, cat, _slug(label), select_mode=_SELECT_MODE.get(label))
     )
+    out.append("</div>")
+    return "".join(out)
+
+
+def _sitemaps_section(rows):
+    """The MD's 'Sitemaps given to spiders' section: one block per USE_SITEMAP
+    spider (given first, then not given) — top-level, not in a collapsed
+    drawer, so the sitemap-cell links always land on a visible block."""
+    srt = sorted(
+        (r for r in rows if r.get("sitemap") == "yes"),
+        key=lambda r: str(r.get("spider", "")).lower(),
+    )
+    if not srt:
+        return ""
+    out = [
+        '<div class="covsec"><h3 id="cov-sitemaps-given">Sitemaps given to '
+        f"spiders ({len(srt)})</h3>"
+        '<p class="hint">Per USE_SITEMAP spider: the sitemaps in its start '
+        "URLs (given) against every sitemap the site lists — the children of "
+        "the sitemap indexes its robots.txt declares, plus any declared leaf "
+        "sitemap. "
+        "<i>not listed in root index</i> = given, but not among those. "
+        "<code>?</code> = the site's total is unknown (see the note).</p>"
+    ]
+    for r in srt:
+        spider = str(r.get("spider", ""))
+        total = r.get("sitemaps_total", "?")
+        items = r.get("sitemap_list") or []
+        note = r.get("sitemaps_note") or ""
+        anchor = _esc(sitemap_anchor(spider), quote=True)
+        given_n = _esc(str(r.get("sitemaps_given", "")))
+        out.append(
+            f'<div class="smblock" id="{anchor}">'
+            f'<h4 class="mono">{_esc(spider)}</h4><p class="hint">'
+            f"{given_n} of {_esc(str(total))} given."
+            + (f" Note: {_esc(note)}." if note else "")
+            + "</p>"
+        )
+        for given in (True, False):
+            part = [e for e in items if bool(e.get("given")) == given]
+            if not part:
+                continue
+            lis = []
+            for e in part:
+                url = str(e.get("url", ""))
+                tag = ""
+                if given and not e.get("in_index", True) and total != "?":
+                    tag = " — <i>not listed in root index</i>"
+                lis.append(f"<li>{_link(url, url)}{tag}</li>")
+            head = "Given" if given else "Not given"
+            out.append(f"<p>{head} ({len(part)}):</p><ul>{''.join(lis)}</ul>")
+        out.append("</div>")
     out.append("</div>")
     return "".join(out)
 

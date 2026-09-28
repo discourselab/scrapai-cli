@@ -46,8 +46,9 @@ from core.quality.dashboard import write_dashboard
 @click.option(
     "--fetch-all",
     is_flag=True,
-    help="re-fetch every spider's sitemap (refresh the cache); default fetches "
-    "only spiders with no cached sitemap yet",
+    help="re-fetch every spider's sitemap and each site's root sitemap index "
+    "(refresh the cache, retry failures); default fetches only what isn't "
+    "cached yet",
 )
 @click.option(
     "--only", multiple=True, help="restrict to these spider names (repeatable)"

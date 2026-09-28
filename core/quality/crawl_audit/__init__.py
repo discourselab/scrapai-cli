@@ -16,7 +16,11 @@ Usage (via the CLI — this module is the engine behind `./scrapai audit`):
   ./scrapai audit --project myproject --fetch-all       # re-fetch every sitemap (refresh)
   ./scrapai audit --project proj --only site25_org --only site17_gov
 
-Sitemaps whose counts came from the crawl itself (crawl_stats) are never fetched.
+Sitemaps whose counts came from the crawl itself (crawl_stats) are never
+fetched for coverage. For the given/total sitemap listing of USE_SITEMAP
+spiders, the robots `Sitemap:` lines are read from disk (compliance snapshot,
+crawl witness) and each declared sitemap is fetched at most once per host,
+ever — cached, with failures remembered and re-tried only under --fetch-all.
 
 Coverage = scraped ÷ eligible, where eligible is the plain rule-matched sitemap
 count. Nothing is subtracted for URLs the crawl found dead or blocked — those are
@@ -24,6 +28,10 @@ pages the spider should have got, so they show as a shortfall.
 
 Outputs: data/<project>/_audit/{audit_<project>.md, crawl_audit.csv, coverage.csv}
 Sitemap cache:    data/<project>/_audit/sitemap_cache/<spider>_<n>/page.html
+                  data/<project>/_audit/sitemap_cache/_host/<host>/ — the
+                  declared root sitemaps: sm_<hash>/manifest.json (plus a
+                  .failed.json marker), declared.json (discovery result when
+                  robots lists none)
 Crawl-scan cache: data/<project>/_audit/scan_cache/<spider>.json — per-file crawl
                   COUNTS keyed by (size, mtime); unchanged crawl files reload from
                   it instead of re-reading GBs of JSONL. `--no-cache` ignores it.

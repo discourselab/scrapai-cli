@@ -87,7 +87,9 @@ def main():
         action="store_true",
         help="re-fetch every spider's sitemap (refresh the cache); the "
         "DEFAULT fetches only spiders with no cached sitemap yet. "
-        "Spiders whose counts came from the crawl are never fetched.",
+        "Spiders whose counts came from the crawl are never fetched for "
+        "coverage. Also refreshes the per-host root sitemap indexes and "
+        "retries ones that failed.",
     )
     ap.add_argument(
         "--per-cap",
@@ -364,7 +366,8 @@ def run(project, opts):
     write_outputs(project, rows, config_warnings, compliance)
     out = audit_dir(project)
     print(
-        f"\nDone. {state['global']} inspect fetches. "
+        f"\nDone. {state['global']} inspect fetches"
+        f" (+{state.get('index_budget', {}).get('global', 0)} for the sitemap listing). "
         f"Wrote {out}/audit_{project}.md, {out}/crawl_audit.csv, {out}/coverage.csv"
     )
     return {

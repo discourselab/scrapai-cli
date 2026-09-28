@@ -209,9 +209,12 @@ GOAL = (
 FETCH_MODES_NOTE = (
     "By default sitemaps are fetched only where none is cached yet "
     "(sites already confirmed to have no sitemap aren't re-probed, and "
-    "sitemaps recorded during the crawl are never fetched). Add "
-    "**`--no-fetch`** to suppress sitemap fetching entirely (cache only), "
-    "or **`--fetch-all`** to re-fetch every sitemap (refresh the cache).\n\n"
+    "sitemaps recorded during the crawl are never fetched for coverage). "
+    "For the `given/total` sitemap listing, each sitemap a site's robots.txt "
+    "declares is fetched once per host and cached, never re-probed after a "
+    "failure. Add **`--no-fetch`** to suppress sitemap fetching entirely "
+    "(cache only), or **`--fetch-all`** to re-fetch every sitemap (refresh "
+    "the cache, retrying failures).\n\n"
 )
 
 DUPES_EXPLAINER = (
@@ -252,8 +255,13 @@ NOTES_AND_DEFINITIONS = (
     "(huge-index totals are floors). `-` = no sitemap.\n\n"
     "**Columns**\n\n"
     "- **sitemap** — coverage-denominator source: `yes` = USE_SITEMAP "
-    "configured; `found` = no USE_SITEMAP but a *usable* sitemap was "
-    "auto-discovered (robots.txt → `/sitemap.xml`); `ignored` = deliberately "
+    "configured, shown as `given/total` — how many of the site's sitemaps the "
+    "spider's `start_urls` name, of all it lists (the children of the indexes "
+    "its robots.txt declares, plus declared leaf sitemaps; `?` = unknown "
+    "yet). "
+    "The cell links to the spider's list in *Sitemaps given to spiders*; "
+    "`found` = no USE_SITEMAP but a *usable* sitemap was auto-discovered "
+    "(robots.txt → `/sitemap.xml`); `ignored` = deliberately "
     "skipped via `audit_sitemap_skip.json` (the reason is in `flags`); `no` = "
     "no sitemap found at all. A discovered sitemap that parsed to 0 usable URLs "
     "stays `found` and is flagged `found sitemap empty` for review.\n"

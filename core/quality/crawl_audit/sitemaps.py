@@ -1,11 +1,15 @@
 """Sitemap fetch/discovery/recursion, the on-disk sitemap cache, and rule-matching
 of sitemap URLs against a spider's allow/deny patterns."""
 
+import datetime
 import glob
+import hashlib
+import json
 import os
 import re
 import shutil
 import subprocess
+from urllib.parse import urlparse
 
 from core.quality import _env
 
@@ -67,6 +71,28 @@ def discover_sitemap(
     True (set for CLOUDFLARE/BROWSER/CURL_CFFI spiders) goes straight to browser."""
     if not host:
         return []
+    return _discover(host, project, spider, cache_dir, state, browser, browser_retry)[0]
+
+
+def _discover(
+    host,
+    project,
+    spider,
+    cache_dir,
+    state,
+    browser,
+    browser_retry,
+    budget=None,
+    robots_known=False,
+    sitemap_text=None,
+):
+    """discover_sitemap's probes → (found, answered, sitemap_text). `answered` is
+    True when the result is a fact rather than a failure: robots.txt came back
+    as robots (not empty, not an HTML page) — or `robots_known`: it is on disk
+    and lists no sitemap, so it isn't fetched again — and /sitemap.xml came
+    back with a body. `sitemap_text` is an already-cached /sitemap.xml body
+    (the probe is then skipped). Every probe goes through fetch_once, so a URL
+    already fetched this run is never fetched again."""
     base = "https://" + host
 
     def probe(url, suffix, needs_loc):
@@ -76,24 +102,29 @@ def discover_sitemap(
         # robots.txt is text/plain, so an HTML body is a Cloudflare/challenge or
         # soft-404 page, not robots — a non-empty CF page used to sail through as
         # a valid robots.txt with no Sitemap: directive, masking a real sitemap.
-        out = os.path.join(cache_dir, spider + suffix)
-        text = fetch(url, out, project, browser, state)
-        if needs_loc:
-            blocked = not text or not LOC_RE.search(text)
-        else:
-            blocked = not text or _looks_like_html(text)
-        if blocked and browser_retry and not browser:
-            text = fetch(url, out, project, True, state)  # blocked plain → browser
-        return text
+        def usable(text):
+            if needs_loc:
+                return bool(text) and bool(LOC_RE.search(text))
+            return bool(text) and not _looks_like_html(text)
 
-    robots = probe(base + "/robots.txt", "_robots", needs_loc=False)
-    found = SITEMAP_DIRECTIVE.findall(robots or "")
-    if found:
-        return found
-    sm = probe(base + "/sitemap.xml", "_smprobe", needs_loc=True)
+        out = os.path.join(cache_dir, spider + suffix)
+        return fetch_once(
+            url, out, project, browser, state, browser_retry, usable, budget
+        )
+
+    robots_ok = robots_known
+    if not robots_known:
+        robots = probe(base + "/robots.txt", "_robots", needs_loc=False)
+        found = SITEMAP_DIRECTIVE.findall(robots or "")
+        if found:
+            return found, True, None
+        robots_ok = bool(robots) and not _looks_like_html(robots)
+    sm = sitemap_text
+    if sm is None:
+        sm = probe(base + "/sitemap.xml", "_smprobe", needs_loc=True)
     if sm and LOC_RE.search(sm):
-        return [base + "/sitemap.xml"]
-    return []
+        return [base + "/sitemap.xml"], True, sm
+    return [], robots_ok and bool(sm), sm
 
 
 # --------------------------------------------------------------------------- fetch
@@ -148,6 +179,51 @@ def fetch(url, outdir, project, browser, state):
     return text
 
 
+URL_FILE = "url.txt"  # beside a fetched page.html: the URL it came from
+
+
+def read_page(path):
+    """A cached page's text, or None when it is missing or empty."""
+    try:
+        if path and os.path.getsize(path) > 0:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                return fh.read()
+    except OSError:
+        pass
+    return None
+
+
+def fetch_once(url, outdir, project, browser, state, retry, usable, budget=None):
+    """fetch() plus the browser retry, at most ONCE per URL per audit run: a
+    URL already fetched this run (by any spider or step) is served from that
+    copy, copied into `outdir` so the caller's cache layout still holds, and a
+    URL whose fetch failed this run isn't tried again. `usable(text)` False
+    triggers the browser retry. `budget` is the {global, global_cap} the fetch
+    is charged to (default `state`); the per-run record lives in `state`."""
+    budget = state if budget is None else budget
+    done = state.setdefault("fetched", {})
+    if url in done:
+        src = done[url]
+        if src is None:
+            return None
+        text = read_page(src)
+        if text is not None:
+            dst = os.path.join(outdir, "page.html")
+            if os.path.abspath(src) != os.path.abspath(dst):
+                shutil.rmtree(outdir, ignore_errors=True)
+                os.makedirs(outdir, exist_ok=True)
+                shutil.copyfile(src, dst)
+            return text
+        # the earlier copy is gone (pruned): nothing on disk to reuse
+    text = fetch(url, outdir, project, browser, budget)
+    if not usable(text) and retry and not browser:
+        text = fetch(url, outdir, project, True, budget)  # blocked plain → browser
+    if text or budget["global"] < budget["global_cap"]:
+        # a miss caused only by an exhausted budget isn't a site answer
+        done[url] = os.path.join(outdir, "page.html") if text else None
+    return text
+
+
 def parse_sitemap(text):
     if not text:
         return False, []
@@ -191,6 +267,10 @@ def next_sitemap_page(url):
     return None
 
 
+def _has_locs(text):
+    return bool(text) and bool(LOC_RE.search(text))
+
+
 def fetch_spider_sitemaps(spider, sp, project, cache_dir, state, browser_retry):
     """Recurse <sitemapindex> children AND follow paginated sitemaps from
     start_urls; cache files; return notes."""
@@ -219,9 +299,12 @@ def fetch_spider_sitemaps(spider, sp, project, cache_dir, state, browser_retry):
         outdir = os.path.join(cache_dir, f"{spider}_{idx}")
         idx += 1
         fetches += 1
-        text = fetch(url, outdir, project, browser, state)
-        if (not text or not LOC_RE.search(text)) and browser_retry and not browser:
-            text = fetch(url, outdir, project, True, state)  # CF/JS retry
+        text = fetch_once(
+            url, outdir, project, browser, state, browser_retry, _has_locs
+        )  # CF/JS retry inside
+        if text:
+            with open(os.path.join(outdir, URL_FILE), "w") as fh:
+                fh.write(url)  # lets the sitemap listing reuse this copy
         is_index, locs = parse_sitemap(text)
         if not locs:
             notes.append(f"0 locs: {url}")
@@ -250,6 +333,217 @@ def fetch_spider_sitemaps(spider, sp, project, cache_dir, state, browser_retry):
                 page_sigs.add(sig)  # stop if a later page repeats this content
                 queue.append(nxt)
     return fetches, "; ".join(notes[:3])
+
+
+# -------------------------------------------------------- root sitemap indexes
+# The given/total sitemap listing needs the children of each sitemap the site
+# declares in robots.txt. Politeness first — nothing already on disk is fetched
+# again, and nothing is fetched twice in one run:
+#   - a declared sitemap is read from disk first: its host manifest, else the
+#     copy a spider's own sitemap fetch cached (sitemap_cache/<spider>_N), else
+#     the copy fetched earlier in this run (fetch_once). Only when none exists
+#     is it fetched — AT MOST ONCE per host, ever — and cached under
+#     sitemap_cache/_host/<host>/ as a manifest of its own <loc>s (children are
+#     never fetched).
+#   - a failed fetch leaves a dated marker and is never retried except under
+#     --fetch-all, which also refreshes cached manifests (once per run:
+#     `state["index_seen"]` stops a second spider on the same host from
+#     re-fetching; a URL the spider's own fetch already got this run is reused).
+#   - these fetches have their own small budget (INDEX_FETCH_CAP), so they can
+#     never exhaust the coverage fetches' --global-cap or trip sitemap-cap-hit.
+# `_host` can never match a spider's ^<spider>_\d+$ cache dirs, so none of this
+# counts as spider cache.
+INDEX_FETCH_CAP = 100
+
+
+def index_budget(state):
+    """The listing's own fetch budget, kept inside `state` for the run."""
+    return state.setdefault(
+        "index_budget", {"global": 0, "global_cap": INDEX_FETCH_CAP}
+    )
+
+
+def host_cache_dir(cache_dir, host):
+    return os.path.join(cache_dir, "_host", (host or "").lower() or "_nohost")
+
+
+def _index_dir(cache_dir, url):
+    key = hashlib.sha1(url.encode("utf-8")).hexdigest()[:12]
+    host_dir = host_cache_dir(cache_dir, urlparse(url).netloc)
+    return os.path.join(host_dir, "sm_" + key)
+
+
+def _write_json(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(data, fh, indent=1)
+    os.replace(tmp, path)
+
+
+def _read_json(path):
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _budget_left(state):
+    return state["global"] < state["global_cap"]
+
+
+def spider_cached_urls(spider, cache_dir):
+    """{url: page.html path} for what a spider's own sitemap fetch cached under
+    sitemap_cache/<spider>_N — a pure disk read. Only dirs that name their URL
+    (url.txt, written since the listing existed) count: an older cache's dirs
+    can't be tied to a URL reliably (the spider's start_urls may have changed
+    since, and the fetch order changed with them), and a wrongly attributed
+    index would misreport the site's sitemaps — so such a declared sitemap is
+    fetched once into the host cache instead."""
+    out = {}
+    for d in spider_cache_dirs(spider, cache_dir):
+        page = os.path.join(d, "page.html")
+        named = read_page(os.path.join(d, URL_FILE))
+        if named and read_page(page) is not None:
+            out.setdefault(named.strip(), page)
+    return out
+
+
+def _save_manifest(url, cache_dir, text):
+    """Record a fetched sitemap's own <loc>s as its manifest (clearing any
+    failure marker) and return the manifest."""
+    d = _index_dir(cache_dir, url)
+    is_index, locs = parse_sitemap(text)
+    manifest = {
+        "url": url,
+        "is_index": is_index,
+        "children": locs if is_index else [],
+        "fetched": datetime.date.today().isoformat(),
+    }
+    _write_json(os.path.join(d, "manifest.json"), manifest)
+    try:
+        os.remove(d + ".failed.json")
+    except OSError:
+        pass
+    return manifest
+
+
+def index_manifest(url, project, cache_dir, state, mode, browser, retry, on_disk=None):
+    """({url, is_index, children, fetched}, None) for a declared sitemap, or
+    (None, why) when its children are unknown. `mode` is the audit fetch mode
+    (none / missing / all); `on_disk` maps URLs to pages a spider's own fetch
+    cached (spider_cached_urls). Read from disk first and fetched at most once
+    per URL (see above); an exhausted fetch budget is not a site failure, so it
+    leaves no marker."""
+    d = _index_dir(cache_dir, url)
+    mf, failed = os.path.join(d, "manifest.json"), d + ".failed.json"
+    seen = state.setdefault("index_seen", set())
+    today = datetime.date.today().isoformat()
+    done = state.get("fetched", {})
+    if url in done:
+        # fetched earlier in THIS run (the spider's coverage fetch): reuse it
+        seen.add(url)
+        text = read_page(done[url]) if done[url] else None
+        if _has_locs(text):
+            return _save_manifest(url, cache_dir, text), None
+        prior = _read_json(mf)
+        if prior is not None:
+            return prior, None
+        _write_json(failed, {"url": url, "date": today})
+        return None, f"fetch failed {today}"
+    if mode != "all" or url in seen:
+        cached = _read_json(mf)
+        if cached is not None:
+            return cached, None
+        text = read_page((on_disk or {}).get(url))
+        if _has_locs(text):
+            return _save_manifest(url, cache_dir, text), None
+        marker = _read_json(failed)
+        if marker is not None:
+            return None, f"fetch failed {marker.get('date', '')}".strip()
+        if url in seen:
+            return None, "fetch failed"
+    if mode == "none":
+        return None, "not fetched (--no-fetch)"
+    budget = index_budget(state)
+    if not _budget_left(budget):
+        return None, "fetch budget exhausted"
+    seen.add(url)
+    text = fetch_once(url, d, project, browser, state, retry, _has_locs, budget)
+    if _has_locs(text):
+        return _save_manifest(url, cache_dir, text), None
+    prior = _read_json(mf)  # a failed refresh keeps the previous manifest
+    if prior is not None:
+        return prior, None
+    if not _budget_left(budget):
+        return None, "fetch budget exhausted"
+    _write_json(failed, {"url": url, "date": today})
+    return None, f"fetch failed {today}"
+
+
+def discovered_sitemaps(
+    host, project, cache_dir, state, mode, browser, retry, robots_known=False, seeds=()
+):
+    """(sitemaps, why) for a host with no robots `Sitemap:` line on disk:
+    discovery (robots.txt, then /sitemap.xml) run at most once per host and
+    remembered in _host/<host>/declared.json. `robots_known` = robots.txt is on
+    disk and lists none, so it isn't fetched again; `seeds` are cached
+    /sitemap.xml copies (a spider's earlier probe or sitemap fetch) read before
+    any fetch. An empty answer is stored only when it is a fact — robots.txt
+    read (or on disk) and /sitemap.xml answered without a sitemap; a blocked or
+    failed discovery leaves a dated marker instead, retried only by --fetch-all,
+    and returns (None, why): the total stays unknown."""
+    hd = host_cache_dir(cache_dir, host)
+    path = os.path.join(hd, "declared.json")
+    failed = os.path.join(hd, "declared.failed.json")
+    seen = state.setdefault("index_seen", set())
+    key = "declared:" + (host or "")
+    if mode != "all" or key in seen:
+        cached = _read_json(path)
+        if cached is not None:
+            return cached.get("sitemaps", []), None
+        marker = _read_json(failed)
+        if marker is not None:
+            date = marker.get("date", "")
+            return None, f"sitemap discovery failed {date}; retried only by --fetch-all"
+        if key in seen:
+            return None, "sitemap discovery failed"
+    if not host:
+        return None, "no host to discover"
+    base = "https://" + host
+    sm_text = None
+    if mode != "all":
+        for page in list(seeds) + [os.path.join(hd, "_smprobe", "page.html")]:
+            sm_text = read_page(page)
+            if sm_text is not None:
+                break
+    if mode == "none" and not (robots_known and sm_text is not None):
+        return None, "not fetched (--no-fetch)"
+    budget = index_budget(state)
+    if not _budget_left(budget) and not (robots_known and sm_text is not None):
+        return None, "fetch budget exhausted"
+    seen.add(key)
+    os.makedirs(hd, exist_ok=True)
+    found, answered, sm_text = _discover(
+        host, project, "", hd, state, browser, retry, budget, robots_known, sm_text
+    )
+    date = datetime.date.today().isoformat()
+    if found == [base + "/sitemap.xml"] and sm_text:
+        # the /sitemap.xml answer already holds the sitemap: keep it as the
+        # manifest so the same URL isn't fetched a second time
+        _save_manifest(found[0], cache_dir, sm_text)
+    if found or answered:
+        _write_json(path, {"host": host, "sitemaps": found, "date": date})
+        try:
+            os.remove(failed)
+        except OSError:
+            pass
+        return found, None
+    if not _budget_left(budget):
+        return None, "fetch budget exhausted"  # not an answer worth keeping
+    _write_json(failed, {"host": host, "date": date})
+    return None, f"sitemap discovery failed {date}; retried only by --fetch-all"
 
 
 # --------------------------------------------------------------------------- match

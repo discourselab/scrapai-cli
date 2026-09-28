@@ -14,11 +14,21 @@ from .sitemaps import (
     collect_pages,
     compile_deny,
     discover_sitemap,
+    discovered_sitemaps,
     eligible_urls,
     fetch_spider_sitemaps,
+    index_manifest,
+    parse_sitemap,
+    read_page,
     spider_cache_dirs,
+    spider_cached_urls,
 )
-from .spiders_db import crawl_ran, crawl_stats_outcomes, crawl_stats_sitemap
+from .spiders_db import (
+    crawl_ran,
+    crawl_stats_outcomes,
+    crawl_stats_sitemap,
+    robots_sitemaps_on_disk,
+)
 
 STALE_DAYS = 30  # newest crawl older than this -> a ⚠ mark in the `stale` column
 THIN_CHARS = 1000  # median content below this -> a `thin?` flag (over-broad rules?)
@@ -85,6 +95,142 @@ def _human_k(v):
     if v >= 10000:
         return f"{v / 1000:.0f}k"
     return f"{v / 1000:.1f}k"
+
+
+# ------------------------------------------------------- sitemaps given/total
+def _is_robots_txt(url):
+    path = urlparse(url.strip()).path.rstrip("/").lower()
+    return path.endswith("/robots.txt")
+
+
+def _no_query(n):
+    """A norm_url key without its query string: a cache-buster (`?v=2`) on a
+    sitemap URL names the same sitemap."""
+    return n.split("?", 1)[0]
+
+
+def sitemap_listing(name, sp, ctx):
+    """Which of the site's sitemaps a USE_SITEMAP spider was given, for the
+    `given/total` sitemap cell and the per-spider list. Returns
+    {given, total, list, note}: `list` = [{url, given, in_index}], given first;
+    `total` is "?" while a declared sitemap's children are unknown.
+
+    The site's sitemaps = the union of every declared index's children plus the
+    declared leaf sitemaps (robots `Sitemap:` lines, read from disk first; the
+    index URLs themselves aren't counted). A start_url that is robots.txt gives
+    them all; one that IS a declared index gives all its children, and so does
+    one whose cached copy (the spider's own sitemap fetch) is a sitemap index —
+    e.g. /sitemap.xml serving the same index robots declares as
+    /sitemap_index.xml. Any other start_url not among them is added, marked
+    in_index False ("not listed in root index" — e.g. a nested index's
+    grandchild). URLs compare via norm_url; when that finds no match, the query
+    string is ignored if exactly one of the site's sitemaps then matches, so a
+    cache-busted copy (`?v=2`) is the same sitemap, not an extra one."""
+    args = ctx.opts
+    mode = (
+        "none"
+        if getattr(args, "no_fetch", False)
+        else ("all" if getattr(args, "fetch_all", False) else "missing")
+    )
+    retry = not getattr(args, "no_browser_retry", False)
+    fetch_args = (ctx.project, ctx.cache_dir, ctx.state, mode)
+    fetch_args += (sp["browser"], retry)
+    # what this spider's own sitemap fetch cached, by URL — read, never fetched
+    on_disk = spider_cached_urls(name, ctx.cache_dir)
+    declared = robots_sitemaps_on_disk(ctx.project, sp["host"], name)
+    notes = []
+    if not declared:
+        # nothing declared on disk → discovery (robots.txt, /sitemap.xml),
+        # once per host; None = it hasn't run or failed: the total stays unknown.
+        # robots.txt already on disk isn't fetched again, and a cached
+        # /sitemap.xml copy answers the probe without a fetch.
+        robots_known = declared is not None
+        seeds = [os.path.join(ctx.cache_dir, name + "_smprobe", "page.html")]
+        root = on_disk.get("https://" + (sp["host"] or "") + "/sitemap.xml")
+        if root:
+            seeds.insert(0, root)
+        declared, why = discovered_sitemaps(
+            sp["host"], *fetch_args, robots_known=robots_known, seeds=seeds
+        )
+        if declared is None:
+            head = "robots.txt lists none" if robots_known else "robots.txt not on disk"
+            notes.append(f"{head}; {why}")
+    known = {}  # norm → url, in the site's own order
+    children = {}  # declared index (norm) → its children (norm)
+    unknown = set()  # declared sitemaps whose children we don't know
+    for u in declared or []:
+        m, why = index_manifest(u, *fetch_args, on_disk=on_disk)
+        if m is None:
+            unknown.add(norm_url(u))
+            notes.append(f"{u}: {why}")
+        elif m.get("is_index"):
+            kids = m.get("children") or []
+            children[norm_url(u)] = [norm_url(k) for k in kids]
+            for k in kids:
+                known.setdefault(norm_url(k), k)
+        else:
+            known.setdefault(norm_url(u), u)
+    loose = {}  # norm without query → the site's sitemaps (norm) it could be
+    for n in list(known) + list(children):
+        loose.setdefault(_no_query(n), set()).add(n)
+
+    def match(u):
+        n = norm_url(u)
+        if n in known or n in children:
+            return n
+        cands = loose.get(_no_query(n), ())
+        return next(iter(cands)) if len(cands) == 1 else n
+
+    given, extra = set(), {}
+    for u in sp["start_urls"]:
+        n = match(u)
+        if _is_robots_txt(u):
+            given |= set(known)
+            continue
+        if n in children:
+            given |= set(children[n])
+            continue
+        if n in known:
+            given.add(n)
+            continue
+        is_index, kids = parse_sitemap(read_page(on_disk.get(u)))
+        for k in kids if is_index else [u]:
+            kn = match(k)
+            if kn in known:
+                given.add(kn)
+            else:
+                extra.setdefault(kn, k)
+    # a cache-busted copy of a given sitemap the site doesn't list is still
+    # that one sitemap; distinct queries (`?page=2`) stay distinct sitemaps
+    plain = {n for n in extra if "?" not in n}
+    extra = {
+        n: u for n, u in extra.items() if "?" not in n or _no_query(n) not in plain
+    }
+    complete = declared is not None and not unknown
+    listed = [
+        {"url": u, "given": True, "in_index": True}
+        for n, u in known.items()
+        if n in given
+    ]
+    # while a declared sitemap is unread, a given one can't be called "not
+    # listed" — it may be among that sitemap's children; and a site that
+    # declares none has no root index to be missing from
+    judged = complete and bool(declared)
+    for u in extra.values():
+        listed.append({"url": u, "given": True, "in_index": not judged})
+    listed += [
+        {"url": u, "given": False, "in_index": True}
+        for n, u in known.items()
+        if n not in given
+    ]
+    if declared == []:
+        notes.append("the site declares no sitemap (robots.txt, /sitemap.xml)")
+    return {
+        "given": sum(1 for e in listed if e["given"]),
+        "total": len(listed) if complete else "?",
+        "list": listed,
+        "note": "; ".join(notes),
+    }
 
 
 # --------------------------------------------------------------------- deltafetch
@@ -267,6 +413,7 @@ def score_spider(name, sp, c, ctx):
         # so that empty state surfaces for review instead of being hidden as `no`.
         if entry or spider_cache_dirs(name, cache_dir):
             label = "found"
+    listing = sitemap_listing(name, sp, ctx) if label == "yes" else None
     eligible_cell = "-"
     matched = ""
     if sm and label == "yes":
@@ -421,7 +568,15 @@ def score_spider(name, sp, c, ctx):
         age_d = int((time.time() - newest) / 86400)
         if age_d > STALE_DAYS:
             stale = f"⚠ {age_d}d"  # newest crawl older than STALE_DAYS
-    if state["global"] >= state["global_cap"] and label in ("yes", "found"):
+    # a crawl-recorded denominator depends on no fetch, so the cap can't
+    # truncate it (the sitemap listing's own fetches have a separate budget
+    # and never count toward it)
+    crawl_counted = bool(sm) and label == "yes"
+    if (
+        state["global"] >= state["global_cap"]
+        and label in ("yes", "found")
+        and not crawl_counted
+    ):
         flags.append("sitemap-cap-hit")  # coverage data truncated
         concern = True  # review trigger (coverage)
 
@@ -476,6 +631,11 @@ def score_spider(name, sp, c, ctx):
         "spider": name,
         "sitemap": label,
         "sitemap_total": total,
+        # USE_SITEMAP only: sitemaps given of the site's total ("" elsewhere)
+        "sitemaps_given": listing["given"] if listing else "",
+        "sitemaps_total": listing["total"] if listing else "",
+        "sitemap_list": listing["list"] if listing else [],
+        "sitemaps_note": listing["note"] if listing else "",
         "eligible": eligible_cell,
         "scraped": urls,  # unique HTML article URLs
         "unique": unique_total,  # ALL unique URLs incl. pdf rows (dupe math)

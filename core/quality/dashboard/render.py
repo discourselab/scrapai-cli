@@ -13,6 +13,7 @@ from .coverage_tab import (
     _dupes_section,
     _health_strip,
     _notes_definitions,
+    _sitemaps_section,
     _status_section,
     _status_summary,
 )
@@ -98,6 +99,7 @@ def render_dashboard(
             + _dupes_section(project, coverage_rows)
             + clean_sections
             + _all_spiders_table(project, coverage_rows)
+            + _sitemaps_section(coverage_rows)
             + _notes_definitions()
         )
         if coverage_rows

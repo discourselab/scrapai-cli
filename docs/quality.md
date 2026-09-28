@@ -41,7 +41,7 @@ Outputs under `data/<project>/_audit/`:
 | `--refresh` | re-capture compliance for already-snapshotted domains (appends a dated snapshot, keeping history) and retry failed ones |
 | `--reset` | re-capture compliance, OVERWRITING prior dated snapshots (no history) |
 | `--no-fetch` | never fetch sitemaps; use only cached files + crawl-recorded counts |
-| `--fetch-all` | re-fetch every spider's sitemap (refreshes the cache; prunes the previous generation) |
+| `--fetch-all` | re-fetch every spider's sitemap (refreshes the cache; prunes the previous generation) and each site's declared root sitemaps, retrying any that failed |
 | `--only <spider>` | recompute only these spiders (repeatable); every other spider's row carries over from the previous report, so the output stays project-wide |
 | `--no-cache` | ignore the per-file crawl-scan cache; re-read every `crawls/*.jsonl` |
 | `--per-cap N` / `--global-cap N` | max sitemap fetches per spider (80) / overall (2000) |
@@ -96,6 +96,23 @@ leg`, and a blocked or failed share over the threshold still flags, with the sam
 `last leg` caveat in the flag. The dashboard's row detail labels per-attempt and
 last-leg figures as such.
 
+**Sitemaps given.** For a `USE_SITEMAP` spider the `sitemap` cell reads `given/total`
+(e.g. `4/13`) instead of `yes`: how many of the site's sitemaps its `start_urls`
+name, of all the site lists — the children of every sitemap index its robots.txt
+declares, plus declared leaf sitemaps. The robots `Sitemap:` lines come from disk
+(compliance snapshot, crawl witness) where possible, and each declared sitemap is
+read from disk first — its host manifest, or the copy the spider's own sitemap fetch
+cached. Only what isn't on disk is fetched, once, on the listing's own small budget
+(it never counts toward `--global-cap` or raises `sitemap-cap-hit`). A `start_url`
+that is robots.txt, or is itself a declared index, counts as giving all of it, and so
+does one whose cached copy is a sitemap index (e.g. `/sitemap.xml` serving the
+declared `/sitemap_index.xml`); a cache-busted copy (`?v=2`) of a given sitemap counts
+once. A given sitemap the site doesn't list is added to the total and marked *not
+listed in root index*. `?` = the total is unknown (not fetched under `--no-fetch`, or
+a fetch or the sitemap discovery failed — retried only by `--fetch-all`). The cell
+links to the spider's list in *Sitemaps given to spiders*, at the end of the report
+and under the coverage tables in the dashboard.
+
 ### Review records (human-owned)
 
 Two per-project JSON files under `_audit/` carry HUMAN verdicts — agents may
@@ -118,6 +135,14 @@ Two per-project JSON files under `_audit/` carry HUMAN verdicts — agents may
   re-fetch replaces the spider's whole previous generation. `_smprobe` /
   `_robots` / `_nositemap` record discovery results so the default (`missing`)
   mode never re-probes a resolved site.
+- `sitemap_cache/_host/<host>/` — the sitemaps a site's robots.txt declares, for
+  the `given/total` listing: `sm_<hash>/manifest.json` holds the sitemap's own
+  `<loc>`s (children are never fetched), `sm_<hash>.failed.json` marks a failed
+  fetch, `declared.json` records a discovery answer when robots.txt lists none
+  (`declared.failed.json` a blocked or failed discovery — never stored as "no
+  sitemap"). Each is fetched at most once per host, ever; failures are retried only
+  by `--fetch-all`. robots.txt already on disk and a cached `/sitemap.xml` probe are
+  never fetched again.
 - `compliance/<org>/<date>/` — dated compliance snapshots (robots.txt, legal
   pages, `compliance.json`). Written only for REACHABLE domains; an unreachable
   domain gets `_capture_failed.json` instead (retried only with `--refresh`).

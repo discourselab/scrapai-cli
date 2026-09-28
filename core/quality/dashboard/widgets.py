@@ -112,7 +112,10 @@ COLUMN_DEFS = {
     "default links_only mode). (N ext) = hosts outside the spider's own "
     "domains — external repositories/citations.",
     "status": "Solution family — the single action this spider needs. Hover the chip for its meaning.",
-    "sitemap": "Coverage-denominator source: yes (USE_SITEMAP) · found (auto-discovered) · ignored · no.",
+    "sitemap": "Coverage-denominator source: yes (USE_SITEMAP) · found "
+    "(auto-discovered) · ignored · no. A USE_SITEMAP spider shows given/total "
+    "instead of yes: the site's sitemaps in its start URLs, of all the site "
+    "lists (? = total unknown) — click for the list.",
     "coverage": "scraped ÷ eligible — the fraction of the pages it should "
     "have that it actually got. The bar stops at 100%; the number shows the "
     f"true value (over {OVER_EXPECTED_PCT}% with more than {OVER_EXPECTED_MIN} "

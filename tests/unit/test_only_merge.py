@@ -21,12 +21,24 @@ pytestmark = pytest.mark.unit
 
 
 # ------------------------------------------------------------------- audit (csv)
+def _entry(url, given):
+    return {"url": url, "given": given, "in_index": True}
+
+
 def _row(spider, **over):
     """A full crawl_audit row (every CSV_FIELDS key) with plausible defaults."""
     r = {
         "spider": spider,
         "sitemap": "yes",
         "sitemap_total": 120,
+        "sitemaps_given": 2,
+        "sitemaps_total": 3,
+        "sitemap_list": [
+            _entry("https://a.test/post-sitemap.xml", True),
+            _entry("https://a.test/page-sitemap.xml", True),
+            _entry("https://a.test/tag-sitemap.xml", False),
+        ],
+        "sitemaps_note": "",
         "eligible": "100",
         "scraped": 90,
         "pdf": 3,
@@ -63,6 +75,9 @@ def test_read_csv_rows_round_trips_typed(tmp_path):
             "b_org",
             sitemap="no",
             sitemap_total="-",
+            sitemaps_given="",
+            sitemaps_total="",
+            sitemap_list=[],
             eligible="-",
             coverage_pct="",
             stale="⚠ 40d",

@@ -1,5 +1,5 @@
-"""Spider metadata from the DB, per-spider crawl-stats readers, and the audit
-output directory."""
+"""Spider metadata from the DB, per-spider crawl-stats readers, the robots
+`Sitemap:` lines already on disk, and the audit output directory."""
 
 import json
 import os
@@ -7,6 +7,14 @@ from urllib.parse import urlparse
 
 from core.quality._env import DATA_DIR
 from core.quality import _env
+from core.quality.compliance_capture.store import (
+    DATE_RE,
+    latest_crawl_file,
+    norm_domain,
+    slug,
+)
+
+from .sitemaps import SITEMAP_DIRECTIVE, _looks_like_html
 
 
 def audit_dir(project):
@@ -152,6 +160,64 @@ def crawl_stats_outcomes(project, spider):
         "resumed": bool(d.get("resumed")),
         "summed": bool(d.get("summed")),
     }
+
+
+def _read_text(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def robots_sitemaps_on_disk(project, host, spider):
+    """The site's robots.txt `Sitemap:` lines, from what is ALREADY on disk —
+    zero fetches. Sources, unioned in this order (deduped, first spelling
+    kept): the latest compliance snapshot for the host (its compliance.json
+    robots.sitemaps and the stored robots.txt), the spider's newest crawl
+    witness crawls/robots_<date>.txt, and the robots.txt an earlier sitemap
+    discovery cached under sitemap_cache/<spider>_robots/. Returns the list
+    (possibly empty: robots exist but declare no sitemap) or None when no
+    robots.txt is on disk at all, so the caller can tell "none declared" from
+    "never looked"."""
+    texts, declared = [], []
+    audit = os.path.join(DATA_DIR, project, "_audit")
+    if host:
+        org = os.path.join(audit, "compliance", slug(norm_domain(host)))
+        dates = sorted(
+            d
+            for d in (os.listdir(org) if os.path.isdir(org) else [])
+            if DATE_RE.match(d)
+        )
+        if dates:
+            snap = os.path.join(org, dates[-1])
+            try:
+                with open(os.path.join(snap, "compliance.json")) as fh:
+                    robots = json.load(fh).get("robots") or {}
+                if robots.get("fetched"):
+                    texts.append("")  # fetched, even if it lists no sitemap
+                declared += robots.get("sitemaps") or []
+            except (OSError, json.JSONDecodeError, AttributeError):
+                pass
+            texts.append(_read_text(os.path.join(snap, "robots.txt")))
+    spider_dir = os.path.join(DATA_DIR, project, spider)
+    witness = latest_crawl_file(spider_dir, "robots")
+    if witness:
+        texts.append(witness[1])
+    cached = os.path.join(audit, "sitemap_cache", spider + "_robots")
+    texts.append(_read_text(os.path.join(cached, "page.html")))
+    # an HTML body is a challenge / soft-404 page, not robots — no evidence
+    texts = [t for t in texts if t is not None and not _looks_like_html(t)]
+    if not texts and not declared:
+        return None
+    for t in texts:
+        declared += SITEMAP_DIRECTIVE.findall(t)
+    out, seen = [], set()
+    for u in declared:
+        if u.strip() and u.strip() not in seen:
+            seen.add(u.strip())
+            out.append(u.strip())
+    return out
 
 
 # ----------------------------------------------------------------------------- DB

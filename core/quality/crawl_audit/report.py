@@ -2,6 +2,8 @@
 helper per markdown section (the section order lives in write_outputs)."""
 
 import csv
+import html
+import json
 import os
 
 from .scoring import NO_OUTCOME, PER_ATTEMPT_MARK
@@ -55,13 +57,18 @@ def compl_notes(e):
 
 # crawl_audit.csv columns + their read-back types, in the score_spider() row order.
 # ONE structure drives both write_csvs and read_csv_rows, so writer and reader can't
-# drift. `int` columns are cast back on read; the two that mix a count with a text
-# placeholder ("-" sitemap_total, "" coverage_pct) keep the placeholder as-is.
-# `eligible` stays str on purpose — scoring stores it as str(...) even when numeric.
+# drift. `int` columns are cast back on read; the ones that mix a count with a
+# text placeholder ("-" sitemap_total, "" coverage_pct, ""/"?" sitemaps_*) keep
+# the placeholder as-is. `list` columns are stored as a JSON string. `eligible`
+# stays str on purpose — scoring stores it as str(...) even when numeric.
 CSV_FIELDS = {
     "spider": str,
     "sitemap": str,
     "sitemap_total": int,
+    "sitemaps_given": int,
+    "sitemaps_total": int,
+    "sitemap_list": list,
+    "sitemaps_note": str,
     "eligible": str,
     "scraped": int,
     "pdf": int,
@@ -90,6 +97,10 @@ CSV_FIELDS = {
 
 def write_csvs(out, rows):
     fields = list(CSV_FIELDS)
+    lists = [k for k, cast in CSV_FIELDS.items() if cast is list]
+    rows = [dict(r) for r in rows]
+    for r in rows:
+        r.update({k: json.dumps(r.get(k) or []) for k in lists})
     with open(os.path.join(out, "crawl_audit.csv"), "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=fields)
         w.writeheader()
@@ -112,7 +123,14 @@ def read_csv_rows(out):
     with open(path, newline="") as fh:
         for rec in csv.DictReader(fh):
             for k, cast in CSV_FIELDS.items():
-                if cast is int:
+                if k not in rec:
+                    continue  # a CSV from before the column existed
+                if cast is list:
+                    try:
+                        rec[k] = json.loads(rec[k] or "[]")
+                    except json.JSONDecodeError:
+                        rec[k] = []
+                elif cast is int:
                     try:
                         rec[k] = int(rec[k])
                     except (ValueError, TypeError):
@@ -233,7 +251,7 @@ def write_table(fh, rowlist, with_status, with_dupes=False):
     for r in rowlist:
         cov = "" if r["coverage_pct"] == "" else f"{r['coverage_pct']}%"
         line = (
-            f"| {r['spider']} | {r['sitemap']} | {r['sitemap_total']} | "
+            f"| {r['spider']} | {sitemap_cell(r)} | {r['sitemap_total']} | "
             f"{r['eligible']} |"
         )
         line += f" {r['scraped']} |"
@@ -260,6 +278,59 @@ def write_table(fh, rowlist, with_status, with_dupes=False):
         if with_status:
             line += f" {r['status']} |"
         fh.write(line + "\n")
+
+
+def sitemap_anchor(spider):
+    """The id of a spider's block in the sitemaps-given section (md + html)."""
+    return "sm-" + str(spider)
+
+
+def sitemap_cell(r):
+    """`yes` spiders show `given/total` linking to their sitemap list; every
+    other row keeps its label. The label itself stays `yes` in the row (the CSV
+    filters, scoring and the --only read-back all key on it)."""
+    if r["sitemap"] != "yes" or r.get("sitemaps_given", "") in ("", None):
+        return r["sitemap"]
+    n = f"{r['sitemaps_given']}/{r.get('sitemaps_total', '?')}"
+    return f"[{n}](#{sitemap_anchor(r['spider'])})"
+
+
+def write_sitemaps_section(fh, srt):
+    """One block per USE_SITEMAP spider: which of the site's sitemaps it was
+    given (first) and which it wasn't — where the sitemap-cell links land."""
+    rows = [r for r in srt if r["sitemap"] == "yes"]
+    if not rows:
+        return
+    fh.write(f"\n## Sitemaps given to spiders ({len(rows)})\n\n")
+    fh.write(
+        "Per `USE_SITEMAP` spider: the sitemaps in its `start_urls` (given) "
+        "against every sitemap the site lists — the children of the sitemap "
+        "indexes its robots.txt declares, plus any declared leaf sitemap. "
+        "*not listed in root index* = given, but not among those (e.g. a "
+        "nested index's child). `?` = the site's total is unknown (see the "
+        "note).\n\n"
+    )
+    for r in rows:
+        items = r.get("sitemap_list") or []
+        total = r.get("sitemaps_total", "?")
+        anchor = html.escape(sitemap_anchor(r["spider"]))
+        fh.write(f'<a id="{anchor}"></a>\n\n')
+        fh.write(f"### {r['spider']}\n\n")
+        fh.write(f"{r.get('sitemaps_given', '')} of {total} given.")
+        if r.get("sitemaps_note"):
+            fh.write(f" Note: {r['sitemaps_note']}.")
+        fh.write("\n\n")
+        for given in (True, False):
+            part = [e for e in items if bool(e.get("given")) == given]
+            if not part:
+                continue
+            fh.write(f"{'Given' if given else 'Not given'} ({len(part)}):\n\n")
+            for e in part:
+                tag = ""
+                if given and not e.get("in_index", True) and total != "?":
+                    tag = " — not listed in root index"
+                fh.write(f"- {e.get('url', '')}{tag}\n")
+            fh.write("\n")
 
 
 def write_group_tables(fh, project, srt):
@@ -312,6 +383,7 @@ def write_outputs(project, rows, config_warnings=(), compliance=None):
             write_compliance_section(fh, project, compliance)
 
         write_all_spiders(fh, srt)
+        write_sitemaps_section(fh, srt)
 
 
 def write_compliance_section(fh, project, compliance):
