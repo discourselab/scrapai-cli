@@ -45,7 +45,7 @@ def _build(rules, pdf_mode="links_only"):
     rec.id = 7
     with patch("spiders.database_spider.get_db") as mock_get_db:
         db = Mock()
-        db.query.return_value.filter.return_value.first.return_value = rec
+        db.query.return_value.filter.return_value.all.return_value = [rec]
         cm = MagicMock()
         cm.__enter__.return_value = db
         mock_get_db.return_value = cm
@@ -216,7 +216,7 @@ async def test_sitemap_links_only_yields_url_only_items(monkeypatch):
     rec.id = 7
     with _patch("spiders.sitemap_spider.get_db") as mock_get_db:
         db = Mock()
-        db.query.return_value.filter.return_value.first.return_value = rec
+        db.query.return_value.filter.return_value.all.return_value = [rec]
         cm = MagicMock()
         cm.__enter__.return_value = db
         mock_get_db.return_value = cm

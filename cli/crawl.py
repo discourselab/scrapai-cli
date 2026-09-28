@@ -543,6 +543,10 @@ def _run_spider(
         spider_class,
         "-a",
         f"spider_name={spider_name}",
+        # Spider names are unique per project, not globally, so the spider
+        # needs the project to load the row validated above (docs/requests/28).
+        "-a",
+        f"project={project_name}",
     ]
 
     # Pass proxy type to middleware

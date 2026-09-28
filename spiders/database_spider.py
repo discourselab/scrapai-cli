@@ -2,8 +2,7 @@ from scrapy import Request, FormRequest
 from scrapy.linkextractors import LinkExtractor, IGNORED_EXTENSIONS
 from scrapy.spiders import CrawlSpider, Rule
 from core.db import get_db
-from core.models import Spider
-from .base import BaseDBSpiderMixin, _pdf_links
+from .base import BaseDBSpiderMixin, _find_spider_record, _pdf_links
 import datetime as _dt
 import itertools as _it
 import logging
@@ -99,13 +98,16 @@ def _generated_requests(spider, cfg):
 class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
     name = "database_spider"
 
-    def __init__(self, spider_name=None, *args, **kwargs):
+    def __init__(self, spider_name=None, *args, project=None, **kwargs):
         if not spider_name:
             spider_name = getattr(self.__class__, "_spider_name", None)
         if not spider_name:
             raise ValueError("spider_name argument is required")
 
         self.spider_name = spider_name
+        # Scopes the config lookup: names are unique per project only
+        # (docs/requests/28). The CLI passes -a project=<p>.
+        self.project = project
         self.name = spider_name  # Set Scrapy's spider.name for DeltaFetch per-spider DB
         self._items_scraped = 0
         self._item_limit = None
@@ -115,10 +117,7 @@ class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
     def _load_config(self):
         """Load spider configuration from database"""
         with get_db() as db:
-            spider = db.query(Spider).filter(Spider.name == self.spider_name).first()
-
-            if not spider:
-                raise ValueError(f"Spider '{self.spider_name}' not found in database")
+            spider = _find_spider_record(db, self.spider_name, self.project)
             if not spider.active:
                 raise ValueError(f"Spider '{self.spider_name}' is inactive")
 

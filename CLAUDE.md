@@ -213,6 +213,8 @@ Look these up as you reach each step. Always pass `--project <name>` on inspect/
 ### 6.1 Setup & spiders
 `setup` · `verify` · `--version` · `projects list` · `spiders list [--project]` · `spiders import <file> --project` · `spiders delete <name> --project`
 
+A spider is identified by name **and** project: re-importing a name into the same project updates it, another `--project` gets a separate spider, and `spiders delete` without `--project` refuses a name held in more than one.
+
 ### 6.2 Inspect & analyze (the only ways to see a page)
 - `inspect <url> --project <name>` — fetch + save HTML to `data/<project>/<spider>/analysis/`. **Always pass `--project`** (rule 1): it defaults to `default` and scatters files otherwise. Auto-escalates HTTP → curl_cffi → browser and reports which worked + the flag to set. `--browser` forces it; `--screenshot` saves `page.png` (top ~2 screens; `--screenshot-screens N`; forces browser) — Read it; `--proxy-type <name>` (any proxy in `.env`).
 - `analyze <html>` — `--test "<css>"` checks a selector · `--find "<keyword>"` matches class/id · `--find-text "<value>"` finds the element holding a value (the date/author technique, §5 Phase 2).

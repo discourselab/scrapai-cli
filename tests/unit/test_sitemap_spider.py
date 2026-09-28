@@ -44,7 +44,7 @@ def _make_rule(allow=None, deny=None, callback="parse_article", priority=0):
 def _patch_get_db(mock_get_db, spider_record):
     """Wire a mocked get_db() context manager to return ``spider_record``."""
     mock_db = Mock()
-    mock_db.query.return_value.filter.return_value.first.return_value = spider_record
+    mock_db.query.return_value.filter.return_value.all.return_value = [spider_record]
     cm = MagicMock()
     cm.__enter__.return_value = mock_db
     mock_get_db.return_value = cm

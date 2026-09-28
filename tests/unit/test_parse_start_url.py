@@ -39,7 +39,7 @@ def _build(rules):
 
     with patch("spiders.database_spider.get_db") as mock_get_db:
         mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = rec
+        mock_db.query.return_value.filter.return_value.all.return_value = [rec]
         cm = MagicMock()
         cm.__enter__.return_value = mock_db
         mock_get_db.return_value = cm
