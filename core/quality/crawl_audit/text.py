@@ -1,7 +1,14 @@
 """All human-facing prose: the status legend, per-status fix guidance, the
 review-config instruction strings, and the report's big static paragraphs."""
 
-from .scoring import OVER_EXPECTED_MIN, OVER_EXPECTED_PCT, STALE_DAYS, THIN_CHARS
+from .scoring import (
+    OUTCOME_FLAG_MIN,
+    OUTCOME_FLAG_PCT,
+    OVER_EXPECTED_MIN,
+    OVER_EXPECTED_PCT,
+    STALE_DAYS,
+    THIN_CHARS,
+)
 
 # Self-documenting `_instructions` written into each project's _audit/ config and kept
 # current on every audit run (your entries are never touched). The `_instructions` key
@@ -81,9 +88,9 @@ _LEGEND_PARTS = [
         "Too little output to judge completeness — `never-ran` (0 pages, no crawl-stats: no production crawl; "
         "`--limit` test crawls write DB-only so this also covers spiders only tested at creation), `ran-empty` (0 "
         "pages but crawl-stats present: it DID run and came back empty — investigate, don't just re-run; check "
-        "`eligible`, the HTTP status counts in its crawl-stats and `analysis/NOTES.md`), or `small/partial` (a "
-        "small or stalled *production* crawl with no sitemap to verify against — could be a small site); "
-        "`pdf-only (N)` = no HTML articles but N PDF links harvested — likely a document-repository site.",
+        "`eligible`, `blocked` / `failed` and `analysis/NOTES.md`), or `small/partial` (a small or stalled "
+        "*production* crawl with no sitemap to verify against — could be a small site); `pdf-only (N)` = no "
+        "HTML articles but N PDF links harvested — likely a document-repository site.",
     ),
     (
         "incomplete",
@@ -98,7 +105,8 @@ _LEGEND_PARTS = [
         "Review it carefully (`/spider-review`), then record the verdict.",
         "Extraction works and it ran, but a concern flag means it's not auto-clean — coverage can't be verified "
         "(`no-sitemap` / `sitemap-empty` / `sitemap-drift` / `sitemap-cap-hit`"
-        " / `scraped more than expected`) or content looks `thin?`. "
+        " / `scraped more than expected`), the crawl was `blocked` or `failed` "
+        "on many requests, or content looks `thin?`. "
         "This is NOT a quick glance — run the evidence-based `/spider-review` process (a bounded "
         "verification crawl, a ground-truth count check against the site's own totals, and coverage / temporal / "
         "PDF-URL checks) to decide whether it's a genuine problem or actually fine. If fine, record it with "
@@ -144,16 +152,17 @@ def fix_hints(project):
         "- `never-ran` = no production crawl yet (`--limit` test crawls don't write JSONL) → run the "
         f"full crawl: `./scrapai crawl --project {project} <spider>`.\n"
         "- `ran-empty` = it already ran but produced 0 output — re-running won't help; investigate "
-        "(`eligible` 0 = allow-rules match no sitemap URLs · many 403 / 429 in its crawl-stats = blocked · else "
+        "(`eligible` 0 = allow-rules match no sitemap URLs · high `blocked` = 403 / 429 wall · "
+        "high `failed` = timeouts / dead proxy · else "
         "dropped items — see `analysis/NOTES.md`).\n"
         "- `pdf-only (N)` = the crawl harvested only PDF links — a document repository. "
         "Confirm the site's content really is documents, then record an `audit_notes.json` "
         "review note (`status: ok`).\n"
         "- `small/partial` = a small or stalled run — confirm it isn't just a small site; if stalled, "
-        "look for 403 / proxy blocks.",
+        "check the `blocked` / `failed` figures for 403 / proxy trouble.",
         "incomplete": "**→ How to fix:** investigate the shortfall FIRST — a blind re-crawl just repeats it.\n\n"
         "- Diagnose with `/spider-review`: a low `coverage` % is usually rate-limiting / a dead proxy "
-        "(look for 403s + TunnelError), too-narrow scope, or a deny rule — see the spider's "
+        "(check the `blocked` / `failed` columns), too-narrow scope, or a deny rule — see the spider's "
         "`analysis/NOTES.md`.\n"
         f"- Then re-crawl: `./scrapai crawl --project {project} <spider>` (add `--reset-deltafetch` if "
         "flagged `deltafetch-stale`).",
@@ -164,8 +173,9 @@ def fix_hints(project):
         f"`./scrapai show --project {project} --limit 5 <spider>`.\n"
         "- The flag says why: coverage can't be verified (no / empty / drifting sitemap — `sitemap-empty` "
         "on a CF site may be a block; `found` spiders are candidates for `USE_SITEMAP`), content looks "
-        "`thin?` (over-broad rules?), or far more was scraped than the "
-        "sitemap lists (`scraped more than expected`).\n"
+        "`thin?` (over-broad rules?), far more was scraped than the "
+        "sitemap lists (`scraped more than expected`), or many requests came "
+        "back `blocked` / `failed` (a wall or a dead proxy cost pages).\n"
         "- If it's actually fine, record it in `_audit/audit_notes.json` (`status: ok` + `flag` + `note` "
         "+ `updated`) → it promotes to `ok` with `✓ reviewed`. Without a `status` the note is inert.",
     }
@@ -286,6 +296,24 @@ NOTES_AND_DEFINITIONS = (
     "or against it). Empty when the spider harvested no HTML at all (see the "
     "`pdf-only` flag). Page *length* isn't a column — a too-thin median "
     "surfaces only as a `thin?` flag.\n"
+    "- **dead / blocked / failed** — how the crawl's requests finally ended, "
+    "from its crawl-stats: *dead* = 404/410 (the page is gone), *blocked* = "
+    "403/429/401 (the site refused us), *failed* = no response at all after "
+    "every retry (timeouts, DNS, refused connections; offsite/robots drops "
+    "don't count). Final outcomes — a request that failed once and then "
+    "succeeded on retry is not counted. Shown as `n (p%)`, p = share of all "
+    "final outcomes. `†` after a figure = a per-attempt count from an older "
+    "crawl-stats format (retried attempts and the robots/llms witness fetches "
+    "included) — for information only, never flagged. `–` = not recorded: the "
+    "crawl ran before these figures were written (then *dead*/*blocked* show "
+    "those per-attempt counts, marked `†`, and *failed* is unknown), or the "
+    "spider is status-blind (Cloudflare/browser mode hands "
+    "every page back as HTTP 200, so *dead*/*blocked* can't be seen; *failed* "
+    "still is). A crawl resumed from a checkpoint normally has its legs summed "
+    "into whole-crawl figures and reads like any other; a figure ending `last "
+    "leg` comes from one whose earlier legs couldn't be added in, so it covers "
+    "only the last leg — it still flags (`blocked n (p%) last leg`), since a "
+    "leg's own share is real evidence.\n"
     "- **true dupes / versions** — see the Duplicate-rows section above.\n"
     "- **stale** — `⚠ Nd` when the newest `crawl_*.jsonl` is older than "
     f"{STALE_DAYS} days (N = age in days); empty = fresh. Its OWN column, "
@@ -326,6 +354,12 @@ NOTES_AND_DEFINITIONS = (
     "the rules reach pages it never lists). Checked on both the "
     "crawl-recorded and the fetched-sitemap path. "
     "**Triggers manual review.**\n"
+    f"    - `blocked n (p%)` / `failed n (p%)` — over {OUTCOME_FLAG_PCT}% of the "
+    f"crawl's final outcomes (and at least {OUTCOME_FLAG_MIN}) were blocked "
+    "(a 403/429 wall, a rate limit) or failed outright (timeouts, a dead "
+    "proxy) — pages were lost to the fetch, not to the rules. Only from "
+    "crawl-stats that record final outcomes; `dead` never flags (a removed "
+    "page isn't the spider's fault). **Triggers manual review.**\n"
     "    - `sitemap-cap-hit` — sitemap fetch hit the global cap so the "
     "denominator is truncated. **Triggers manual review.**\n"
     "    - on an `ignored` row (sitemap column), `flags` is the skip reason "
@@ -352,8 +386,8 @@ NOTES_AND_DEFINITIONS = (
     "grouped so spiders needing the same action sit together: *extraction "
     "broken* (fix selectors), *too few pages* (run a full crawl / confirm it's "
     "a small site), *incomplete* (re-crawl / investigate the stall), *manual "
-    "review* (extraction fine but a concern flag — coverage unverifiable "
-    "or thin — needs a careful `/spider-review`, then a note), *ok* (verified or "
+    "review* (extraction fine but a concern flag — coverage unverifiable, "
+    "thin, or many blocked/failed requests — needs a careful `/spider-review`, then a note), *ok* (verified or "
     "`✓ reviewed`, nothing to do), *discarded* (deliberately dropped via "
     "`audit_notes.json`). Precedence matters: extraction quality and "
     "'did a real crawl run' are decided BEFORE coverage, so an empty or odd "

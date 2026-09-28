@@ -5,6 +5,7 @@ all-spiders grid · notes & definitions — plus the copy-paste dedupe command b
 import re
 
 from core.quality.crawl_audit import LEGEND, STATUS_LEADS, fix_hints
+from core.quality.crawl_audit.scoring import OUTCOME_BASIS
 
 from .widgets import (
     COLUMN_DEFS,
@@ -87,6 +88,20 @@ def _coverage_detail(project, r):
         f"sitemap total <b>{_esc(str(r.get('sitemap_total', '-')))}</b>",
     ]
     out = [f'<div class="kv">{" · ".join(b for b in bits if b)}</div>']
+    # final request outcomes: detail-only in the dashboard (the markdown gives
+    # them columns); the flags column already carries any blocked/failed alarm.
+    # Figures that aren't the whole crawl's final outcomes (an older crawl-stats
+    # format counts every attempt; an unsummed resumed crawl's cover its last
+    # leg) say so, in the line and in each tooltip.
+    basis = OUTCOME_BASIS.get(r.get("outcomes_basis") or "", "")
+    outcomes = " · ".join(
+        f"<span {_tip(COLUMN_DEFS[k] + (f' Here: {basis}.' if basis else ''))}>{k} "
+        f"<b>{_esc(str(r.get(k) or '–'))}</b></span>"
+        for k in ("dead", "blocked", "failed")
+    )
+    if basis:
+        outcomes += f' <span class="sub">({_esc(basis)})</span>'
+    out.append(f'<div class="kv">{outcomes}</div>')
     # the ONE-line action for this status (the bold lead of its LEGEND meaning)
     meaning = next((d for (l, d) in LEGEND if l == r.get("status")), "")
     lead = _status_lead(r.get("status"))
@@ -466,10 +481,12 @@ def _all_spiders_table(project, rows):
 def _notes_definitions():
     """The MD's Notes & definitions, generated from the SAME COLUMN_DEFS / GLOSSARY used for the
     header + flag tooltips (no re-authoring), in a collapsible drawer."""
+    shown = ("sitemap", "coverage", "dead", "blocked", "failed")
+    shown += ("content", "dupes", "flags")
     cols = "".join(
         f"<li><b>{_esc(k)}</b> — {_esc(v)}</li>"
         for k, v in COLUMN_DEFS.items()
-        if k in ("sitemap", "coverage", "content", "dupes", "flags")
+        if k in shown
     )
     flags = "".join(f"<li><b>{_esc(k)}</b> — {_esc(v)}</li>" for k, v in GLOSSARY)
     return (

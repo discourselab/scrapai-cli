@@ -7,7 +7,12 @@ import html
 import re
 
 from core.quality.crawl_audit import LEGEND
-from core.quality.crawl_audit.scoring import OVER_EXPECTED_MIN, OVER_EXPECTED_PCT
+from core.quality.crawl_audit.scoring import (
+    OUTCOME_FLAG_MIN,
+    OUTCOME_FLAG_PCT,
+    OVER_EXPECTED_MIN,
+    OVER_EXPECTED_PCT,
+)
 
 _esc = html.escape
 
@@ -85,6 +90,21 @@ GLOSSARY = [
         "A reviewed-ok note exists but extraction is broken — recheck it.",
     ),
     ("🗑 discard", "A human deliberately dropped this source in audit_notes.json."),
+    # outcome flags: matched only in their own `blocked n (p%)` / `failed n (p%)`
+    # shape (see _flag_title), never as a bare substring — a skip reason or a
+    # review tag may well say "failed" or "blocked" and keeps its own meaning
+    (
+        "blocked ",
+        "Many of the crawl's final responses were 403 / 429 / 401 — the "
+        "site walled the spider off (bot wall, rate limit, proxy), so pages "
+        "were lost to the fetch, not to the rules.",
+    ),
+    (
+        "failed ",
+        "Many requests got no response at all after every retry (timeouts, "
+        "DNS, refused connections) — usually a dead proxy or an unreachable "
+        "host.",
+    ),
 ]
 
 COLUMN_DEFS = {
@@ -97,6 +117,19 @@ COLUMN_DEFS = {
     "have that it actually got. The bar stops at 100%; the number shows the "
     f"true value (over {OVER_EXPECTED_PCT}% with more than {OVER_EXPECTED_MIN} "
     "scraped is flagged).",
+    "dead": "Requests that finally ended 404 / 410 — the page is gone. "
+    "n (share of all final outcomes). Never flags. An older crawl format "
+    "counts every attempt instead (shown, never flagged). – = no crawl stats, "
+    "or a status-blind Cloudflare/browser spider.",
+    "blocked": "Requests that finally ended 403 / 429 / 401 — the site "
+    f"refused us. Over {OUTCOME_FLAG_PCT}% (and {OUTCOME_FLAG_MIN}+) flags "
+    "the row. An older crawl format counts every attempt instead (shown, "
+    "never flagged). – = no crawl stats, or a status-blind "
+    "Cloudflare/browser spider (every page comes back as 200).",
+    "failed": "Requests that got no response at all after every retry "
+    "(timeouts, DNS, refused connections). "
+    f"Over {OUTCOME_FLAG_PCT}% (and {OUTCOME_FLAG_MIN}+) flags the row. "
+    "– = not recorded (no crawl stats, or an older format without it).",
     "content": "Share of scraped pages with non-empty content (extraction success; independent of coverage).",
     "dupes": "Rows with the same URL AND identical content (re-run artifacts). Dedupe removes these.",
     "flags": "The one attention column; a clean row is empty. Hover a token for what it means.",
@@ -146,9 +179,15 @@ def _meter(pct, tip=None, invert=False):
     )
 
 
+_OUTCOME_KEYS = ("blocked ", "failed ")
+
+
 def _flag_title(token):
     for key, meaning in GLOSSARY:
-        if key in token:
+        if key in _OUTCOME_KEYS:
+            if re.match(re.escape(key) + r"\d+ \(", token):
+                return meaning
+        elif key in token:
             return meaning
     return ""
 

@@ -69,13 +69,32 @@ The audit assesses **HTML vs PDF harvest separately**: `scraped`/`content%` cove
 Common flags: `thin? <median>` (over-broad rules?) · `no-sitemap` / `sitemap-empty` /
 `sitemap-drift (m/e)` / `sitemap-cap-hit` / `found sitemap empty` (why coverage is
 unverifiable) · `scraped more than expected (N%)` (coverage over 115% with more than 20 pages scraped: the sitemap
-is likely a partial yardstick) · `deltafetch-stale` (cache ≫ output →
+is likely a partial yardstick) · `blocked n (p%)` / `failed n (p%)` (over 5% of the
+crawl's requests walled off or unanswered) · `deltafetch-stale` (cache ≫ output →
 `--reset-deltafetch`). The report's *Notes & definitions* section and the dashboard
 glossary tooltips define every flag precisely.
 
 Coverage is `scraped ÷ eligible`, where `eligible` is the full rule-matched sitemap
 count. URLs the crawl found dead (404) or blocked (403) are not subtracted: they are
 pages the spider should have got, so they show as a shortfall.
+
+**dead / blocked / failed** say how the crawl's requests finally ended, read from its
+`_audit/crawl_stats/<spider>.json`: dead = 404/410, blocked = 403/429/401, failed = no
+response at all after every retry (offsite/robots drops excluded), each as `n (p%)` of
+all final outcomes. They are columns in the markdown tables and sit in the row detail
+of the dashboard. Blocked or failed over 5% (and at least 5 requests) flags the row
+for manual review; dead never flags. `–` means not recorded: the crawl ran before the
+stats writer recorded final outcomes (dead/blocked then show per-attempt counts that
+include retried attempts, marked `†` in the markdown, for information only, and failed
+is unknown), or the spider
+is status-blind — Cloudflare/browser mode hands every page back as HTTP 200, so dead
+and blocked can't be seen (failed still can). A crawl resumed from a checkpoint has
+its legs summed by the writer (the file is stamped `resumed` and `summed`) and reads
+like any other crawl. One stamped `resumed` without `summed` covers only its last
+leg (an earlier leg died before handing its counters on): its figures end `last
+leg`, and a blocked or failed share over the threshold still flags, with the same
+`last leg` caveat in the flag. The dashboard's row detail labels per-attempt and
+last-leg figures as such.
 
 ### Review records (human-owned)
 

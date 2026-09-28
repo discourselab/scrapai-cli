@@ -18,7 +18,7 @@ from .sitemaps import (
     fetch_spider_sitemaps,
     spider_cache_dirs,
 )
-from .spiders_db import crawl_ran, crawl_stats_sitemap
+from .spiders_db import crawl_ran, crawl_stats_outcomes, crawl_stats_sitemap
 
 STALE_DAYS = 30  # newest crawl older than this -> a ⚠ mark in the `stale` column
 THIN_CHARS = 1000  # median content below this -> a `thin?` flag (over-broad rules?)
@@ -27,6 +27,22 @@ OVER_EXPECTED_PCT = 115  # coverage above this -> `scraped more than expected`
 # scraped against a 2-URL sitemap is 150% and says nothing about the yardstick,
 # while 60 against a 10-URL one does
 OVER_EXPECTED_MIN = 20
+# blocked / failed above this share of final outcomes (and at least
+# OUTCOME_FLAG_MIN of them) -> a flag; a handful on a tiny crawl is noise
+OUTCOME_FLAG_PCT = 5
+OUTCOME_FLAG_MIN = 5
+NO_OUTCOME = "–"  # dead/blocked/failed not recorded (or status-blind spider)
+PER_ATTEMPT_MARK = "†"  # md suffix: a per-attempt figure (older crawl format)
+LAST_LEG = " last leg"  # suffix: a resumed crawl whose stats cover one leg
+# what the dead/blocked/failed figures are, for the dashboard's detail and
+# tooltips: final outcomes / per-attempt counts (older crawl-stats format) /
+# the last leg of a resumed crawl whose legs weren't summed
+OUTCOME_BASIS = {
+    "final": "",
+    "attempts": "per attempt, older crawl format — never flagged",
+    "last leg": "last crawl leg only (resumed, legs not summed) — flagged on "
+    "the leg's own share",
+}
 
 
 def norm_url(u):
@@ -44,6 +60,24 @@ def norm_url(u):
         host = host[4:]
     path = p.path.rstrip("/") or "/"
     return host + path + (("?" + p.query) if p.query else "")
+
+
+def outcome_cell(n, base):
+    """A dead/blocked/failed figure as `n (p%)` — one decimal under 10% so a
+    small share doesn't round to 0 — or plain `0` when there were none."""
+    if not n:
+        return "0"
+    if not base:
+        return str(n)
+    pct = 100.0 * n / base
+    if pct < 0.1:
+        return f"{n} (<0.1%)"
+    return f"{n} ({pct:.1f}%)" if pct < 10 else f"{n} ({round(pct)}%)"
+
+
+def outcome_flagged(n, base):
+    share = 100.0 * n / base if base else 0.0
+    return n >= OUTCOME_FLAG_MIN and share > OUTCOME_FLAG_PCT
 
 
 def _human_k(v):
@@ -330,6 +364,40 @@ def score_spider(name, sp, c, ctx):
         # compared against TOTAL uniques: in extract mode fetched PDFs sit in
         # the DeltaFetch cache, and HTML-only counts would false-flag
         flags.append("deltafetch-stale")
+    # dead / blocked / failed: final request outcomes from the crawl's stats.
+    # Only a file with the final-outcome keys may flag — an older file's
+    # attempt-level counts include retried attempts, so they're shown for
+    # information only. A status-blind spider (Cloudflare / browser: every page
+    # comes back as 200) can't see dead or blocked at all, so those read "–";
+    # its failed figure (no response at all) is still real.
+    # A resumed crawl whose legs the writer summed (`summed`) is a whole crawl
+    # like any other. Without `summed` the file covers only the last leg, so
+    # its figures carry a "last leg" suffix — in the cells and in any flag —
+    # but still flag: a leg that is 40% blocked is real evidence of a wall.
+    outcomes = crawl_stats_outcomes(project, name)
+    dead_cell = blocked_cell = failed_cell = NO_OUTCOME
+    basis = ""
+    if outcomes:
+        base = outcomes["base"]
+        blind = sp.get("status_blind", False)
+        one_leg = outcomes.get("resumed", False) and not outcomes.get("summed")
+        basis = (
+            "last leg" if one_leg else ("final" if outcomes["final"] else "attempts")
+        )
+        leg = LAST_LEG if one_leg else ""
+        if not blind:
+            dead_cell = outcome_cell(outcomes["dead"], base) + leg
+            blocked_cell = outcome_cell(outcomes["blocked"], base) + leg
+        if outcomes["failed"] is not None:
+            failed_cell = outcome_cell(outcomes["failed"], base) + leg
+        if outcomes["final"]:
+            # dead never flags: a URL the site removed isn't the spider's fault
+            if not blind and outcome_flagged(outcomes["blocked"], base):
+                flags.append(f"blocked {blocked_cell}")
+                concern = True  # review trigger (the site walled us off)
+            if outcome_flagged(outcomes["failed"], base):
+                flags.append(f"failed {failed_cell}")
+                concern = True  # review trigger (timeouts / dead proxy)
     if content_med and content_med < THIN_CHARS and status != "extraction broken":
         flags.append(f"thin? {_human_k(content_med)}")  # over-broad rules / junk?
         concern = True  # review trigger
@@ -424,6 +492,13 @@ def score_spider(name, sp, c, ctx):
         "content_pct": round(cpct),
         "content_med": content_med,
         "coverage_pct": "" if cov is None else round(cov),
+        # display strings ("n (p%)" / "0" / "–"): flags above already used the
+        # raw counts, so nothing downstream needs to parse these back
+        "dead": dead_cell,
+        "blocked": blocked_cell,
+        "failed": failed_cell,
+        # final / attempts / last leg ("" = no crawl stats): what they count
+        "outcomes_basis": basis,
         "stale": stale,
         "flags": " · ".join(flags),
         "status": status,

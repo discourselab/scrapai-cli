@@ -76,6 +76,84 @@ def crawl_stats_sitemap(project, spider):
     return {"total": d["sitemap_total"], "eligible": d.get("eligible", 0)}
 
 
+# HTTP codes behind the dead / blocked outcome figures. dead = the URL is gone;
+# blocked = the site refused us (forbidden, rate-limited, auth wall).
+DEAD_CODES = ("404", "410")
+BLOCKED_CODES = ("403", "429", "401")
+
+
+def _codes(counts, codes):
+    return sum(int(counts.get(c, 0) or 0) for c in codes)
+
+
+def crawl_stats_outcomes(project, spider):
+    """Final request outcomes from the crawl's own stats, for the dead /
+    blocked / failed figures: {dead, blocked, failed, base, final}, or None
+    when the crawl recorded no stats. Pure disk read.
+
+    final=True when the crawl-stats writer recorded the FINAL-outcome keys
+    (`responses`, `final_status`, `exceptions`, `retries`): dead/blocked
+    come from `final_status` (non-2xx responses the crawl gave up on, after
+    retry and proxy fallback; the compliance witness fetches never land
+    there), and failed = requests that never got a response — per exception
+    class, raised count minus the times it was retried. IgnoreRequest is
+    skipped: an offsite or robots drop is a deliberate non-request, not a
+    failure. base = responses + failed, the denominator for percentages.
+
+    final=False for an older file that has only the attempt-level `status`
+    counts (every attempt, retried ones included, plus the robots/llms
+    witness fetches): dead/blocked are read from it for information only
+    and never flag; failed is None (unknown).
+
+    resumed=True when the writer stamped the file `"resumed": true` (the
+    crawl continued from a checkpoint); summed=True when it also stamped
+    `"summed": true` — the writer added the earlier legs' counters in, so the
+    figures are the whole crawl's. resumed without summed = the last leg
+    only (an earlier leg died before it could hand its counters on)."""
+    path = os.path.join(
+        DATA_DIR,
+        project,
+        "_audit",
+        "crawl_stats",
+        spider + ".json",
+    )
+    try:
+        with open(path) as fh:
+            d = json.load(fh)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+    if not isinstance(d, dict):
+        return None
+    if "responses" in d:
+        final_status = d.get("final_status") or {}
+        retries = d.get("retries") or {}
+        failed = 0
+        for cls, n in (d.get("exceptions") or {}).items():
+            if cls.rsplit(".", 1)[-1] == "IgnoreRequest":
+                continue
+            failed += max(0, int(n or 0) - int(retries.get(cls, 0) or 0))
+        return {
+            "dead": _codes(final_status, DEAD_CODES),
+            "blocked": _codes(final_status, BLOCKED_CODES),
+            "failed": failed,
+            "base": int(d["responses"] or 0) + failed,
+            "final": True,
+            "resumed": bool(d.get("resumed")),
+            "summed": bool(d.get("summed")),
+        }
+    status = d.get("status") or {}
+    attempts = sum(int(v or 0) for v in status.values())
+    return {
+        "dead": _codes(status, DEAD_CODES),
+        "blocked": _codes(status, BLOCKED_CODES),
+        "failed": None,
+        "base": attempts or int(d.get("requests") or 0),
+        "final": False,
+        "resumed": bool(d.get("resumed")),
+        "summed": bool(d.get("summed")),
+    }
+
+
 # ----------------------------------------------------------------------------- DB
 # Repo-anchored subprocess + DB access. db_query raises ScrapaiCliError on any CLI
 # failure (returns [] only for a genuinely empty result), so a broken DB aborts the
@@ -104,7 +182,8 @@ project_exists = _env.project_exists
 
 
 def load_spiders(project):
-    """Return {name: {start_urls, use_sitemap, rules, browser}} for the project."""
+    """Return {name: {start_urls, use_sitemap, rules, browser,
+    status_blind, ...}} for the project."""
     p = project.replace("'", "''")
     spiders = {}
     for r in db_query(
@@ -123,6 +202,11 @@ def load_spiders(project):
             "deny": [],  # flat list of deny patterns (across all Rules)
             "n_rules": 0,
             "browser": False,
+            # Cloudflare / browser mode hands every page back as HTTP 200,
+            # so the crawl's status counts can't see a 404 or 403 → the
+            # dead/blocked figures read "–". curl_cffi keeps real status
+            # codes, so it is NOT status-blind.
+            "status_blind": False,
             "host": host,
             # the crawl's own definition of "own org" (gates the offsite
             # middleware) — scoring uses it for the pdf same-org/external split
@@ -151,6 +235,8 @@ def load_spiders(project):
             # otherwise its sitemap can't be fetched and discovery wrongly
             # reports `no` (e.g. site37.org).
             sp["browser"] = True
+            if r["key"] != "CURL_CFFI_ENABLED":
+                sp["status_blind"] = True
     for r in db_query(
         "SELECT s.name AS name, sr.allow_patterns AS allow_patterns, "
         "sr.deny_patterns AS deny_patterns "

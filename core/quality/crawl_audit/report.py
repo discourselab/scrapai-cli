@@ -4,6 +4,7 @@ helper per markdown section (the section order lives in write_outputs)."""
 import csv
 import os
 
+from .scoring import NO_OUTCOME, PER_ATTEMPT_MARK
 from .spiders_db import audit_dir
 from .text import (
     AGENTS_PREAMBLE,
@@ -77,6 +78,10 @@ CSV_FIELDS = {
     "content_pct": int,
     "content_med": int,
     "coverage_pct": int,
+    "dead": str,
+    "blocked": str,
+    "failed": str,
+    "outcomes_basis": str,
     "stale": str,
     "flags": str,
     "status": str,
@@ -219,8 +224,8 @@ def write_table(fh, rowlist, with_status, with_dupes=False):
     if with_dupes:
         head += " true dupes | versions |"
         sep += "---:|---:|"
-    head += " content% | coverage | stale | flags |"
-    sep += "---:|---:|---|---|"
+    head += " content% | coverage | dead | blocked | failed | stale | flags |"
+    sep += "---:|---:|---:|---:|---:|---|---|"
     if with_status:
         head += " status |"
         sep += "---|"
@@ -242,7 +247,16 @@ def write_table(fh, rowlist, with_status, with_dupes=False):
         # a pdf-only spider has no HTML to extract — a "0%" here would read as
         # broken extraction, so the cell stays empty (the pdf-only flag explains)
         cpct = f"{r['content_pct']}%" if r["scraped"] else ""
-        line += f" {cpct} | {cov} | {r.get('stale', '')} | " f"{r.get('flags', '')} |"
+        line += f" {cpct} | {cov} |"
+        # rows carried over from a CSV written before these columns existed
+        # have no outcome keys → the same "–" as "not recorded". A per-attempt
+        # figure (older crawl-stats format) is marked † in the row itself, so
+        # it is never read as a final outcome (the notes explain the mark).
+        mark = PER_ATTEMPT_MARK if r.get("outcomes_basis") == "attempts" else ""
+        for k in ("dead", "blocked", "failed"):
+            v = r.get(k) or NO_OUTCOME
+            line += f" {v}{mark if v != NO_OUTCOME else ''} |"
+        line += f" {r.get('stale', '')} | {r.get('flags', '')} |"
         if with_status:
             line += f" {r['status']} |"
         fh.write(line + "\n")
