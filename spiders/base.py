@@ -147,10 +147,10 @@ class BaseDBSpiderMixin:
             }
 
     def closed(self, reason):
-        """Persist each completed crawl's own stats so the audit can read EXACT
-        page liveness for free, instead of the slow sampled --check-liveness
-        pass (which fetches ~1000 URLs and took forever). Scrapy already counts
-        every response status; we just write them out. Only full production
+        """Persist each completed crawl's own stats so the audit can read the
+        crawl's request outcomes and sitemap accounting for free, instead of
+        re-fetching anything. Scrapy already counts every response status and
+        exception; we just write them out. Only full production
         crawls write: an item-capped run (--limit / health) is skipped by
         SETTING, not close reason — a test crawl that runs out of items UNDER
         its limit still ends "finished" and must not overwrite a real crawl's
