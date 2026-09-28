@@ -28,7 +28,10 @@ User-facing reference: [docs/quality.md](../quality.md); skills:
   ship wherever the audit does.
 - Tests: `tests/unit/test_audit.py` (dashboard render + fixes),
   `test_quality_env.py`, `test_quality_corpus.py` (pinned fingerprint digests),
-  `test_crawl_audit_cache.py`, `test_compliance_fixes.py`,
+  `test_crawl_audit_cache.py`, `test_audit_coverage_fixes.py` (unscaled
+  denominator, over-115% flag, dead / blocked / failed, sitemaps given,
+  rejected sitemaps),
+  `test_compliance_fixes.py`,
   `test_compliance_robots.py` + `test_compliance_signals.py` (regression pins for
   the robots matcher and legal-text regex batteries).
 
@@ -43,16 +46,33 @@ bytes.
 
 ## Deliberate divergences from the `*.superseded` roots
 
-- **Compliance report-time recomputes** — legal-page prohibitions and the AI-reuse
-  aggregate are re-derived from stored snapshots at report time (regex fixes apply
-  without re-capture); legacy-format snapshots fall back to their stored concrete
-  evidence (tdmrep/tdm_meta/robots_meta/headers) so a genuine reservation is never
-  recomputed away.
+- **Compliance report-time recomputes** — legal-page prohibitions, the robots
+  AI-crawler signals and the AI-reuse aggregate are re-derived from stored snapshots
+  at report time (regex and matcher fixes apply without re-capture); legacy-format
+  snapshots fall back to their stored concrete evidence
+  (tdmrep/tdm_meta/robots_meta/headers) so a genuine reservation is never
+  recomputed away. An AI bot restricted on some paths counts as an AI-scrape block
+  only when its robots group is stricter than `*`'s — it blocks a path `*` leaves
+  open (a group that merely repeats a `*` Disallow but drops `*`'s Allow exception
+  under it is not stricter); a group no stricter than `*` is kept as
+  `partial_same` and never counts.
 - **Snapshot write-order** — a dated `compliance.json` is written only for
   REACHABLE domains; unreachable ones get `_capture_failed.json` (older good
-  snapshots survive a failed `--refresh`).
+  snapshots survive a failed `--refresh`), shown as ‼️ `capture failed: <reason>`
+  in the compliance MD, the dashboard and the audit MD's compliance section, not as
+  not-checked. A snapshot that can't be
+  rendered degrades only its own row ("couldn't display"), never the whole output.
 - **Sitemap-cache lifecycle** — temp+swap fetches (failure leaves nothing; stale
-  content is never served as fresh) + generation-pruning on re-fetch.
+  content is never served as fresh) + generation-pruning on re-fetch. The sitemaps
+  a site's robots.txt declares (for the `given/total` listing) are read from disk
+  first (host manifest, the spider's own url-tagged cache copy, robots.txt and
+  `/sitemap.xml` probes already cached); only what isn't on disk is fetched — at
+  most once per URL per run and once per host ever, on the listing's own budget
+  (never `--global-cap`) — and cached as manifests under
+  `sitemap_cache/_host/<host>/`. A failed fetch or discovery is remembered (never
+  stored as "no sitemap") and retried only by `--fetch-all`. Loc text is read
+  CDATA-aware, and a declared URL whose content isn't a sitemap (a feed) is
+  skipped, never counted.
 - **`db_query` fails loudly** (`ScrapaiCliError`) instead of returning `[]` on a
   broken DB — a failed query can no longer overwrite a good report with an empty one.
 - `crawl_audit.run()` accepts `reset` for compliance snapshots; report text points
@@ -60,10 +80,9 @@ bytes.
 
 ## Known, deliberate inconsistencies (documented, not bugs)
 
-- `compliance_summary` (the audit MD's inline compliance cells) assesses the
-  UNREFINED latest snapshot, while `build_report_data` (compliance MD + dashboard)
-  refines it. Unifying them would change audit-MD cells — left as-is on purpose;
-  worth aligning upstream in a change that owns that diff.
+- `compliance_summary` (the audit MD's inline compliance cells) reuses
+  `build_report_data`'s refined recs; only a domain the report didn't capture
+  falls back to its latest snapshot on disk, assessed unrefined.
 - The `_PAGE_PATH` paginated-sitemap probe walks trailing-`/N` URLs; on a
   non-paginated year-archive URL it costs exactly one bounded empty fetch
   (per-cap'd). Assessed and kept.
@@ -79,8 +98,13 @@ The audit reads signals the spiders must *produce*. Outstanding framework change
 (kept out of this copy, which only edits config-level surfaces):
 
 - **Per-crawl stats writer** — the spider's `closed()` handler must write
-  `data/<project>/_audit/crawl_stats/<spider>.json` with the HTTP-status histogram.
-  The audit uses it for exact **liveness** and to tell `never-ran` from `ran-empty`.
+  `data/<project>/_audit/crawl_stats/<spider>.json` with the HTTP-status histogram
+  and Scrapy's final-outcome counters (`responses`, `final_status`, `exceptions`,
+  `retries`). The audit uses it for the **dead / blocked / failed** request outcomes
+  (and their flags) and to tell `never-ran` from `ran-empty`. Its `sitemap_rejected`
+  list (sitemaps the crawl fetched but Scrapy could not parse) raises the
+  `sitemap rejected (N)` flag and is listed in *Sitemaps given to spiders*; a file
+  without the key never flags.
 - **Coverage accounting** — the sitemap spider should record `sitemap_total` /
   `eligible` in that stats file while parsing (point-in-time denominator, no
   sitemap-drift re-fetch).
@@ -100,7 +124,7 @@ application, core-field prune.
 
 ## (B) Reconcile with the repo that is now AHEAD of this copy
 
-- **Liveness** — upstream moved to Pueue + last-item run tracking; this audit reads
+- **Crawl stats** — upstream moved to Pueue + last-item run tracking; this audit reads
   `_audit/crawl_stats/<spider>.json`. Ship the stats writer (A) so both coexist, or
   point the audit at the Pueue/`_stats.json` source.
 - **PDFs** — upstream records PDFs as `PDF_MODE` URL-only items; the audit reads that

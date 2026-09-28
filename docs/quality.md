@@ -70,8 +70,9 @@ Common flags: `thin? <median>` (over-broad rules?) · `no-sitemap` / `sitemap-em
 `sitemap-drift (m/e)` / `sitemap-cap-hit` / `found sitemap empty` (why coverage is
 unverifiable) · `scraped more than expected (N%)` (coverage over 115% with more than 20 pages scraped: the sitemap
 is likely a partial yardstick) · `blocked n (p%)` / `failed n (p%)` (over 5% of the
-crawl's requests walled off or unanswered) · `deltafetch-stale` (cache ≫ output →
-`--reset-deltafetch`). The report's *Notes & definitions* section and the dashboard
+crawl's requests walled off or unanswered) · `sitemap rejected (N)` (the crawl
+fetched N sitemaps it could not parse and dropped their URLs) ·
+`deltafetch-stale` (cache ≫ output → `--reset-deltafetch`). The report's *Notes & definitions* section and the dashboard
 glossary tooltips define every flag precisely.
 
 Coverage is `scraped ÷ eligible`, where `eligible` is the full rule-matched sitemap
@@ -113,6 +114,24 @@ is added to the total and marked *not listed in root index*. `?` = the total is 
 a fetch or the sitemap discovery failed — retried only by `--fetch-all`). The cell
 links to the spider's list in *Sitemaps given to spiders*, at the end of the report
 and under the coverage tables in the dashboard.
+
+**Rejected sitemaps.** A sitemap served as HTTP 200 with a body that is not a
+`urlset` or `sitemapindex` (an HTML view of the sitemap, a block page) is dropped
+by the crawl's Scrapy along with every URL in it, and the crawl-recorded `total` /
+`eligible` leave those URLs out. The sitemap spider records such sitemaps in its
+crawl-stats file as `sitemap_rejected`, and the audit flags the row `sitemap
+rejected (N)` (N = rejected sitemaps), which sends an otherwise clean spider to
+manual review. Where the coverage denominator is the crawl's own sitemap count it
+is short, so coverage reads high; a resumed crawl records no count, and the audit
+fetches the sitemap itself. A resumed leg also reports the rejections an earlier
+leg kept, even when that leg died before handing its counters on. The
+spider's block in *Sitemaps given to spiders* lists the rejected URLs, marked
+*rejected*, and points to the bodies the crawl kept in
+`_audit/sitemap_rejects/<spider>/` (at most 20 per crawl, each cut at 256 KB, with
+an `index.json` of URL, status, size and content type; a fresh production crawl
+clears the folder, `--limit` runs keep nothing). Read those bodies before fetching
+anything. A crawl-stats file from before the key existed can't say, so it never
+flags.
 
 ### Review records (human-owned)
 

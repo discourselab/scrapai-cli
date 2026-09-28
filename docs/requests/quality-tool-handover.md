@@ -96,8 +96,8 @@ code). Test suite: 224→278 unit tests, all green; pyflakes clean.
 
 ## Deliberately NOT done (assessed, documented)
 
-- `compliance_summary` vs `build_report_data` refinement inconsistency (would
-  change audit-MD cells) — see quality-tool.md.
+- `compliance_summary` vs `build_report_data` refinement — see quality-tool.md
+  for where it stands.
 - The "dead" duplicated `.meter` CSS is actually layered base+skin (the first rule
   still supplies `display`/`align-items`; `min-width:2px` keeps the 0% sliver
   visible) — removal would regress rendering; left as-is.
@@ -125,8 +125,9 @@ adapted to the framework's PDF row model. `git diff` against main = the PR.
 
 **Framework additions (3):**
 1. `spiders/base.py` `closed()` — per-crawl stats writer (`_audit/crawl_stats/
-   <spider>.json`: status histogram, items, requests) — feeds the audit's
-   liveness / ran-vs-empty / coverage denominator.
+   <spider>.json`: status histogram, final-outcome counters, items, requests) —
+   feeds the audit's dead / blocked / failed outcomes, ran-vs-empty and coverage
+   denominator.
 2. `spiders/sitemap_spider.py` — `_sm_total`/`_sm_eligible` counters (crawl-time
    coverage denominator) AND the `links_only` PDF link-scan in `parse_article`
    (PDF collection previously worked only for rule-based spiders).

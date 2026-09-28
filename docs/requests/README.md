@@ -27,7 +27,7 @@ quality tool), not by order of discovery.
 |---|---|---|---|
 | 1 | [12-sitemap-pdf-collection.md](12-sitemap-pdf-collection.md) | bugfix: PDF link collection for sitemap spiders (parity with rule-based) | `spiders/sitemap_spider.py` |
 | 2 | [05-spider-name-domain-warn.md](05-spider-name-domain-warn.md) | behaviour: name-vs-domain mismatch warns instead of blocking import | `cli/spiders.py` |
-| 3 | [06-per-crawl-stats.md](06-per-crawl-stats.md) | per-crawl stats file: `closed()` writer + sitemap counters (merged 06+07) | `spiders/base.py`, `spiders/sitemap_spider.py` |
+| 3 | [06-per-crawl-stats.md](06-per-crawl-stats.md) | per-crawl stats file: `closed()` writer (status counts + final request outcomes) + sitemap counters (merged 06+07) | `spiders/base.py`, `spiders/sitemap_spider.py` |
 | 4 | [04-compliance-file-capture.md](04-compliance-file-capture.md) | crawl-time robots/llms witnesses (extension + settings wiring) | `extensions/compliance_files.py`, `settings.py` |
 | 5 | [quality-tool.md](quality-tool.md) | the quality tool: audit · overview · dedupe + dashboards + skills (incl. the `.gitignore` skills change, merged 13) | `core/quality/`, `cli/`, `tests/`, `docs/`, `.claude/commands/`, `.gitignore`, `CLAUDE.md`, `README.md` |
 | 6 | [14-crawl-all-pueue.md](14-crawl-all-pueue.md) | `crawl-all` enqueues via Pueue (parallel, disconnect-safe) instead of running inline | `cli/crawl.py` |
@@ -46,7 +46,7 @@ The one that belongs to this PR:
 
 | PR | Request doc | Change | Files |
 |---|---|---|---|
-| → PR 5 | [22-audit-measurement-and-quiet.md](22-audit-measurement-and-quiet.md) | bugfix bundle: audit measurement accuracy (liveness, PDF-provenance "versions", media locs, CF robots) + quiet default output | `core/quality/`, `cli/audit.py` |
+| → PR 5 | [22-audit-measurement-and-quiet.md](22-audit-measurement-and-quiet.md) | bugfix bundle: audit measurement accuracy (unscaled coverage denominator, PDF-provenance "versions", media locs, CF robots) + quiet default output | `core/quality/`, `cli/audit.py` |
 
 "→ PR 5" = fixes to code still in review, appended to this PR rather than
 opened as a new one. (15 was considered — default `ROBOTSTXT_OBEY` to True —

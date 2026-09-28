@@ -123,7 +123,7 @@ behaviour.)
 ## Works locally today (verified)
 - Data exists across projects (`news`, `myproject`, `news_archive`, …); several already
   have `_audit/` outputs.
-- The liveness note-files `audit` reads **exist locally**
+- The crawl-stats files `audit` reads **exist locally**
   (e.g. `data/news_archive/_audit/crawl_stats/site38_int.json`), so nothing is missing.
 
 ## Handover note → `docs/requests/quality-tool.md` (a required deliverable)
@@ -137,8 +137,9 @@ Plain checklist for the collaborator. Two questions it must answer:
   core-field prune.)
 
 **(B) What must change so the tool works with the repo that's now AHEAD of this copy:**
-- **liveness** — upstream moved to **Pueue + last-item**; audit reads `_stats.json` →
-  reconcile (either ship the stats writer, or read Pueue like `crawl-status` does).
+- **crawl stats** — upstream moved to **Pueue + last-item**; audit reads
+  `_audit/crawl_stats/<spider>.json` → reconcile (either ship the stats writer, or read
+  Pueue like `crawl-status` does).
 - **PDFs** — upstream now records PDFs as **`PDF_MODE` URL-only items**; `external_pdf`
   reads an `external_pdf_urls` field → reconcile to the new PDF model.
 - **`FIELD_EXTRACT` → `FIELDS`** rename (back-compat alias exists) — audit reads `FIELDS`.

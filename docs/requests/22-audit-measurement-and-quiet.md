@@ -2,11 +2,13 @@
 
 **Requested by:** MirjamOdile (2026-07-16)
 **Type:** bugfix bundle (audit scoring accuracy) + UX (quiet by default)
-**Status:** Fixes A, C, D, E applied and verified on a production project
+**Status:** Fixes C, D, E applied and verified on a production project
 (C/D syntax/logic-checked but not yet exercised live — they only fire on the
 sitemap FETCH path and verification ran `--no-fetch`; run a normal fetching
 audit, e.g. re-check that the CF-guarded site in Fix D is discovered rather
-than mislabelled `no-sitemap`). Fix B implemented **presentationally** after the counting
+than mislabelled `no-sitemap`). Fix A applied (unscaled denominator) and pinned
+by unit tests; not yet re-run on a production project. Fix B implemented
+**presentationally** after the counting
 approach was tried, shown to break the audit↔dedupe invariant, and reverted —
 see the Fix B section.
 *(Numbered 23 before the 2026-07-16 renumbering. The spider-side
@@ -20,23 +22,31 @@ data).
 
 ---
 
-## Fix A — liveness treats transient 5xx as dead URLs
+## Fix A — crawl status counts shrank the coverage denominator
 
-`crawl_stats_liveness()` bucketed 5xx with 4xx, so a crawl that threw transient
-503s had its `eligible` denominator shrunk and its coverage under-reported.
-Observed: one spider read "liveness 56%" from 810×503 (transient); real
-coverage ~97%.
+`eligible` was scaled by a liveness rate computed from the crawl's HTTP-status
+counts, so a crawl that threw transient 503s — or was walled off by 403s — had
+its denominator shrunk and its coverage misreported. Observed: one spider read
+"liveness 56%" from 810×503 (transient), its `eligible` cut to 599 and its
+coverage inflated to 172%.
 
-**File:** `core/quality/crawl_audit/spiders_db.py` — only 4xx count as dead
-(the URL doesn't exist); 5xx are transient server errors, excluded from the
-denominator entirely.
+**File:** `core/quality/crawl_audit/scoring.py` — `score_spider()` uses the
+full rule-eligible sitemap count as `eligible`; nothing the crawl answered
+(404, 403, 5xx) is subtracted, so a lost page shows as a coverage shortfall.
+There is no liveness flag. How the crawl's requests ended is shown separately
+as `dead` / `blocked` / `failed` (`crawl_stats_outcomes()` in
+`core/quality/crawl_audit/spiders_db.py`); only `blocked` and `failed` can flag.
+`crawl_stats_liveness()` stays on the facade for the crawl-stats writer's
+round-trip tests (it counts only 4xx as dead) but feeds no audit figure.
 
-**Verified:** that spider moved `manual review` (liveness 56%, coverage
-172%) → `ok` (eligible 599→1064, coverage 97%, flags cleared).
+**Tests:** `tests/unit/test_audit_coverage_fixes.py`
+(`test_coverage_not_scaled_by_liveness` and the outcome tests). The
+crawl-stats writer's own tests live with request 06
+(`tests/unit/test_crawl_stats_writer.py`).
 
-**Test note:** the audit-integration expectation in
-`tests/unit/test_crawl_stats_writer.py` is updated alongside request 19 (that
-file belongs to the per-crawl stats PR).
+**Docs:** `docs/quality.md` (common flags, coverage and dead / blocked / failed
+paragraphs), the report's *Notes & definitions* (`crawl_audit/text.py`),
+`.claude/commands/spider-review.md`.
 
 ## Fix B — "versions" inflated by PDF `found_on` provenance — presentational split
 
@@ -109,10 +119,10 @@ and per-org compliance output.
 
 ## Impact
 
-- Coverage numbers stop lying: transient-5xx false "liveness" flags disappear,
-  the 10,932 phantom versions are shown as PDF provenance instead of content
-  churn, and CF-guarded sites are correctly discovered instead of mislabelled
-  `no-sitemap`.
+- Coverage numbers stop lying: transient 5xx and 403 blocks no longer shrink
+  the denominator, the 10,932 phantom versions are shown as PDF provenance
+  instead of content churn, and CF-guarded sites are correctly discovered
+  instead of mislabelled `no-sitemap`.
 - Default `./scrapai audit` output becomes a few progress lines + a summary;
   `--verbose` restores the previous detail.
 - All changes are read-only measurement/report fixes — no crawl, spider, or
