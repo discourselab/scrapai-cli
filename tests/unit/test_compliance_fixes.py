@@ -1,7 +1,8 @@
 """Unit tests for the compliance_capture fixes: snapshot write-order (unreachable
 domains get a failure marker, never a 'checked today' snapshot), the legacy-snapshot
 AI-reuse recompute (stored concrete evidence is honoured when the derived keys are
-absent), and the llms.txt link honouring the recorded well-known path.
+absent), the llms.txt link honouring the recorded well-known path, and the report
+outputs: a partial (some-paths) AI-bot restriction rendered as its own fact.
 """
 
 import importlib
@@ -248,3 +249,103 @@ def test_llms_cell_uses_recorded_path():
         "_llms_display": {"present": True, "verdict": "prohibits"}
     }  # no path recorded
     assert cc.llms_cell(rec2, "x.org") == "[⚠✗](https://x.org/llms.txt)"
+
+
+# ---- report outputs: partial AI-bot blocks, per-row failure isolation, failed rows ----
+
+
+@pytest.fixture
+def no_net(tmp_data, monkeypatch):
+    """tmp_data + every fetch path raising, so a report/render test can never go online."""
+    from core.quality.compliance_capture import fetch as fetch_mod
+    from core.quality.compliance_capture import report as rpt
+
+    def _boom(*a, **k):
+        raise AssertionError("network access in a unit test")
+
+    monkeypatch.setattr(capture_mod, "inspect", _boom)
+    monkeypatch.setattr(capture_mod, "header_signals", _boom)
+    monkeypatch.setattr(fetch_mod, "http_response_headers", _boom)
+    monkeypatch.setattr(fetch_mod.urllib.request, "urlopen", _boom)
+    monkeypatch.setattr(fetch_mod.subprocess, "run", _boom)
+    monkeypatch.setattr(rpt, "DATA_DIR", str(tmp_data))  # write_report's output dir
+    return tmp_data
+
+
+def _md(project="proj"):
+    from core.quality.compliance_capture import report as rpt
+
+    return open(rpt.write_report(project), encoding="utf-8").read()
+
+
+def _html(project="proj"):
+    from core.quality.dashboard.compliance_tab import build_compliance_rows
+    from core.quality.dashboard.render import render_dashboard
+
+    return render_dashboard(project, [], build_compliance_rows(project))
+
+
+# a stored snapshot is JSON: partial pairs come back as [bot, [paths]] LISTS
+_PARTIAL_ONLY_AI = {
+    "ai_bots_blocked": [],
+    "ai_scrape_block": True,
+    "ai_bot_signals": {
+        "full": [],
+        "partial": [
+            ["GPTBot", ["/config", "/search", "/account$", "/account/"]],
+            ["CCBot", ["/config", "/search", "/account$", "/account/"]],
+        ],
+        "allowed": [],
+        "heuristic": [],
+        "channel": [],
+    },
+}
+
+
+def test_partial_formatter_accepts_lists_and_tuples():
+    paths = ["/config", "/search", "/account$", "/account/"]
+    as_tuples = {
+        "ai_bot_signals": {"full": ["Bytespider"], "partial": [("GPTBot", paths)]}
+    }
+    as_lists = json.loads(json.dumps(as_tuples))  # the stored-snapshot shape
+    assert isinstance(as_lists["ai_bot_signals"]["partial"][0], list)
+    for ai in (as_tuples, as_lists):
+        full, partial = cc.ai_bot_lines(ai)
+        assert full == "AI crawlers disallowed in robots.txt: Bytespider"
+        assert partial == (
+            "AI crawlers restricted on some paths: GPTBot (/config, /search, /account$, …)"
+        )
+    # a bare-name entry (malformed) is tolerated, not a crash
+    assert cc.ai_bot_lines({"ai_bot_signals": {"partial": ["CCBot"]}}) == (
+        None,
+        "AI crawlers restricted on some paths: CCBot",
+    )
+    assert cc.ai_bot_lines({}) == (None, None)
+
+
+def test_partial_only_no_crash_and_rendered(no_net):
+    dom = _seed_snapshot(no_net, "site01_example", dict(_PARTIAL_ONLY_AI))
+    rec = cc.build_report_data("proj")[0][dom][2]
+
+    # the verdict text says restricted, never "disallowed", for a partial-only site
+    _, emoji, reasons = cc.assess_crawl(rec)
+    assert emoji == "🟡"
+    assert any("restricted on some paths" in r for r in reasons)
+    assert not any("disallowed" in r for r in reasons)
+    assert cc.crawl_notes(rec) == "AI-scrape restricted on some paths (robots)"
+
+    html = _html()
+    assert "No compliance snapshots yet" not in html
+    assert "site01.example" in html
+    assert (
+        "AI crawlers restricted on some paths: GPTBot, CCBot (/config, /search, "
+        "/account$, …)" in html
+    )
+    assert "AI crawlers disallowed in robots.txt" not in html
+
+    md = _md()
+    assert "AI-scrape restricted on some paths (robots)" in md  # notes cell
+    assert (
+        "- **AI crawlers restricted on some paths:** GPTBot, CCBot (`/config`, "
+        "`/search`, `/account$`, …)" in md
+    )  # crawl detail block

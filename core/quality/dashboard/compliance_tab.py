@@ -46,17 +46,11 @@ def _flatten_compliance(project, dom, org, date, rec, failed):
     # AI-reuse/-access note. (The no-AI-training ToS clause is shown via `clauses` below, not here.)
     ai_evidence = []
     robots_url = f"https://{dom}/robots.txt"
-    bots = ai.get("ai_bots_blocked") or []
-    if not bots:
-        sig = ai.get("ai_bot_signals") or {}
-        bots = (sig.get("full") or []) + (sig.get("partial") or [])
-    if bots:
-        ai_evidence.append(
-            {
-                "label": "AI crawlers disallowed in robots.txt: " + ", ".join(bots),
-                "url": robots_url,
-            }
-        )
+    # whole-site bans and some-paths restrictions are separate facts (one shared formatter;
+    # stored partial entries are JSON [bot, [paths]] lists, not strings)
+    for line in cc.ai_bot_lines(ai):
+        if line:
+            ai_evidence.append({"label": line, "url": robots_url})
     chan = (
         ai.get("channel_blocked")
         or (ai.get("ai_bot_signals") or {}).get("channel")

@@ -99,6 +99,80 @@ def ai_reuse_flag(ai):
     return ai.get("site_wide_ai") if v is None else v
 
 
+# ---- robots AI-crawler facts: ONE formatter for every output ----------------
+# ai_bot_signals() returns `partial` as (bot, sample_paths) TUPLES, but a stored snapshot
+# round-trips through JSON, so a loaded rec holds [bot, [paths]] LISTS. Every reader goes
+# through here, so the two shapes can't diverge between outputs — a bare ", ".join over
+# the pairs used to crash the whole dashboard Compliance tab for a partial-only site.
+_PARTIAL_PATHS_SHOWN = 3
+
+
+def _partial_pairs(entries):
+    """[(bot, [paths])] from tuple pairs, JSON list pairs, or a bare bot name."""
+    out = []
+    for e in entries or []:
+        if isinstance(e, str):
+            out.append((e, []))
+        elif isinstance(e, (list, tuple)) and e:
+            paths = e[1] if len(e) > 1 and isinstance(e[1], (list, tuple)) else []
+            out.append((str(e[0]), [str(p) for p in paths]))
+    return out
+
+
+def ai_bot_facts(ai):
+    """The robots AI-crawler facts of a rec's `ai` block, shape-normalised:
+    {full: [bots], partial: [(bot, [paths])]}. `full` prefers the stored whole-site
+    list (ai_bots_blocked), else the signals' own `full`."""
+    ai = ai or {}
+    sig = ai.get("ai_bot_signals") or {}
+    return {
+        "full": [str(b) for b in (ai.get("ai_bots_blocked") or sig.get("full") or [])],
+        "partial": _partial_pairs(sig.get("partial")),
+    }
+
+
+def ai_bot_lines(ai, path_fmt=str):
+    """(full_line, partial_line) — the two robots AI-crawler facts as display text, each
+    None when absent. A whole-site disallow and a some-paths restriction are different
+    facts and are never merged into one "disallowed" claim. Partial bots sharing the same
+    sample paths are listed together (a CMS default usually puts them all in one group);
+    at most _PARTIAL_PATHS_SHOWN paths are shown, then "…". `path_fmt` wraps each path
+    (the markdown detail block passes a code-span formatter)."""
+    facts = ai_bot_facts(ai)
+    full = (
+        "AI crawlers disallowed in robots.txt: " + ", ".join(facts["full"])
+        if facts["full"]
+        else None
+    )
+    groups = {}  # paths tuple -> [bots], first-seen order
+    for bot, paths in facts["partial"]:
+        groups.setdefault(tuple(paths), []).append(bot)
+    parts = []
+    for paths, bots in groups.items():
+        shown = [path_fmt(p) for p in paths[:_PARTIAL_PATHS_SHOWN]]
+        if len(paths) > _PARTIAL_PATHS_SHOWN:
+            shown.append("…")
+        parts.append(", ".join(bots) + (f" ({', '.join(shown)})" if shown else ""))
+    partial = (
+        "AI crawlers restricted on some paths: " + "; ".join(parts) if parts else None
+    )
+    return full, partial
+
+
+def _ai_scrape_partial_only(ai):
+    """True when the AI-scrape signal rests on some-paths robots restrictions — no
+    whole-site AI-bot ban and no ai.txt — so the wording must say "restricted on some
+    paths", not "disallowed". A heuristic AI-UA group doesn't decide the wording: the
+    signals record only its name, not whether its ban is whole-site, and one usually
+    sits in the same robots group as the named bots."""
+    facts = ai_bot_facts(ai)
+    return bool(
+        facts["partial"]
+        and not facts["full"]
+        and not ((ai or {}).get("ai_txt") or {}).get("present")
+    )
+
+
 def crawl_notes(rec):
     """All compact secondary signals folded into ONE cell (no extra columns) — shown only when
     present. Blank for a clean row. AI signals are labelled machine-readable vs legal-text.
@@ -113,11 +187,12 @@ def crawl_notes(rec):
             or (ai.get("ai_bot_signals") or {}).get("channel")
             or []
         )
-        notes.append(
-            f"blocks {', '.join(chan)} (your channel)"
-            if chan
-            else "AI-scrape blocked (robots/ai.txt)"
-        )
+        if chan:
+            notes.append(f"blocks {', '.join(chan)} (your channel)")
+        elif _ai_scrape_partial_only(ai):
+            notes.append("AI-scrape restricted on some paths (robots)")
+        else:
+            notes.append("AI-scrape blocked (robots/ai.txt)")
     # REUSE: AI reservations — machine-readable vs legal-text
     if (
         ai.get("tdm_reserved")
@@ -218,6 +293,8 @@ def assess_crawl(rec):
             reasons.append(
                 f"robots blocks {', '.join(channel)} (AI / answer-engine crawlers)"
             )
+        elif _ai_scrape_partial_only(ai):
+            reasons.append(ai_bot_lines(ai)[1])  # a robots-only fact
         else:
             reasons.append("AI crawlers disallowed (robots / ai.txt)")
     if prohibits:

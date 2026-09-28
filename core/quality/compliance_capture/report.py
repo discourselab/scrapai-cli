@@ -15,6 +15,7 @@ from .assess import (
     REUSE_COLOR_ORDER,
     _cell,
     _color_rank,
+    ai_bot_lines,
     assess_crawl,
     assess_reuse,
     crawl_notes,
@@ -109,6 +110,11 @@ def crawl_detail_block(project, org, dom, date, rec):
             "- **Per-AI-bot bans:** robots whole-site-disallows named AI/training "
             "crawlers (generic — doesn't apply to our UA, but signals no-AI intent)"
         )
+    # a some-paths AI-bot restriction is its own fact (per_ai_bot covers whole-site only)
+    partial_line = ai_bot_lines(ai, path_fmt=lambda p: f"`{p}`")[1]
+    if partial_line:
+        head, _, rest = partial_line.partition(": ")
+        out.append(f"- **{head}:** {rest}")
     for p in rec.get("legal_pages", []):
         if p.get("prohibits_ai_training"):
             snip = (p.get("ai_training_snippet") or "").replace("\n", " ").strip()
@@ -537,6 +543,8 @@ def _crawl_table(captured, unchecked, domains):
         "`—` = none.\n"
         "- **notes** — extra signals, shown **only when present** (blank = nothing notable):\n"
         "    - `AI-scrape blocked` — robots / ai.txt disallows AI crawlers\n"
+        "    - `AI-scrape restricted on some paths (robots)` — robots disallows named AI "
+        "crawlers from some paths only (listed in the detail block)\n"
         "    - `blocks PerplexityBot (your channel)` — blocks a bot our KB actually feeds\n"
         "    - `AI-reuse reserved (machine-readable)` — TDMRep / `noai` restricts AI *reuse*\n"
         "    - `no-AI-training (ToS, legal-only)` — a terms clause bars AI/ML training (not machine-readable)\n"
