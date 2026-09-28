@@ -1,4 +1,4 @@
-"""Repository-harvest spider (JSON:API / paginated-JSON) — added by Ranu.
+"""Repository-harvest spider (JSON:API / paginated-JSON).
 
 Requested in docs/requests/21-jsonapi-repository-harvest.md. Digital repositories
 (Islandora / DSpace / Fedora / Samvera) put their HTML pages behind Cloudflare
