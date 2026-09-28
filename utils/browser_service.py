@@ -141,7 +141,10 @@ async def handle_request(pool, req, stop):
                 wait_timeout=req.get("wait_timeout", 10),
             )
             if not html:
-                return {"ok": False, "error": "verify failed"}
+                # Say why when the lane knows: a challenge it could not pass is
+                # the site refusing us, not the service failing.
+                error = getattr(lane, "last_error", None) or "verify failed"
+                return {"ok": False, "error": error}
             cookies = await _lane_cookies(lane, req["url"])
             user_agent = await _lane_user_agent(lane)
         return {

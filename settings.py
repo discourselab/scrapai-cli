@@ -41,6 +41,10 @@ ITEM_PIPELINES = {
 # Enable smart proxy middleware (only uses proxy on 403/429 errors)
 DOWNLOADER_MIDDLEWARES = {
     "middlewares.SmartProxyMiddleware": 350,
+    # Browser crawls only (inert unless the CLI sets BROWSER_WEDGE_MARKER):
+    # stops the crawl when the browser service wedges, see docs/requests/17.
+    # Sits next to the downloader so it sees every attempt, retries included.
+    "extensions.browser_wedge.BrowserWedgeDetector": 950,
 }
 
 # Spider middlewares

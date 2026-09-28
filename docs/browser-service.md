@@ -26,8 +26,8 @@ own and works exactly as before.
 ./scrapai browser shot <url> --project <name> [--screens N]  # screenshot via the service
 ```
 
-- `--pool N` — max sites open at once (default 5; matches the max-5 parallel
-  queue limit). Each site is one tab.
+- `--pool N` — max sites open at once (default 5). Each site is one tab. Browser
+  crawls are capped at 3 concurrent by their Pueue group, so that cap binds first.
 - `--proxy-type` — any proxy configured in `.env` (or `auto`/`none`).
 - On a headless server the browser runs under Xvfb automatically — no windows,
   no `xvfb-run` needed.
