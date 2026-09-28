@@ -80,7 +80,7 @@ Example:
 **Automatic cleanup on successful completion:**
 - When spider completes successfully (no Ctrl+C), checkpoint directory is automatically deleted
 - Saves disk space
-- Only failed/interrupted crawls keep checkpoints
+- Only failed/interrupted crawls keep checkpoints — except a crawl stopped because the browser service wedged (exit 3): resuming it would skip every URL that failed, so its checkpoint is deleted and the next run starts fresh (DeltaFetch still skips pages already captured). Its partial crawl file stays on disk (and is uploaded if S3 is configured), so a same-day re-run appends to it. The trade-off: a link that exists only on an already-captured item page, and was still queued at the stop, is not rediscovered by a plain re-run — only by `--reset-deltafetch`
 
 **Manual cleanup:**
 ```bash
