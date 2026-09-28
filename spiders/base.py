@@ -111,6 +111,23 @@ def _pdf_links(response):
     return out
 
 
+# Kept in JOBDIR by a crawl that stops early, for the leg that resumes it.
+LEG_STATS_FILE = "crawl_stats_leg.json"
+_LEG_COUNTS = ("items", "requests", "responses")
+_LEG_HISTOGRAMS = ("status", "final_status", "exceptions", "retries")
+
+
+def _add_leg_counts(data, earlier):
+    """Add an earlier leg's counters and histograms into this leg's `data`."""
+    for key in _LEG_COUNTS:
+        data[key] = data.get(key, 0) + (earlier.get(key) or 0)
+    for key in _LEG_HISTOGRAMS:
+        merged = dict(data.get(key) or {})
+        for name, n in (earlier.get(key) or {}).items():
+            merged[name] = merged.get(name, 0) + n
+        data[key] = merged
+
+
 class BaseDBSpiderMixin:
     """Mixin providing shared logic for DatabaseSpider and SitemapDatabaseSpider."""
 
@@ -170,9 +187,12 @@ class BaseDBSpiderMixin:
         - retries: {reason: n} from retry/reason_count — exception class names
           as above, or "<code> <Reason>" for HTTP-code retries.
         All four are always written ({} / 0 when empty) so a reader can tell a
-        new-format file with nothing to report from an older file."""
-        if reason != "finished":
-            return
+        new-format file with nothing to report from an older file.
+
+        A checkpointed crawl that stops early keeps its counters in its own
+        JOBDIR (LEG_STATS_FILE); the leg that resumes takes them and adds its
+        own, so a crawl finished over several legs reports whole-crawl numbers,
+        marked `summed`. The file goes when the CLI removes the checkpoint."""
         try:
             if self.crawler.settings.getint("CLOSESPIDER_ITEMCOUNT"):
                 return
@@ -203,9 +223,9 @@ class BaseDBSpiderMixin:
                 "requests": stats.get("downloader/request_count", 0),
                 "status": status,  # {"200": 4890, "404": 210, ...}
                 # Raw outcome counters (see docstring). Written on resumed
-                # legs too: like items/requests they cover this leg only,
-                # which the `resumed` marker below already flags; unlike the
-                # sitemap figures they are never mistaken for a whole-site
+                # legs too: like items/requests they cover this leg only
+                # unless earlier legs are added in below (`summed`); unlike
+                # the sitemap figures they are never mistaken for a whole-site
                 # denominator, so there is nothing to withhold.
                 "responses": stats.get("response_received_count", 0),
                 "final_status": final_status,
@@ -220,6 +240,18 @@ class BaseDBSpiderMixin:
             resumed = getattr(self, "_resumed", False)
             if resumed:
                 data["resumed"] = True
+                earlier = getattr(self, "_earlier_legs", None)
+                if earlier is not None:
+                    _add_leg_counts(data, earlier)
+                    data["summed"] = True
+            if reason != "finished":
+                # Only a checkpointed crawl can resume; keep this leg's counts
+                # (earlier legs included) for the leg that continues it.
+                jobdir = self.crawler.settings.get("JOBDIR")
+                if jobdir and (not resumed or data.get("summed")):
+                    with open(os.path.join(jobdir, LEG_STATS_FILE), "w") as fh:
+                        json.dump(data, fh)
+                return
             # For the audit: sitemap spiders count their own sitemap size +
             # rule-eligible URLs while parsing (sitemap_spider.py); record them
             # so the audit reads the coverage denominator from the crawl instead
@@ -254,6 +286,30 @@ class BaseDBSpiderMixin:
         except (OSError, ValueError):
             return False
 
+    @staticmethod
+    def _take_leg_stats(crawler):
+        """Read and remove the counters an earlier leg left in JOBDIR. Removed
+        at once: if this leg then dies without closing, the next leg finds no
+        file and reports its own leg only, rather than a sum missing a leg."""
+        path = os.path.join(crawler.settings.get("JOBDIR"), LEG_STATS_FILE)
+        taken = path + ".taken"
+        try:
+            # Move it aside before reading, so a file that cannot be removed
+            # or parsed is never taken twice.
+            os.replace(path, taken)
+        except OSError:
+            return None
+        try:
+            with open(taken) as fh:
+                earlier = json.load(fh)
+        except (OSError, ValueError):
+            earlier = None
+        try:
+            os.remove(taken)
+        except OSError:
+            pass
+        return earlier if isinstance(earlier, dict) else None
+
     @classmethod
     def _apply_cf_to_crawler(cls, spider, crawler):
         """Apply spider settings + Cloudflare/curl_cffi handlers to crawler after init.
@@ -267,6 +323,7 @@ class BaseDBSpiderMixin:
         # Runs from from_crawler, before the scheduler opens — the last moment
         # the persisted queue state is still readable (see the helper).
         spider._resumed = cls._resumed_from_checkpoint(crawler)
+        spider._earlier_legs = cls._take_leg_stats(crawler) if spider._resumed else None
         if hasattr(spider, "custom_settings"):
             for key, value in spider.custom_settings.items():
                 crawler.settings.set(key, value, priority="spider")

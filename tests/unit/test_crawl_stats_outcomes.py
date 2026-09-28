@@ -146,3 +146,127 @@ def test_outcome_keys_not_written_on_capped_run(db, tmp_path, monkeypatch):
     spider.closed("finished")
 
     assert not os.path.exists(_stats_path(tmp_path))
+
+
+def _jobdir_crawler(spider, tmp_path, stats):
+    jobdir = tmp_path / "checkpoint"
+    jobdir.mkdir(exist_ok=True)
+    spider.crawler.stats.get_stats.return_value = dict(stats)
+    spider.crawler.settings.get.side_effect = lambda k, d=None: (
+        str(jobdir) if k == "JOBDIR" else d
+    )
+    return jobdir
+
+
+@patch("spiders.sitemap_spider.get_db")
+def test_resumed_crawl_sums_its_legs(db, tmp_path, monkeypatch):
+    """Leg 1 stops early and keeps its counters in JOBDIR; the resumed leg
+    takes them and writes whole-crawl numbers, marked `summed`."""
+    monkeypatch.setattr("core.config.DATA_DIR", str(tmp_path))
+    leg1 = _make_spider(db, OUTCOME_STATS)
+    jobdir = _jobdir_crawler(leg1, tmp_path, OUTCOME_STATS)
+    leg1._resumed = False
+    leg1.closed("shutdown")
+    assert not os.path.exists(_stats_path(tmp_path))
+    assert (jobdir / "crawl_stats_leg.json").exists()
+
+    leg2 = _make_spider(db, OUTCOME_STATS)
+    _jobdir_crawler(leg2, tmp_path, OUTCOME_STATS)
+    leg2._resumed = True
+    leg2._earlier_legs = SitemapDatabaseSpider._take_leg_stats(leg2.crawler)
+    assert not (jobdir / "crawl_stats_leg.json").exists()
+    leg2.closed("finished")
+
+    data = _read(tmp_path)
+    assert data["resumed"] is True and data["summed"] is True
+    assert data["requests"] == 240
+    assert data["responses"] == 190
+    assert data["final_status"] == {"404": 12, "503": 6}
+    assert data["status"] == {"200": 160, "404": 12, "503": 18}
+
+
+@patch("spiders.sitemap_spider.get_db")
+def test_resumed_crawl_without_earlier_counts_is_last_leg(db, tmp_path, monkeypatch):
+    """No leg file (the earlier leg died without closing): this leg's own
+    numbers, marked resumed but not summed, and nothing kept for later."""
+    monkeypatch.setattr("core.config.DATA_DIR", str(tmp_path))
+    spider = _make_spider(db, OUTCOME_STATS)
+    jobdir = _jobdir_crawler(spider, tmp_path, OUTCOME_STATS)
+    spider._resumed = True
+    spider._earlier_legs = SitemapDatabaseSpider._take_leg_stats(spider.crawler)
+    assert spider._earlier_legs is None
+    spider.closed("finished")
+
+    data = _read(tmp_path)
+    assert data["resumed"] is True and "summed" not in data
+    assert data["responses"] == 95
+    assert not (jobdir / "crawl_stats_leg.json").exists()
+
+
+@patch("spiders.sitemap_spider.get_db")
+def test_early_stop_without_checkpoint_writes_nothing(db, tmp_path, monkeypatch):
+    monkeypatch.setattr("core.config.DATA_DIR", str(tmp_path))
+    spider = _make_spider(db, OUTCOME_STATS)
+    spider.crawler.settings.get.side_effect = lambda k, d=None: d
+
+    spider.closed("shutdown")
+
+    assert not os.path.exists(_stats_path(tmp_path))
+    assert list(tmp_path.iterdir()) == []
+
+
+def _leg(db, tmp_path, stats, reason, pending):
+    """One crawl leg through the real wiring: _apply_cf_to_crawler detects the
+    resume from JOBDIR and takes the earlier legs' counters, then closed()."""
+    jobdir = tmp_path / "checkpoint"
+    (jobdir / "requests.queue").mkdir(parents=True, exist_ok=True)
+    (jobdir / "requests.queue" / "active.json").write_text(
+        json.dumps([0, 5] if pending else [])
+    )
+    spider = _make_spider(db, stats)
+    spider.crawler.settings.get.side_effect = lambda k, d=None: (
+        str(jobdir) if k == "JOBDIR" else d
+    )
+    SitemapDatabaseSpider._apply_cf_to_crawler(spider, spider.crawler)
+    spider.closed(reason)
+    return jobdir / "crawl_stats_leg.json"
+
+
+@patch("spiders.sitemap_spider.get_db")
+def test_three_legs_sum_through_the_wiring(db, tmp_path, monkeypatch):
+    monkeypatch.setattr("core.config.DATA_DIR", str(tmp_path))
+    leg_file = _leg(db, tmp_path, OUTCOME_STATS, "shutdown", pending=False)
+    assert leg_file.exists()
+    _leg(db, tmp_path, OUTCOME_STATS, "shutdown", pending=True)
+    assert json.loads(leg_file.read_text())["requests"] == 240
+    _leg(db, tmp_path, OUTCOME_STATS, "finished", pending=True)
+    assert not leg_file.exists()
+
+    data = _read(tmp_path)
+    assert data["summed"] is True
+    assert data["requests"] == 360
+    assert data["final_status"] == {"404": 18, "503": 9}
+
+
+@patch("spiders.sitemap_spider.get_db")
+def test_resumed_leg_without_file_interrupted_again_keeps_nothing(
+    db, tmp_path, monkeypatch
+):
+    """Its own counters are not the whole crawl, so they must not be saved as
+    if they were: the next leg reports its own leg only."""
+    monkeypatch.setattr("core.config.DATA_DIR", str(tmp_path))
+    leg_file = _leg(db, tmp_path, OUTCOME_STATS, "shutdown", pending=True)
+    assert not leg_file.exists()
+
+
+@patch("spiders.sitemap_spider.get_db")
+def test_unreadable_leg_file_is_taken_once(db, tmp_path, monkeypatch):
+    monkeypatch.setattr("core.config.DATA_DIR", str(tmp_path))
+    jobdir = tmp_path / "checkpoint"
+    jobdir.mkdir()
+    (jobdir / "crawl_stats_leg.json").write_text("{not json")
+    _leg(db, tmp_path, OUTCOME_STATS, "finished", pending=True)
+
+    data = _read(tmp_path)
+    assert data["resumed"] is True and "summed" not in data
+    assert list(jobdir.glob("crawl_stats_leg.json*")) == []
