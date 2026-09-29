@@ -28,7 +28,10 @@ own and works exactly as before.
 
 - `--pool N` — max sites open at once (default 5). Each site is one tab. Browser
   crawls are capped at 3 concurrent by their Pueue group, so that cap binds first.
-- `--proxy-type` — any proxy configured in `.env` (or `auto`/`none`).
+- `--proxy-type` — any proxy configured in `.env` (or `auto`/`none`). The whole
+  browser runs through it. The service never switches proxy per site, so `auto`
+  behaves like `none` (direct); to reach a site through a proxy, start the
+  service with that proxy named, e.g. `--proxy-type residential`.
 - On a headless server the browser runs under Xvfb automatically — no windows,
   no `xvfb-run` needed.
 
@@ -67,9 +70,10 @@ Before processing multiple sites in parallel, start the service once:
 Each agent's `inspect` then shares the one browser (one tab per site) instead of
 launching its own. Run `./scrapai browser stop` when the batch is done.
 
-## Caveat
+## When one site fails
 
-Because all tabs share one browser session, if a site needs to **switch proxies
-mid-solve** (only when Cloudflare blocks *and* a proxy chain is configured) it
-can disturb other tabs. With direct connections — the normal case — this does
-not happen.
+All tabs share one browser, so no site may close or restart it. When a page
+fails to load or its Cloudflare check fails (a dead host, a certificate error,
+a challenge the browser can't pass), that request fails with the reason and
+every other tab carries on. The next request for the same site tries again on
+the same tab; a tab that crashed is reopened.
