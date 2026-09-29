@@ -60,5 +60,7 @@ quality-tool PR (request 06, request 22):
   `sitemap_rejected`, and its body kept for diagnosis under
   `_audit/sitemap_rejects/<spider>/` (at most 20 files × 256 KB, cleared on
   each fresh crawl). The cause is framework code and is not fixed here.
+- `docs/checkpoint.md` lists the leg file among the checkpoint's contents;
+  the stats file's keys are documented with the audit (`docs/quality.md`, PR 5).
 - The writer's tests stub both spider-lookup shapes, so they pass with or
   without PR 28 (spider lookups scoped per project).
