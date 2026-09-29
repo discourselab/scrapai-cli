@@ -20,6 +20,8 @@ Scrapy's JOBDIR feature saves:
 3. **Spider state** - Any custom state stored in `spider.state` dict
 4. **Output filename** - Resumes append to same file (no new file created)
 
+scrapai adds one file of its own: when a crawl stops early it saves its crawl-stats counters as `crawl_stats_leg.json`, so the leg that resumes can report whole-crawl numbers (`summed` in `_audit/crawl_stats/<spider>.json`). The resumed leg removes it once read, and it goes with the checkpoint.
+
 ## Usage
 
 ### Production Crawl with Checkpoint
