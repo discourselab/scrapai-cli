@@ -134,6 +134,30 @@ The format below is still fully supported — `sections` compiles down to it (`c
 | `["custom"]` + `FIELDS` | **Pure-CSS mode** — every field via a deliberate selector. Best when most schema fields are non-core. |
 | `["playwright", "trafilatura"]` | JS-rendered, generic extractors work after rendering. |
 | `["playwright", "custom"]` + `FIELDS` | JS-rendered, need selectors. |
+| `["fusion", "trafilatura"]` | Arc XP sites whose body lives only in the `Fusion.globalContent` JSON. See below. |
+
+### `fusion` — Arc XP sites
+
+Some Arc XP sites serve a DOM containing only the headline and metadata; the article body ships inside a `Fusion.globalContent` script blob and is rendered client side. Generic extractors therefore return navigation chrome instead of the article.
+
+`fusion` reads the body straight out of that JSON payload, so **a plain HTTP fetch is enough — no browser needed**:
+
+```json
+{ "EXTRACTOR_ORDER": ["fusion", "trafilatura"] }
+```
+
+It fills `title` and `content` from the payload, and `author` / `published_date` from structured metadata (same as newspaper/trafilatura). It returns nothing when the page has no Fusion payload, so listing a generic extractor after it gives you a clean fallback for non-article pages on the same site.
+
+**How to tell you need it:** `./scrapai try` returns a short body full of menu links, but the raw HTML contains `Fusion.globalContent`.
+
+**Two shapes it deliberately declines** (returns nothing, so the next extractor runs):
+
+- **Section fronts** (`node_type: "section"`) carry no `content_elements`. There is no article to read.
+- **`Fusion.globalContent={}` stubs**, where the body lives in `Fusion.contentCache` instead — a different structure this extractor does not read. Use a generic extractor or selectors in that case.
+
+Deployments embedding the payload as an escaped string (`Fusion.globalContent=JSON.parse("...")`) are also not decoded.
+
+Because it declines cleanly whenever there is no usable payload, listing `fusion` first is safe even on a mixed crawl.
 
 For non-article structured data (products, jobs, forums) use **named callbacks** instead — see [callbacks.md](callbacks.md).
 

@@ -41,7 +41,7 @@ jobs:
 
     - name: Run unit tests
       run: |
-        pytest tests/unit -v -m unit --cov=core --cov=spiders
+        pytest tests/unit -v --cov=core --cov=spiders
 
     - name: Run integration tests
       run: |

@@ -304,6 +304,21 @@ def _build_count_query(sql):
     return None
 
 
+def _sql_error(sql):
+    """Return an error message if the SQL is not allowed, else None.
+
+    Allows a single SELECT, UPDATE, or DELETE statement. Multi-statement
+    SQL is rejected so the prefix check cannot be bypassed
+    (e.g. "SELECT 1; DROP TABLE spiders").
+    """
+    stripped = sql.strip().rstrip(";")
+    if ";" in stripped:
+        return "Only a single SQL statement is allowed"
+    if not stripped.upper().startswith(("SELECT", "UPDATE", "DELETE")):
+        return "Only SELECT, UPDATE, and DELETE queries are allowed"
+    return None
+
+
 def _format_results(rows, result, format, json_lib):
     """Format and display query results."""
     if not rows:
@@ -316,10 +331,14 @@ def _format_results(rows, result, format, json_lib):
         click.echo(json_lib.dumps(output, indent=2, default=str))
 
     elif format == "csv":
-        columns = result.keys()
-        click.echo(",".join(columns))
-        for row in rows:
-            click.echo(",".join(str(v) for v in row))
+        import csv
+        import io
+
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(result.keys())
+        writer.writerows(rows)
+        click.echo(buf.getvalue(), nl=False)
 
     else:  # table format (default)
         columns = result.keys()
@@ -375,14 +394,13 @@ def query(sql, format, yes):
     from core.db import get_db
     import json as json_lib
 
-    # Safety check - only allow SELECT, UPDATE, DELETE
-    sql_upper = sql.strip().upper()
-    allowed_prefixes = ("SELECT", "UPDATE", "DELETE")
-    if not any(sql_upper.startswith(prefix) for prefix in allowed_prefixes):
-        click.echo("❌ Only SELECT, UPDATE, and DELETE queries are allowed")
+    error = _sql_error(sql)
+    if error:
+        click.echo(f"Error: {error}")
         click.echo("   INSERT, DROP, ALTER, and TRUNCATE are blocked for safety")
         return
 
+    sql_upper = sql.strip().upper()
     is_write = not sql_upper.startswith("SELECT")
 
     try:

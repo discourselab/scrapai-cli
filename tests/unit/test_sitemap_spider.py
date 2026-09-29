@@ -147,6 +147,42 @@ class TestSitemapDenyPatterns:
 
     @pytest.mark.unit
     @patch("spiders.sitemap_spider.get_db")
+    def test_deny_skips_sitemapindex_entries(self, mock_get_db):
+        """Deny patterns must not apply to <sitemapindex> entries (child-sitemap
+        URLs). A deny like \\?page= would swallow Drupal-style paginated child
+        sitemaps and the crawl would silently run empty (issue #12)."""
+        rule = _make_rule(allow=["/article/.*"], deny=[r"\?page="])
+        _patch_get_db(
+            mock_get_db, _make_active_spider_record("bbc_co_uk", rules=[rule])
+        )
+        spider = SitemapDatabaseSpider(spider_name="bbc_co_uk")
+
+        class FakeIndex(list):
+            type = "sitemapindex"
+
+        index_entries = FakeIndex(
+            [
+                {"loc": "https://bbc.co.uk/sitemap.xml?page=1"},
+                {"loc": "https://bbc.co.uk/sitemap.xml?page=2"},
+            ]
+        )
+        out = [e["loc"] for e in spider.sitemap_filter(index_entries)]
+        assert len(out) == 2  # child sitemaps survive the deny
+
+        class FakeUrlset(list):
+            type = "urlset"
+
+        content_entries = FakeUrlset(
+            [
+                {"loc": "https://bbc.co.uk/article/1"},
+                {"loc": "https://bbc.co.uk/article/list?page=2"},
+            ]
+        )
+        out = [e["loc"] for e in spider.sitemap_filter(content_entries)]
+        assert out == ["https://bbc.co.uk/article/1"]  # deny still works on content
+
+    @pytest.mark.unit
+    @patch("spiders.sitemap_spider.get_db")
     def test_deny_only_rule_is_collected(self, mock_get_db):
         """A deny-only rule (no allow) must still have its deny enforced."""
         rule = _make_rule(allow=None, deny=[r"\.pdf$"])

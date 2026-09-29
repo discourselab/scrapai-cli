@@ -53,8 +53,6 @@ Built by [DiscourseLab](https://www.discourselab.ai/). Used in production across
 - Sites with hard CAPTCHAs (we handle Cloudflare challenges, not Capsolver-level CAPTCHAs)
 - Login-required or paywall content (not supported yet)
 
-See [COMPARISON.md](COMPARISON.md) for a detailed comparison with Scrapling and crawl4ai.
-
 ## Why scrapai?
 
 We needed data for our work. Hundreds of websites, scraped regularly, structured consistently. We got sick of building and maintaining fleets of scrapers.
@@ -195,7 +193,7 @@ For a quick overview of every detached crawl — run state plus how much each ha
 ```bash
 ./scrapai crawl-status [--project news]
 # spider          project   state     downloaded    with-content   start           end  last-item
-# example_com       news   running        1,240    1,198 (97%)    13:53 29-06-26  -    4s
+# example_com      news      running        1,240    1,198 (97%)    13:53 29-06-26  -    4s
 ```
 
 It joins Pueue's run state and start/end times with the crawl file: items downloaded, how many have content text (`with-content` % — PDF/links-only items are excluded since they carry no content by design), and `last-item` — time since the crawl last wrote an item, so a running crawl that has stalled stands out. Raw Pueue (`pueue status` / `pueue log <id>`) still works too.
@@ -259,7 +257,6 @@ scrapai doesn't replace developers. It removes the repetitive parts so you can f
 | `middlewares.py` | SmartProxyMiddleware, direct-to-proxy escalation |
 | `pipelines.py` | Batched database writes and JSONL export |
 | `alembic/` | Database migrations |
-| `airflow/` | Production scheduling with Apache Airflow |
 
 **Storage modes:**
 - **Test mode** (`--limit N`): saves to database, inspect via `show` command
@@ -285,7 +282,7 @@ scrapai's approach: **the agent writes config, not code.**
 - JSON configs are validated through Pydantic before import. Malformed configs, SSRF URLs, and injection attempts fail validation
 - At runtime, Scrapy executes deterministically with no AI in the loop
 
-The hard enforcement (allow/deny lists) is a Claude Code feature configured via `./scrapai setup`. Other agents get instructions but not enforcement. Only Claude Code guarantees the agent can't sidestep it. For autonomous operation, we pair this with NanoClaw's container isolation. See [COMPARISON.md](COMPARISON.md#ai-agents--scraping-the-security-question) for the full analysis.
+The hard enforcement (allow/deny lists) is a Claude Code feature configured via `./scrapai setup`. Other agents get instructions but not enforcement. Only Claude Code guarantees the agent can't sidestep it. For autonomous operation, we pair this with NanoClaw's container isolation.
 
 Found a vulnerability? See [SECURITY.md](SECURITY.md). Do not use public GitHub issues.
 
@@ -332,10 +329,7 @@ Found a vulnerability? See [SECURITY.md](SECURITY.md). Do not use public GitHub 
 # Database
 ./scrapai db migrate                                     # Run migrations
 ./scrapai db stats                                       # Show database statistics
-./scrapai db query "SELECT * FROM spiders LIMIT 5"       # Read-only SQL queries
-
-# Parallel crawling (requires GNU parallel)
-bin/parallel-crawl <project>                             # All spiders in project
+./scrapai db query "SELECT * FROM spiders LIMIT 5"       # SQL queries (SELECT/UPDATE/DELETE)
 ```
 
 ## Configuration
@@ -361,7 +355,7 @@ RESIDENTIAL_PROXY_PASSWORD=your_password
 RESIDENTIAL_PROXY_HOST=your-residential-proxy.com
 RESIDENTIAL_PROXY_PORT=7000
 
-# S3-compatible storage (optional, for Airflow workflows)
+# S3-compatible storage (optional)
 S3_ENDPOINT=https://your-s3-endpoint.com
 S3_BUCKET=scrapai-crawls
 ```

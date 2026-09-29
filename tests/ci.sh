@@ -64,7 +64,7 @@ run_flake8() {
 
 run_unit() {
     step "pytest tests/unit"
-    if "$PY" -m pytest tests/unit -v -m unit --cov=core --cov=spiders; then
+    if "$PY" -m pytest tests/unit -v --cov=core --cov=spiders; then
         ok "unit tests"
     else
         fail "unit tests"

@@ -193,3 +193,49 @@ def test_clean_pdf_text_normalizes_carriage_returns():
 def test_extract_pdf_text_empty_on_non_pdf_or_empty_bytes():
     assert _extract_pdf_text(b"this is not a pdf") == ""
     assert _extract_pdf_text(b"") == ""
+
+
+# --- sitemap spiders collect PDF links too -----------------------------------
+
+
+async def test_sitemap_links_only_yields_url_only_items(monkeypatch):
+    """PDF collection must work for sitemap-driven spiders, not just rule-based
+    ones — sitemap fleets would otherwise harvest no PDFs at all."""
+    from unittest.mock import patch as _patch
+
+    from spiders.sitemap_spider import SitemapDatabaseSpider
+
+    rec = Mock(spec=Spider)
+    rec.name = "x_com"
+    rec.active = True
+    rec.allowed_domains = ["x.com"]
+    rec.start_urls = ["https://x.com/sitemap.xml"]
+    rec.rules = []
+    rec.callbacks_config = {}
+    rec.settings = []
+    rec.id = 7
+    with _patch("spiders.sitemap_spider.get_db") as mock_get_db:
+        db = Mock()
+        db.query.return_value.filter.return_value.first.return_value = rec
+        cm = MagicMock()
+        cm.__enter__.return_value = db
+        mock_get_db.return_value = cm
+        spider = SitemapDatabaseSpider(spider_name="x_com")
+    spider.custom_settings = {"PDF_MODE": "links_only"}
+
+    async def _no_article(*a, **k):
+        for _ in []:
+            yield
+
+    monkeypatch.setattr(spider, "_extract_article", _no_article)
+    html = '<a href="/docs/a.pdf">A</a><a href="https://ext.org/b.pdf">B</a>'
+    resp = HtmlResponse(
+        url="https://x.com/article", body=html.encode(), encoding="utf-8"
+    )
+    items = [i async for i in spider.parse_article(resp)]
+    urls = {i["url"] for i in items}
+    assert urls == {"https://x.com/docs/a.pdf", "https://ext.org/b.pdf"}
+    assert all(i["content"] == "" for i in items)
+    assert all(i["metadata_json"]["content_type"] == "pdf" for i in items)
+    assert all(i["metadata_json"]["found_on"] == "https://x.com/article" for i in items)
+    assert all(i["source"] == "sitemap_spider" for i in items)

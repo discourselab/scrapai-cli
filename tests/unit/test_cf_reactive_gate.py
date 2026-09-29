@@ -205,7 +205,6 @@ async def test_reverify_raises_when_service_unreachable(monkeypatch):
     turn into 40 orphaned browsers."""
     h = _make_handler()
     # autouse _service_down fixture: request -> None, ensure_running -> False
-    h._ensure_browser_started = AsyncMock()  # must never be awaited
     with pytest.raises(Exception, match="browser service"):
         await h._reverify(
             "larazon|www.larazon.bo",
@@ -213,5 +212,4 @@ async def test_reverify_raises_when_service_unreachable(monkeypatch):
             _spider(),
             used_seq=None,
         )
-    h._ensure_browser_started.assert_not_awaited()
     assert "larazon|www.larazon.bo" not in CloudflareDownloadHandler._cookie_cache

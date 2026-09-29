@@ -121,6 +121,22 @@ class TestBlockDetection:
         assert is_blocked is True
 
     @pytest.mark.unit
+    def test_detects_javascript_disabled_robot_challenge(self):
+        """CF interstitial that names neither 'cloudflare' nor 'just a moment'.
+
+        This variant was being saved as article content (title empty, content =
+        the challenge text) because no indicator matched it.
+        """
+        handler = CloudflareDownloadHandler({})
+        html = (
+            "JavaScript is disabled\nIn order to continue, we need to verify "
+            "that you're not a robot. This requires JavaScript. Enable "
+            "JavaScript and then reload the page."
+        )
+
+        assert handler._is_blocked(html) is True
+
+    @pytest.mark.unit
     def test_no_block_on_normal_html(self):
         """Test that normal HTML is not flagged as blocked."""
         handler = CloudflareDownloadHandler({})
@@ -169,26 +185,6 @@ class TestStrategySelection:
             ):
                 handler.download_request(request, spider)
                 mock_hybrid.assert_called_once()
-
-    @pytest.mark.unit
-    def test_browser_only_strategy_when_configured(self):
-        """Test browser-only mode when explicitly configured."""
-        handler = CloudflareDownloadHandler({})
-        spider = Mock()
-        spider.custom_settings = {"CLOUDFLARE_STRATEGY": "browser_only"}
-        request = Mock(spec=Request)
-        request.url = "https://example.com"
-
-        # Check which method gets called
-        with patch.object(
-            handler, "_browser_only_fetch_sync", return_value=Mock()
-        ) as mock_browser:
-            with patch(
-                "twisted.internet.threads.deferToThread",
-                side_effect=lambda f, *args: f(*args),
-            ):
-                handler.download_request(request, spider)
-                mock_browser.assert_called_once()
 
 
 class TestCookieCacheManagement:
@@ -299,19 +295,6 @@ class TestErrorHandling:
     """Test error handling in Cloudflare handler."""
 
     @pytest.mark.unit
-    def test_browser_fetch_raises_on_failure(self):
-        """Test that browser fetch raises exception on failure."""
-        handler = CloudflareDownloadHandler({})
-        spider = Mock()
-        request = Mock(spec=Request)
-        request.url = "https://example.com"
-
-        # Mock browser fetch to return None (failure)
-        with patch.object(CloudflareDownloadHandler, "_run_async", return_value=None):
-            with pytest.raises(Exception, match="Failed to fetch"):
-                handler._browser_only_fetch_sync(request, spider)
-
-    @pytest.mark.unit
     def test_hybrid_fetch_raises_on_no_cookies_after_refresh(self):
         """Test that hybrid fetch raises when cookies unavailable after refresh."""
         handler = CloudflareDownloadHandler({})
@@ -340,27 +323,171 @@ class TestHandlerLifecycle:
         # Should not raise
         handler.open()
 
-        # Browser should not be started yet (lazy initialization)
-        assert CloudflareDownloadHandler._browser_started is False
-
     @pytest.mark.unit
-    async def test_handler_close_stops_browser(self):
-        """Test that handler close cleans up browser state."""
+    async def test_handler_close_drops_spider_cookies(self):
+        """Test that handler close drops the spider's cookie cache entry."""
         handler = CloudflareDownloadHandler({})
 
-        # Mock browser as started
-        mock_browser = Mock()
-        mock_browser.browser = Mock()  # Mock the browser attribute
-        mock_browser.close = AsyncMock()  # Mock the async close method
+        spider = Mock()
+        spider.name = "cleanup_spider"
+        CloudflareDownloadHandler._cookie_cache["cleanup_spider"] = {"cookies": {}}
 
-        CloudflareDownloadHandler._shared_browser = mock_browser
-        CloudflareDownloadHandler._browser_started = True
+        await handler.close(spider)
 
-        # Call async close()
-        await handler.close()
+        assert "cleanup_spider" not in CloudflareDownloadHandler._cookie_cache
 
-        # Browser close should have been called
-        mock_browser.close.assert_called_once()
 
-        assert CloudflareDownloadHandler._browser_started is False
-        assert CloudflareDownloadHandler._shared_browser is None
+class TestBrowserOnlyStrategy:
+    """browser_only routes every request through the browser service (cf_verify)."""
+
+    def _spider(self, strategy="browser_only"):
+        s = Mock()
+        s.name = "test_spider"
+        s.custom_settings = {"CLOUDFLARE_STRATEGY": strategy}
+        return s
+
+    @pytest.mark.unit
+    def test_download_request_routes_to_browser_only(self, monkeypatch):
+        """CLOUDFLARE_STRATEGY='browser_only' dispatches to _browser_only_fetch_sync."""
+        handler = CloudflareDownloadHandler({})
+        spider = self._spider("browser_only")
+        request = Request("https://example.com/job/1")
+
+        calls = []
+
+        def fake_browser_only(req, sp):
+            calls.append(("browser_only", req.url))
+
+        def fake_hybrid(req, sp):
+            calls.append(("hybrid", req.url))
+
+        monkeypatch.setattr(handler, "_browser_only_fetch_sync", fake_browser_only)
+        monkeypatch.setattr(handler, "_hybrid_fetch_sync", fake_hybrid)
+
+        from twisted.internet import threads as tw_threads
+
+        monkeypatch.setattr(
+            tw_threads,
+            "deferToThread",
+            lambda fn, *args: fn(*args),
+        )
+
+        handler.download_request(request, spider)
+        assert calls == [("browser_only", "https://example.com/job/1")]
+
+    @pytest.mark.unit
+    def test_download_request_default_is_hybrid(self, monkeypatch):
+        """No CLOUDFLARE_STRATEGY (or 'hybrid') defaults to hybrid path."""
+        handler = CloudflareDownloadHandler({})
+        spider = self._spider("hybrid")
+        request = Request("https://example.com/job/2")
+
+        calls = []
+
+        monkeypatch.setattr(
+            handler,
+            "_browser_only_fetch_sync",
+            lambda r, s: calls.append("browser_only"),
+        )
+        monkeypatch.setattr(
+            handler, "_hybrid_fetch_sync", lambda r, s: calls.append("hybrid")
+        )
+
+        from twisted.internet import threads as tw_threads
+
+        monkeypatch.setattr(
+            tw_threads,
+            "deferToThread",
+            lambda fn, *args: fn(*args),
+        )
+
+        handler.download_request(request, spider)
+        assert calls == ["hybrid"]
+
+    @pytest.mark.unit
+    async def test_browser_only_fetch_async_calls_verify_via_service(self, monkeypatch):
+        """_browser_only_fetch_async delegates to _verify_via_service and returns html."""
+        handler = CloudflareDownloadHandler({})
+        spider = self._spider()
+        request = Request("https://example.com/job/3")
+
+        async def fake_verify(url, sp):
+            return "<html>rendered</html>", {"cf_clearance": "tok"}, "UA"
+
+        monkeypatch.setattr(handler, "_verify_via_service", fake_verify)
+
+        html = await handler._browser_only_fetch_async(request, spider)
+        assert html == "<html>rendered</html>"
+
+    @pytest.mark.unit
+    async def test_browser_only_fetch_async_raises_when_service_unreachable(
+        self, monkeypatch
+    ):
+        """_browser_only_fetch_async raises when browser service is None."""
+        handler = CloudflareDownloadHandler({})
+        spider = self._spider()
+        request = Request("https://example.com/job/4")
+
+        async def fake_verify(url, sp):
+            return None  # service unreachable
+
+        monkeypatch.setattr(handler, "_verify_via_service", fake_verify)
+
+        with pytest.raises(Exception, match="Browser service unreachable"):
+            await handler._browser_only_fetch_async(request, spider)
+
+
+def _retry_exceptions():
+    """The exception types Scrapy's RetryMiddleware actually retries."""
+    from scrapy.settings.default_settings import RETRY_EXCEPTIONS
+    from scrapy.utils.misc import load_object
+
+    return tuple(load_object(x) if isinstance(x, str) else x for x in RETRY_EXCEPTIONS)
+
+
+class TestUnreachableServiceIsRetryable:
+    """An unreachable browser service must raise something Scrapy will retry.
+
+    Both paths log "(request will be retried)". RetryMiddleware only retries
+    exceptions listed in RETRY_EXCEPTIONS, so raising a bare Exception dropped
+    the URL from the crawl while claiming the opposite in the logs. These tests
+    assert against Scrapy's real list rather than a hardcoded type, so they keep
+    holding if that list changes.
+    """
+
+    @pytest.mark.unit
+    async def test_browser_only_unreachable_raises_retryable(self, monkeypatch):
+        handler = CloudflareDownloadHandler({})
+        spider = Mock()
+        spider.name = "s"
+        spider.custom_settings = {"CLOUDFLARE_STRATEGY": "browser_only"}
+
+        async def fake_verify(url, sp):
+            return None
+
+        monkeypatch.setattr(handler, "_verify_via_service", fake_verify)
+
+        with pytest.raises(_retry_exceptions()):
+            await handler._browser_only_fetch_async(
+                Request("https://example.com/a"), spider
+            )
+
+    @pytest.mark.unit
+    async def test_hybrid_reverify_unreachable_raises_retryable(self, monkeypatch):
+        """The default hybrid path has the same promise to keep."""
+        handler = CloudflareDownloadHandler({})
+        spider = Mock()
+        spider.name = "s"
+        spider.custom_settings = {}
+
+        async def fake_verify(url, sp):
+            return None
+
+        monkeypatch.setattr(handler, "_verify_via_service", fake_verify)
+        CloudflareDownloadHandler._refresh_lock = None
+        CloudflareDownloadHandler._cookie_cache.pop("retryable_key", None)
+
+        with pytest.raises(_retry_exceptions()):
+            await handler._reverify(
+                "retryable_key", "https://example.com/a", spider, None
+            )
