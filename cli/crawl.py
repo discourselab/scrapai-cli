@@ -123,7 +123,7 @@ def _supersede_todays_crawl_file(crawls_dir):
     pages), and prior rows may be the only copy of since-removed pages.
     Reversible (rename back to restore); the quality lenses glob *.jsonl, so a
     superseded file drops out of them automatically.
-    ponytail: a second same-day reset overwrites the first backup — at most one
+    A second same-day reset overwrites the first backup — at most one
     .superseded generation per date."""
     f = Path(crawls_dir) / f"crawl_{datetime.now().strftime('%d%m%Y')}.jsonl"
     if f.exists():
