@@ -359,29 +359,11 @@ def score_spider(name, sp, c, ctx):
         if sm:
             pass  # counts came from the crawl — never fetch
         elif should_fetch(name):
-            # configured start_urls are often a single leaf (e.g. post-sitemap.xml);
-            # also pull the site's root index so we catch sibling *content*
-            # sub-sitemaps (page-sitemap etc.). Taxonomy ones are skipped during
-            # recursion. The leaf start_urls are still fetched (deduped).
-            entries = list(sp["start_urls"])
-            for r in discover_sitemap(
-                sp["host"],
-                project,
-                name,
-                cache_dir,
-                state,
-                sp["browser"],
-                not args.no_browser_retry,
-            ):
-                if r not in entries:
-                    entries.append(r)
+            # Only the sitemaps the spider was given: coverage measures what it
+            # was set to crawl, the same scope as the crawl-recorded counts. The
+            # site's other sitemaps show in the given/total listing, never here.
             fetch_spider_sitemaps(
-                name,
-                {**sp, "start_urls": entries},
-                project,
-                cache_dir,
-                state,
-                not args.no_browser_retry,
+                name, sp, project, cache_dir, state, not args.no_browser_retry
             )
     elif reason:
         label = "ignored"  # on the skip list — show 'ignored' + reason, don't probe

@@ -736,7 +736,7 @@ def test_robots_on_disk_listing_none_not_refetched(data, monkeypatch):
 
 def test_coverage_fetch_reused_by_listing(data, monkeypatch):
     # a USE_SITEMAP spider without crawl-recorded counts: the coverage fetch
-    # pulls the root index into the spider cache; the listing reuses that copy
+    # reads only its own sitemap; the listing fetches the root index once
     kids = _kids("post", "page")
     pages = {INDEX: _index_xml(kids), ROBOTS: f"Sitemap: {INDEX}\n"}
     pages.update(
@@ -769,6 +769,32 @@ def test_coverage_fetch_reused_by_listing(data, monkeypatch):
     monkeypatch.setattr(sitemaps, "fetch", _no_network)
     row = _yes_row(data, _ctx(data, no_fetch=False), kids[:1])
     assert (row["sitemaps_given"], row["sitemaps_total"]) == (1, 2)
+
+
+def test_eligible_counts_only_given_sitemaps(data, monkeypatch):
+    # the site also publishes a 3-page scholar sitemap the spider was not given:
+    # it shows in the listing (1/2) but never in the coverage denominator
+    kids = _kids("post", "scholar")
+
+    def urlset(*paths):
+        locs = "".join(f"<url><loc>https://example.org/{p}</loc></url>" for p in paths)
+        return f"<urlset>{locs}</urlset>"
+
+    pages = {
+        INDEX: _index_xml(kids),
+        ROBOTS: f"Sitemap: {INDEX}\n",
+        kids[0]: urlset("a", "b"),
+        kids[1]: urlset("scholar/x", "scholar/y", "scholar/z"),
+    }
+    fake = FakeFetch(pages)
+    monkeypatch.setattr(sitemaps, "fetch", fake)
+    _robots_snapshot(data, [INDEX])
+    ctx = _ctx(data, no_fetch=False)
+    ctx.should_fetch = lambda n: True
+    row = score_spider("example_org", _sp(start_urls=kids[:1]), _corpus(2), ctx)
+    assert row["eligible"] == "2"
+    assert (row["sitemaps_given"], row["sitemaps_total"]) == (1, 2)
+    assert kids[1] not in fake.calls
 
 
 def test_given_index_under_other_url_counts_children(data):

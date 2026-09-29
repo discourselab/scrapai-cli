@@ -76,7 +76,9 @@ fetched N sitemaps it could not parse and dropped their URLs) ·
 glossary tooltips define every flag precisely.
 
 Coverage is `scraped ÷ eligible`, where `eligible` is the full rule-matched sitemap
-count. URLs the crawl found dead (404) or blocked (403) are not subtracted: they are
+count. For a sitemap spider that is the sitemaps it was given only, whether counted by
+the crawl or fetched by the audit: the site's other sitemaps show in the sitemap
+listing, never in coverage. URLs the crawl found dead (404) or blocked (403) are not subtracted: they are
 pages the spider should have got, so they show as a shortfall.
 
 **dead / blocked / failed** say how the crawl's requests finally ended, read from its
