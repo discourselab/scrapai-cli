@@ -76,6 +76,8 @@ async def test_verified_lane_records_a_failed_navigation():
         ("challenge not passed (access denied)", True),
         ("navigation error: net::ERR_CONNECTION_REFUSED at https://x", True),
         ("navigation error: net::ERR_CERT_DATE_INVALID at https://x", True),
+        ("navigation error: net::ERR_NAME_RESOLUTION_FAILED at https://x", True),
+        ("navigation error: browser lane was closed", False),
         ("navigation error: Timeout 60000ms exceeded.", False),
         ("navigation error: Target page, context or browser has been closed", False),
         ("verify failed", False),

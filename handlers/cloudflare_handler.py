@@ -54,6 +54,7 @@ def _start_event_loop(loop):
 # service error.
 _SITE_NET_ERRORS = (
     "net::ERR_NAME_NOT_RESOLVED",
+    "net::ERR_NAME_RESOLUTION_FAILED",
     "net::ERR_CONNECTION_REFUSED",
     "net::ERR_CONNECTION_RESET",
     "net::ERR_CONNECTION_CLOSED",

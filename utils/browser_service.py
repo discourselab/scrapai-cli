@@ -169,8 +169,10 @@ async def handle_request(pool, req, stop):
 
 async def _run(port, proxy_type, pool_size):
     _sweep_orphans()  # clean up Chromes a SIGKILLed/OOMed predecessor left behind
+    # shared: every lane drives a tab in this browser, so no request may close
+    # or relaunch it (docs/requests/30).
     parent = CloudflareBrowserClient(
-        headless=False, proxy_chain=proxy_mod.chain(proxy_type)
+        headless=False, proxy_chain=proxy_mod.chain(proxy_type), shared=True
     )
     await parent.start()
 
