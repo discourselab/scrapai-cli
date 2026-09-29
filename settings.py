@@ -40,6 +40,10 @@ ITEM_PIPELINES = {
 
 # Enable smart proxy middleware (only uses proxy on 403/429 errors)
 DOWNLOADER_MIDDLEWARES = {
+    # Stops a crawl the site is blocking (docs/requests/29). Next to the
+    # downloader, above the retry and proxy middlewares, so it sees every 429
+    # attempt, retried or not.
+    "extensions.site_block.SiteBlockGuard": 960,
     "middlewares.SmartProxyMiddleware": 350,
 }
 

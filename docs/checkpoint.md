@@ -133,6 +133,7 @@ Request(url, callback=some_external_function)
 **Smart cleanup:**
 - Exit code 0 (success) → cleanup checkpoint
 - Exit code != 0 (error/Ctrl+C) → keep checkpoint for resume
+- Except: a crawl stopped because the site is blocking it (CLI exit 4) → checkpoint deleted. A resume would skip every URL that failed (they are in the checkpoint's seen-set) and then report success; a fresh run re-requests exactly the pages DeltaFetch has no item for. The trade-off: a link that appears only on an already-captured item page, and was still queued at the stop, is not rediscovered by a plain re-run — only by `--reset-deltafetch`. Its partial crawl file stays on disk (and is uploaded if S3 is configured), so a same-day re-run appends to it
 
 ## Troubleshooting
 
@@ -143,7 +144,7 @@ Request(url, callback=some_external_function)
 ls -la ./data/myproject/myspider/checkpoint/
 ```
 
-If directory doesn't exist, checkpoint was cleaned up (successful completion) or never created.
+If directory doesn't exist, checkpoint was cleaned up (successful completion, or the CLI deleted it after stopping the crawl — see Smart cleanup) or never created.
 
 ### Want to start fresh (discard checkpoint)
 
