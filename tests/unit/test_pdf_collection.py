@@ -106,6 +106,44 @@ def test_pdf_links_extracts_absolute_pdf_urls():
     assert not any(u.endswith(".html") for u in urls)
 
 
+def test_pdf_links_reads_option_value_download_dropdowns():
+    """A download/share modal puts the PDF in <option value>, never an anchor."""
+    html = (
+        '<select class="download-options">'
+        '<option value="https://x.com/full-report.pdf">Full report (67 MB)</option>'
+        '<option value="/fr/executive-summary.pdf">Resume (FR)</option>'
+        "</select>"
+    )
+    resp = HtmlResponse(
+        url="https://x.com/report/r/", body=html.encode(), encoding="utf-8"
+    )
+    urls = _pdf_links(resp)
+    assert "https://x.com/full-report.pdf" in urls
+    assert "https://x.com/fr/executive-summary.pdf" in urls  # relative resolved
+
+
+def test_pdf_links_ignores_ordinary_option_values():
+    """Selection keys carry no file extension, so the .pdf test rejects them."""
+    html = (
+        '<select name="lang"><option value="en">EN</option>'
+        '<option value="es">ES</option></select>'
+        '<select name="year"><option value="1919">1919</option>'
+        '<option value="All">All</option></select>'
+        '<select name="sort"><option value="/browse?sort=date">Date</option></select>'
+    )
+    resp = HtmlResponse(url="https://x.com/", body=html.encode(), encoding="utf-8")
+    assert _pdf_links(resp) == []
+
+
+def test_pdf_links_dedupes_a_pdf_offered_as_both_anchor_and_option():
+    html = (
+        '<a href="/report.pdf">download</a>'
+        '<select><option value="https://x.com/report.pdf">Report</option></select>'
+    )
+    resp = HtmlResponse(url="https://x.com/", body=html.encode(), encoding="utf-8")
+    assert _pdf_links(resp) == ["https://x.com/report.pdf"]
+
+
 def test_pdf_links_empty_on_non_html_response():
     assert _pdf_links(Response(url="https://x.com/doc.pdf")) == []
 
