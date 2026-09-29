@@ -258,7 +258,7 @@ Create `test_spider.json` with 5 article URLs (`name` MUST be the domain with do
 ```bash
 ./scrapai spiders import data/proj/spider/analysis/test_spider.json --project proj
 ./scrapai crawl example_com --limit 5 --project proj
-./scrapai show example_com --limit 5 --project proj
+./scrapai show example_com --limit 5 --project proj --source db
 ```
 
 **Verify every `required: true` field in `project.json` is non-null on every test item.**

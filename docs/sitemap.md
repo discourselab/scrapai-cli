@@ -110,7 +110,7 @@ Can use main sitemap URL or specific sub-sitemap URL.
 ```bash
 ./scrapai spiders import spider.json --project proj
 ./scrapai crawl example_sitemap --limit 5 --project proj
-./scrapai show example_sitemap --limit 5 --project proj
+./scrapai show example_sitemap --limit 5 --project proj --source db
 ```
 
 If good → production. If bad → go back to Step 2.

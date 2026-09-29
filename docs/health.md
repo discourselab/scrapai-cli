@@ -246,7 +246,7 @@ Agent will:
 
 # Or test specific spider
 ./scrapai crawl bbc --project news --limit 5
-./scrapai show bbc --project news --limit 5
+./scrapai show bbc --project news --limit 5 --source db
 ```
 
 ## Exit Codes
