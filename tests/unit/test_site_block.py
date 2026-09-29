@@ -422,6 +422,15 @@ def _fake_crawl(tmp_path, mode, n_urls, proxy=None):
     script.write_text(_FAKE_CRAWL)
     marker, out = tmp_path / "marker.json", tmp_path / "out.json"
     env = {k: v for k, v in os.environ.items() if "_PROXY_" not in k}
+    # core.config loads the repo's .env without overriding what is already
+    # set, so blank every proxy variable it holds: the fake crawl must see
+    # exactly the proxy this test configures, whatever the machine has.
+    dotenv = REPO / ".env"
+    if dotenv.exists():
+        for line in dotenv.read_text().splitlines():
+            key = line.split("=", 1)[0].strip()
+            if "_PROXY_" in key and not key.startswith("#"):
+                env[key] = ""
     env["PYTHONPATH"] = str(REPO)
     if proxy:
         env["DATACENTER_PROXY_URL"] = proxy
