@@ -428,13 +428,16 @@ def _index_xml(urls):
 
 class FakeFetch:
     """Stands in for sitemaps.fetch: serves `pages`, counts every call, and
-    honours the fetch budget like the real one. Nothing leaves the process."""
+    honours the fetch budget like the real one. Nothing leaves the process.
+    Fetches that only count a not-given sitemap's pages (the site-wide total)
+    are kept apart in `counted`, so `calls` stays the listing's own."""
 
     def __init__(self, pages=None):
-        self.pages, self.calls = pages or {}, []
+        self.pages, self.calls, self.counted = pages or {}, [], []
 
     def __call__(self, url, outdir, project, browser, state):
-        self.calls.append(url)
+        counting = state["global_cap"] == sitemaps.COUNT_FETCH_CAP
+        (self.counted if counting else self.calls).append(url)
         if state["global"] >= state["global_cap"]:
             return None
         state["global"] += 1
@@ -558,8 +561,10 @@ def test_fetch_all_reprobes_failed(data, monkeypatch):
     _yes_row(data, ctx, _kids("page"), spider="site01_org")  # once per run
     assert fake.calls == [INDEX]
     assert (row["sitemaps_given"], row["sitemaps_total"]) == (1, 2)
-    host = data / "proj" / "_audit" / "sitemap_cache" / "_host" / "example.org"
-    assert not list(host.glob("sm_*.failed.json"))
+    # the index's marker is cleared (the not-given children this fake can't
+    # serve leave their own markers)
+    marker = sitemaps._index_dir(str(_cache(data)), INDEX) + ".failed.json"
+    assert not os.path.exists(marker)
 
 
 def test_no_fetch_shows_unknown_total(data):
@@ -720,8 +725,11 @@ def test_robots_on_disk_listing_none_not_refetched(data, monkeypatch):
     # probe is cached: the listing answers from disk with ZERO fetches
     _robots_snapshot(data, [])
     _cached_page(data, "example_org_smprobe", _index_xml(_kids("post", "page")))
+    fake = FakeFetch()
+    monkeypatch.setattr(sitemaps, "fetch", fake)
     row = _yes_row(data, _ctx(data, no_fetch=False), _kids("post"))
     assert (row["sitemaps_given"], row["sitemaps_total"]) == (1, 2)
+    assert fake.calls == []
     # nothing cached for /sitemap.xml: only it is fetched — never robots.txt
     fake = FakeFetch({ROOT: _index_xml(_kids("post", "page"))})
     monkeypatch.setattr(sitemaps, "fetch", fake)
@@ -773,7 +781,7 @@ def test_coverage_fetch_reused_by_listing(data, monkeypatch):
 
 def test_eligible_counts_only_given_sitemaps(data, monkeypatch):
     # the site also publishes a 3-page scholar sitemap the spider was not given:
-    # it shows in the listing (1/2) but never in the coverage denominator
+    # it counts toward the site-wide total, never toward eligible
     kids = _kids("post", "scholar")
 
     def urlset(*paths):
@@ -793,8 +801,20 @@ def test_eligible_counts_only_given_sitemaps(data, monkeypatch):
     ctx.should_fetch = lambda n: True
     row = score_spider("example_org", _sp(start_urls=kids[:1]), _corpus(2), ctx)
     assert row["eligible"] == "2"
+    assert row["sitemap_total"] == 5
     assert (row["sitemaps_given"], row["sitemaps_total"]) == (1, 2)
-    assert kids[1] not in fake.calls
+    assert fake.counted == [kids[1]]
+
+
+def test_unread_other_sitemap_makes_total_a_floor(data):
+    # --no-fetch and the not-given page sitemap was never cached: the site-wide
+    # total is at least the given pages, and says so
+    _robots_snapshot(data, [INDEX])
+    sitemaps._save_manifest(INDEX, str(_cache(data)), _index_xml(_kids("post", "page")))
+    row = _yes_row(data, _ctx(data), _kids("post"))
+    assert row["sitemap_total"] == "≥100"
+    assert row["eligible"] == "100"
+    assert "total is a floor" in row["sitemaps_note"]
 
 
 def test_given_index_under_other_url_counts_children(data):
@@ -816,6 +836,8 @@ def test_failed_discovery_not_stored_as_none(data, monkeypatch):
     row = _yes_row(data, _ctx(data, no_fetch=False), _kids("post"))
     assert row["sitemaps_total"] == "?"
     assert "discovery failed" in row["sitemaps_note"]
+    # the site's sitemaps unknown: total falls back to the spider's own count
+    assert row["sitemap_total"] == "≥100"
     host = _cache(data) / "_host" / "example.org"
     assert not (host / "declared.json").exists()
     assert (host / "declared.failed.json").exists()

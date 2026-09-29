@@ -19,6 +19,7 @@ from .sitemaps import (
     fetch_spider_sitemaps,
     index_manifest,
     parse_sitemap,
+    sitemap_page_count,
     read_page,
     spider_cache_dirs,
     spider_cached_urls,
@@ -112,8 +113,10 @@ def _no_query(n):
 def sitemap_listing(name, sp, ctx):
     """Which of the site's sitemaps a USE_SITEMAP spider was given, for the
     `given/total` sitemap cell and the per-spider list. Returns
-    {given, total, list, note}: `list` = [{url, given, in_index}], given first;
-    `total` is "?" while a declared sitemap's children are unknown.
+    {given, total, list, note, other_pages}: `list` = [{url, given, in_index}],
+    given first; `total` is "?" while a declared sitemap's children are
+    unknown; `other_pages` = page URLs in the sitemaps NOT given (the rest of
+    the site-wide page total), `other_known` False while any is unread.
 
     The site's sitemaps = the union of every declared index's children plus the
     declared leaf sitemaps (robots `Sitemap:` lines, read from disk first; the
@@ -230,6 +233,15 @@ def sitemap_listing(name, sp, ctx):
         for n, u in known.items()
         if n not in given
     ]
+    other = [
+        sitemap_page_count(e["url"], *fetch_args, on_disk=on_disk)
+        for e in listed
+        if not e["given"]
+    ]
+    if None in other:
+        notes.append(
+            f"{other.count(None)} not-given sitemap(s) unread: total is a floor"
+        )
     if declared == []:
         notes.append("the site declares no sitemap (robots.txt, /sitemap.xml)")
     elif declared and not set(declared) - skipped:
@@ -239,6 +251,8 @@ def sitemap_listing(name, sp, ctx):
         "total": len(listed) if complete else "?",
         "list": listed,
         "note": "; ".join(notes),
+        "other_pages": sum(n for n in other if n is not None),
+        "other_known": complete and None not in other,
     }
 
 
@@ -442,6 +456,13 @@ def score_spider(name, sp, c, ctx):
     # reason in audit_sitemap_skip.json. (USE_SITEMAP spiders keep `yes` regardless —
     # 0 eligible there is a real misconfig.)
     found_no_content = label == "found" and isinstance(total, int) and total == 0
+    if listing and isinstance(total, int):
+        # `total` is the whole site: the given sitemaps' pages (counted above)
+        # plus those of every sitemap the spider was not given. `eligible`
+        # stays what the spider was set to crawl.
+        total += listing["other_pages"]
+        if not listing["other_known"]:
+            total = f"≥{total}"
 
     est_cached = deltafetch_estimate(project, name)
     # eligible denominator (tidy = just the number). It is the FULL rule-eligible

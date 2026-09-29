@@ -249,8 +249,8 @@ def _cov_table(
             '<th class="sel"><input type="checkbox" class="fx-all" aria-label="select all"></th>'
         )
     tip_total = _tip(
-        "How many page URLs the sitemaps this spider was given list. The site's "
-        "other sitemaps are in the sitemap column's list, not counted here."
+        "How many page URLs the site lists across ALL its sitemaps, given to the "
+        "spider or not (≥ = one of them is still unread)."
     )
     tip_eligible = _tip(
         "How many pages this spider SHOULD have got — the URLs in its given sitemaps "

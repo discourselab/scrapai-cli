@@ -78,7 +78,8 @@ glossary tooltips define every flag precisely.
 Coverage is `scraped ÷ eligible`, where `eligible` is the rule-matched URL count of
 the sitemaps the spider was given: what it was set to crawl, whether counted by the
 crawl or fetched by the audit. The site's other sitemaps show in the sitemap listing,
-never in coverage. URLs the crawl found dead (404) or blocked (403) are not subtracted: they are
+never in coverage, but their pages count toward `total`, which is the whole site (`≥N`
+while one of them is unread). URLs the crawl found dead (404) or blocked (403) are not subtracted: they are
 pages the spider should have got, so they show as a shortfall.
 
 **dead / blocked / failed** say how the crawl's requests finally ended, read from its

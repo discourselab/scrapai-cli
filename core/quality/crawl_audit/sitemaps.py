@@ -462,6 +462,8 @@ def _save_manifest(url, cache_dir, text):
         "children": locs if is_index else [],
         "fetched": datetime.date.today().isoformat(),
     }
+    if not is_index:
+        manifest["pages"] = sum(1 for u in locs if not is_media_loc(u))
     if sitemap_kind(text) == "other":
         manifest["not_sitemap"] = True
     _write_json(os.path.join(d, "manifest.json"), manifest)
@@ -472,13 +474,26 @@ def _save_manifest(url, cache_dir, text):
     return manifest
 
 
-def index_manifest(url, project, cache_dir, state, mode, browser, retry, on_disk=None):
+def index_manifest(
+    url,
+    project,
+    cache_dir,
+    state,
+    mode,
+    browser,
+    retry,
+    on_disk=None,
+    budget=None,
+    need_pages=False,
+):
     """({url, is_index, children, fetched}, None) for a declared sitemap, or
     (None, why) when its children are unknown. `mode` is the audit fetch mode
     (none / missing / all); `on_disk` maps URLs to pages a spider's own fetch
     cached (spider_cached_urls). Read from disk first and fetched at most once
     per URL (see above); an exhausted fetch budget is not a site failure, so it
-    leaves no marker."""
+    leaves no marker. `need_pages`: a leaf manifest from before page counts
+    were kept is recounted from its cached copy, or fetched once if there is
+    none; `budget` defaults to the listing's own (index_budget)."""
     d = _index_dir(cache_dir, url)
     mf, failed = os.path.join(d, "manifest.json"), d + ".failed.json"
     seen = state.setdefault("index_seen", set())
@@ -497,6 +512,12 @@ def index_manifest(url, project, cache_dir, state, mode, browser, retry, on_disk
         return None, f"fetch failed {today}"
     if mode != "all" or url in seen:
         cached = _read_json(mf)
+        stale = need_pages and cached and not cached.get("is_index")
+        if stale and "pages" not in cached:
+            text = read_page(os.path.join(d, "page.html"))
+            if _answered(text):
+                return _save_manifest(url, cache_dir, text), None
+            cached = None
         if cached is not None:
             return cached, None
         text = read_page((on_disk or {}).get(url))
@@ -509,7 +530,7 @@ def index_manifest(url, project, cache_dir, state, mode, browser, retry, on_disk
             return None, "fetch failed"
     if mode == "none":
         return None, "not fetched (--no-fetch)"
-    budget = index_budget(state)
+    budget = budget or index_budget(state)
     if not _budget_left(budget):
         return None, "fetch budget exhausted"
     seen.add(url)
@@ -523,6 +544,44 @@ def index_manifest(url, project, cache_dir, state, mode, browser, retry, on_disk
         return None, "fetch budget exhausted"
     _write_json(failed, {"url": url, "date": today})
     return None, f"fetch failed {today}"
+
+
+# The site-wide `total` also counts the pages of the sitemaps a spider was NOT
+# given. Each is read like a declared sitemap above (disk first, fetched at most
+# once per host, refreshed only by --fetch-all), on its own larger budget: a
+# site lists far more sitemaps than it declares.
+COUNT_FETCH_CAP = 1000
+
+
+def count_budget(state):
+    return state.setdefault(
+        "count_budget", {"global": 0, "global_cap": COUNT_FETCH_CAP}
+    )
+
+
+def sitemap_page_count(url, *fetch_args, on_disk=None, nested=False):
+    """Page URLs a sitemap lists (an index: its children's, one level deep), or
+    None while any of them is unknown. `fetch_args` as for index_manifest."""
+    m, _ = index_manifest(
+        url,
+        *fetch_args,
+        on_disk=on_disk,
+        budget=count_budget(fetch_args[2]),
+        need_pages=True,
+    )
+    if m is None:
+        return None
+    if m.get("not_sitemap"):
+        return 0
+    if not m.get("is_index"):
+        return m["pages"]
+    if nested:
+        return None
+    counts = [
+        sitemap_page_count(k, *fetch_args, on_disk=on_disk, nested=True)
+        for k in m.get("children") or []
+    ]
+    return None if None in counts else sum(counts)
 
 
 def discovered_sitemaps(
