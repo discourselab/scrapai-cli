@@ -11,6 +11,7 @@ import os
 import random
 import threading
 from typing import List, Optional
+from urllib.parse import urlparse
 
 from cloakbrowser import launch_async
 
@@ -20,6 +21,15 @@ logger = logging.getLogger(__name__)
 def random_delay(min_sec: float, max_sec: float) -> float:
     """Generate random delay to mimic human timing variance."""
     return random.uniform(min_sec, max_sec)
+
+
+def _proxy_label(url: Optional[str]) -> str:
+    """A proxy URL fit for a log line: scheme, host and port, no credentials."""
+    if not url:
+        return "direct"
+    p = urlparse(url)
+    host = f"{p.hostname}:{p.port}" if p.port else (p.hostname or "?")
+    return f"{p.scheme}://{host}" if p.scheme else host
 
 
 class CloudflareBrowserClient:
@@ -47,6 +57,11 @@ class CloudflareBrowserClient:
             html2 = await browser.fetch("https://example.com/page2")
     """
 
+    # Why the last fetch() returned None, for the browser service to report:
+    # "challenge not passed" (the site beat the browser) or "navigation error:
+    # <reason>". None when there is nothing to report.
+    last_error = None
+
     def __init__(
         self,
         headless: bool = False,
@@ -56,6 +71,7 @@ class CloudflareBrowserClient:
         proxy_url: Optional[str] = None,
         proxy_chain: Optional[List[Optional[str]]] = None,
         session_file: Optional[str] = None,
+        shared: bool = False,
     ):
         """Initialize CloakBrowser client.
 
@@ -67,6 +83,11 @@ class CloudflareBrowserClient:
             proxy_url: Single proxy URL (legacy, wraps into proxy_chain)
             proxy_chain: Ordered list of proxy URLs to try (None = direct connection).
                          Escalates through chain until CF bypass succeeds.
+            shared: Other clients drive tabs in this client's browser (the
+                    browser service's parent and its lanes). A shared client
+                    never closes, relaunches or proxy-escalates the browser
+                    once it is running: a failed verify fails that request
+                    only (docs/requests/30).
         """
         self.browser = None
         self.context = None
@@ -75,6 +96,7 @@ class CloudflareBrowserClient:
         # Optional saved login session (a storage_state JSON file). When set, the
         # browser context is created already logged in. See core/sessions.py.
         self.session_file = session_file
+        self.shared = shared
         self.cf_verified = False
         self.post_cf_delay = post_cf_delay
         self.fetch_lock = None  # Created lazily on first fetch
@@ -109,7 +131,7 @@ class CloudflareBrowserClient:
         """Start CloakBrowser instance with current proxy."""
         proxy = self.proxy_url
         if proxy:
-            logger.info(f"Starting CloakBrowser with proxy: {proxy}")
+            logger.info(f"Starting CloakBrowser with proxy: {_proxy_label(proxy)}")
         else:
             logger.info("Starting CloakBrowser (direct connection)")
 
@@ -151,20 +173,54 @@ class CloudflareBrowserClient:
         different proxy level — NOT on every retry within the same level.
 
         Returns:
-            True if escalated successfully, False if chain exhausted.
+            True if escalated successfully, False if chain exhausted or the
+            browser is shared (closing it would kill every other tab).
         """
+        if self.shared:
+            logger.warning(
+                "CF verify failed on the shared browser: not escalating, "
+                "only this request fails"
+            )
+            return False
         self._chain_index += 1
         if self._chain_index >= len(self._proxy_chain):
             return False
 
         next_proxy = self._proxy_chain[self._chain_index]
-        proxy_label = next_proxy if next_proxy else "direct"
+        proxy_label = _proxy_label(next_proxy) if next_proxy else "direct"
         logger.warning(f"CF bypass failed - escalating to next proxy: {proxy_label}")
 
         await self.close()
         self.cf_verified = False
         self.fetch_lock = None
         await self.start()
+        return True
+
+    async def _ensure_page(self) -> bool:
+        """Make sure there is a live page to drive; False when there can't be.
+
+        An unshared client launches its browser on first use. A shared client
+        never launches one: that would leave a private Chrome the pool never
+        closes (a lane) or swap the browser under every other tab (the
+        parent). Its page is gone only when the pool closed the lane while a
+        request was still using it, so that request fails. A tab that crashed
+        is reopened in the same context.
+        """
+        if not self.shared:
+            if not self.page:
+                await self.start()
+            return True
+        if self.page is None:
+            self.last_error = "navigation error: browser lane was closed"
+            return False
+        if self.page.is_closed():
+            try:
+                self.page = await self.context.new_page()
+                self.tab = self.page
+                self.cf_verified = False
+            except Exception as e:
+                self.last_error = f"navigation error: could not reopen tab: {e}"
+                return False
         return True
 
     async def verify_cloudflare(self, url: str) -> bool:
@@ -180,8 +236,8 @@ class CloudflareBrowserClient:
         Returns:
             True if successful, False otherwise
         """
-        if not self.page:
-            await self.start()
+        if not await self._ensure_page():
+            return False
 
         try:
             logger.info(f"Navigating to {url} (CloakBrowser auto-bypasses CF)")
@@ -205,6 +261,7 @@ class CloudflareBrowserClient:
             logger.debug("Waiting for CF challenge to resolve...")
             max_retries = 24  # 24 retries × 5s = 120s per proxy level
             turnstile_clicked = False
+            challenge_seen = False  # did a poll ever show the challenge?
             for attempt in range(max_retries):
                 await asyncio.sleep(5)  # Wait 5s between checks
 
@@ -234,6 +291,7 @@ class CloudflareBrowserClient:
                         if len(html_check) < 35000:
                             cf_blocked = True
                     if cf_blocked:
+                        challenge_seen = True
                         logger.debug(
                             f"CF challenge still active after {(attempt + 1) * 5}s "
                             f"(attempt {attempt + 1}/{max_retries}), waiting..."
@@ -263,9 +321,11 @@ class CloudflareBrowserClient:
                     )
                     if geo_blocked and len(html) < 2000:
                         logger.warning(
-                            f"Geo-blocked after CF bypass with proxy {self.proxy_url} - "
+                            f"Geo-blocked after CF bypass with proxy "
+                            f"{_proxy_label(self.proxy_url)} - "
                             f"will escalate to next proxy"
                         )
+                        self.last_error = "challenge not passed (geo-blocked)"
                         return False
 
                     # Check for generic "Access Denied" that isn't CF
@@ -280,8 +340,10 @@ class CloudflareBrowserClient:
                         )
                         if access_denied and len(html) < 2000:
                             logger.warning(
-                                f"Access denied (geo-block) with proxy {self.proxy_url}"
+                                f"Access denied (geo-block) with proxy "
+                                f"{_proxy_label(self.proxy_url)}"
                             )
+                            self.last_error = "challenge not passed (access denied)"
                             return False
 
                     # CF challenge passed
@@ -302,10 +364,18 @@ class CloudflareBrowserClient:
                         raise
 
             logger.warning(f"CF challenge not resolved after {max_retries * 5}s")
+            if challenge_seen:
+                self.last_error = f"challenge not passed after {max_retries * 5}s"
+            else:  # every poll hit a navigation in progress: never settled
+                self.last_error = (
+                    f"navigation error: page still navigating after "
+                    f"{max_retries * 5}s"
+                )
             return False
 
         except Exception as e:
             logger.error(f"Error during navigation: {e}")
+            self.last_error = f"navigation error: {e}"
             return False
 
     async def _click_turnstile(self) -> bool:
@@ -446,12 +516,10 @@ class CloudflareBrowserClient:
         to acquire cookies; subsequent calls reuse the verified session.
         """
         try:
-            if not self.page:
-                await self.start()
+            if not await self._ensure_page():
+                return None
 
             if not self.cf_verified:
-                from urllib.parse import urlparse
-
                 parsed = urlparse(url)
                 root = f"{parsed.scheme}://{parsed.netloc}/"
                 logger.info(f"Navigating {root} to acquire CF cookies before raw fetch")
@@ -507,6 +575,7 @@ class CloudflareBrowserClient:
 
         # Use lock to ensure sequential fetching (reusing same page)
         async with self.fetch_lock:
+            self.last_error = None
             # First request - verify CF, escalating through proxy chain if needed
             if not self.cf_verified:
                 success = False
@@ -515,7 +584,8 @@ class CloudflareBrowserClient:
                     if not success:
                         escalated = await self._escalate()
                         if not escalated:
-                            logger.error("All proxies exhausted - CF bypass failed")
+                            if not self.shared:
+                                logger.error("All proxies exhausted - CF bypass failed")
                             return None
 
                 # After CF verify, re-navigate to target URL to get actual content
@@ -611,6 +681,7 @@ class CloudflareBrowserClient:
 
             except Exception as e:
                 logger.error(f"Error fetching {url}: {e}")
+                self.last_error = f"navigation error: {e}"
                 return None
 
     async def _body_or_dom(self, response) -> str:
@@ -668,6 +739,7 @@ class CloudflareBrowserClient:
             headless=self.headless,
             proxy_chain=list(self._proxy_chain),
             session_file=session_file,
+            shared=True,
         )
         lane.browser = self.browser
         lane.driver = self.browser

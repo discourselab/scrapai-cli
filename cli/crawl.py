@@ -114,6 +114,53 @@ def _latest_crawl_file(project, spider):
     return files[0] if files else None
 
 
+# Browser-based crawls (CLOUDFLARE_ENABLED / BROWSER_ENABLED) all share the ONE
+# browser service; running many at once wedges it (docs/requests/17). They get
+# their own Pueue group with low parallelism so HTTP crawls can stay wide.
+BROWSER_GROUP = "scrapai-browser"
+BROWSER_GROUP_PARALLEL = 3
+
+
+def _ensure_browser_group():
+    """Create the browser Pueue group on first use. Only a newly created group
+    gets the default parallelism — an existing one keeps the user's tuning."""
+    res = subprocess.run(
+        ["pueue", "group", "add", BROWSER_GROUP], capture_output=True, text=True
+    )
+    if res.returncode == 0:
+        subprocess.run(
+            [
+                "pueue",
+                "parallel",
+                str(BROWSER_GROUP_PARALLEL),
+                "--group",
+                BROWSER_GROUP,
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+
+def _spider_transport(spider_settings, browser_flag):
+    """(cf_enabled, use_sitemap, use_repository) from the spider's DB settings
+    + the --browser CLI flag."""
+    cf_enabled = browser_flag  # CLI flag takes precedence
+    use_sitemap = False
+    use_repository = False
+    for setting in spider_settings or []:
+        if setting.key in ["CLOUDFLARE_ENABLED", "BROWSER_ENABLED"] and str(
+            setting.value
+        ).lower() in ["true", "1"]:
+            cf_enabled = True
+        if setting.key == "USE_SITEMAP" and str(setting.value).lower() in ["true", "1"]:
+            use_sitemap = True
+        # REPOSITORY_SOURCE (JSON:API / paginated-JSON repository harvest) is a
+        # JSON dict setting; its presence routes to the repository spider.
+        if setting.key == "REPOSITORY_SOURCE" and setting.value:
+            use_repository = True
+    return cf_enabled, use_sitemap, use_repository
+
+
 def _build_detached_cmd(
     scrapai_path,
     spider,
@@ -199,7 +246,7 @@ def crawl(
     detached,
 ):
     """Run a spider"""
-    _run_spider(
+    rc = _run_spider(
         project,
         spider,
         output,
@@ -212,6 +259,8 @@ def crawl(
         save_html,
         detached,
     )
+    if rc:
+        sys.exit(rc)
 
 
 @click.command()
@@ -375,6 +424,47 @@ def crawl_status(spider, project):
     console.print(table)
 
 
+def _upload_crawl_file(output_file, project_name, spider_name, keep_local=False):
+    """Upload a production crawl file to S3, when S3 is configured.
+
+    keep_local: leave the local file in place after the upload. A crawl the
+    CLI stopped early keeps it, so a same-day re-run appends to it (one file
+    per day) and that run's upload, to the same key, holds both runs' rows.
+    """
+    from utils.s3_upload import is_s3_configured, upload_to_s3
+
+    if not is_s3_configured():
+        return
+    click.echo("📤 Uploading to S3...")
+    try:
+        # Determine S3 key (path in bucket)
+        # Preserve project/spider structure: project/spider/crawls/filename
+        output_path = Path(output_file)
+        if project_name:
+            s3_key = f"{project_name}/{spider_name}/crawls/{output_path.name}"
+        else:
+            s3_key = f"{spider_name}/crawls/{output_path.name}"
+
+        success = upload_to_s3(
+            output_file,
+            s3_key=s3_key,
+            compress=True,
+            delete_after_upload=not keep_local,
+        )
+
+        if success:
+            click.echo("✅ Upload to S3 completed")
+        else:
+            click.echo("⚠️  S3 upload failed (file kept locally)")
+
+    except ImportError:
+        click.echo("⚠️  boto3 not installed")
+        click.echo("   Run: pip install -r requirements.txt")
+    except Exception as e:
+        click.echo(f"⚠️  S3 upload error: {e}")
+        click.echo("   File kept locally")
+
+
 def _run_spider(
     project_name,
     spider_name,
@@ -408,6 +498,12 @@ def _run_spider(
         # Extract all needed info from db_spider before exiting the session
         # so the subprocess work below can run without a live DB connection.
         spider_settings = list(db_spider.settings) if db_spider.settings else []
+
+    # Transport detection is needed BEFORE Pueue submission (browser crawls go
+    # to their own group) as well as for the crawl command below.
+    cf_enabled, use_sitemap, use_repository = _spider_transport(
+        spider_settings, browser
+    )
 
     # No --limit = production crawl: hand it to Pueue so it survives an SSH
     # disconnect. The Pueue task re-runs this command with --detached, which
@@ -456,9 +552,18 @@ def _run_spider(
             "--working-directory",
             os.getcwd(),
             "--print-task-id",
-            "--",
-            *inner,
         ]
+        if cf_enabled:
+            # Browser crawls self-limit to what the single shared browser
+            # service can sustain; HTTP crawls stay in the default group.
+            _ensure_browser_group()
+            add += ["--group", BROWSER_GROUP]
+            click.echo(
+                f"🌐 Browser crawl → Pueue group '{BROWSER_GROUP}' "
+                f"(default parallelism {BROWSER_GROUP_PARALLEL}; tune with "
+                f"`pueue parallel N --group {BROWSER_GROUP}`)"
+            )
+        add += ["--", *inner]
         res = subprocess.run(add, capture_output=True, text=True)
         if res.returncode != 0:
             click.echo(f"Failed to queue crawl via Pueue: {res.stderr.strip()}")
@@ -510,24 +615,6 @@ def _run_spider(
         click.echo("🌐 Proxy mode: none (direct connections only)")
     else:
         click.echo(f"🔀 Proxy mode: {proxy_type} (explicit, used when blocked)")
-
-    # Check if browser mode enabled (CLI flag or spider setting)
-    cf_enabled = browser  # CLI flag takes precedence
-    use_sitemap = False
-    if spider_settings:
-        for setting in spider_settings:
-            if setting.key in ["CLOUDFLARE_ENABLED", "BROWSER_ENABLED"] and str(
-                setting.value
-            ).lower() in [
-                "true",
-                "1",
-            ]:
-                cf_enabled = True
-            if setting.key == "USE_SITEMAP" and str(setting.value).lower() in [
-                "true",
-                "1",
-            ]:
-                use_sitemap = True
 
     if use_sitemap:
         spider_class = "sitemap_database_spider"
@@ -681,6 +768,20 @@ def _run_spider(
         hours = timeout / 3600
         click.echo(f"⏱️  Max runtime: {hours:.1f} hours (graceful stop)")
 
+    # Fail-loud plumbing for browser crawls: the BrowserWedgeDetector extension
+    # writes this marker when the crawl ends all-exception (wedged browser
+    # service); we turn it into a non-zero exit below (docs/requests/17).
+    wedge_marker = None
+    if cf_enabled:
+        base = (
+            Path(DATA_DIR) / project_name / spider_name
+            if project_name
+            else Path(DATA_DIR) / spider_name
+        )
+        os.makedirs(base, exist_ok=True)
+        wedge_marker = base / ".browser_wedge.json"
+        cmd.extend(["-s", f"BROWSER_WEDGE_MARKER={wedge_marker}"])
+
     if cf_enabled:
         # CloakBrowser visible by default (easier debugging)
         # On headless servers: use Xvfb or set CLOUDFLARE_HEADLESS=true
@@ -726,6 +827,61 @@ def _run_spider(
 
     result = subprocess.run(cmd)
 
+    # Fail loud on a wedged browser crawl: the browser service failed for the
+    # whole crawl, or for 20 of 100 downloads mid-crawl (which stopped it) —
+    # exit failed so Pueue shows it and it can be re-run, instead of banking
+    # an empty or partial "success" (docs/requests/17).
+    if wedge_marker and wedge_marker.exists():
+        try:
+            info = json.loads(wedge_marker.read_text())
+        except (OSError, ValueError):
+            info = {}
+        wedge_marker.unlink()
+        click.echo("")
+        click.echo("=" * 70)
+        if info.get("kind") == "partial":
+            click.echo(
+                f"💀 BROWSER CRAWL WEDGED — stopped mid-crawl: "
+                f"{info.get('window_errors', '?')} of the last "
+                f"{info.get('window', '?')} downloads failed in the browser service "
+                f"({info.get('responses', '?')} responses, "
+                f"{info.get('items', '?')} items before the stop)."
+            )
+        else:
+            stopped = " — stopped mid-crawl" if info.get("stopped") else ""
+            click.echo(
+                f"💀 BROWSER CRAWL WEDGED{stopped}: 0 responses, "
+                f"{info.get('service_errors', '?')} browser-service errors, 0 items."
+            )
+        click.echo(
+            "   The shared browser service kept failing (down, overloaded, or its"
+        )
+        click.echo("   navigations timing out).")
+        # The partial crawl file goes to S3 as a finished one would.
+        if output_file and not limit:
+            _upload_crawl_file(output_file, project_name, spider_name, keep_local=True)
+        # A resume would skip every URL that failed (they are already in the
+        # checkpoint's seen-set); a fresh run re-requests exactly the pages
+        # DeltaFetch has no item for. Trade-off: a link that exists only on an
+        # already-captured item page, and was still queued at the stop, is not
+        # rediscovered by a plain re-run — only by --reset-deltafetch.
+        if checkpoint_dir and Path(checkpoint_dir).exists():
+            shutil.rmtree(checkpoint_dir)
+            click.echo("   Checkpoint deleted: the next run starts fresh.")
+        click.echo("   Check `./scrapai browser status`, then re-run this crawl; pages")
+        click.echo(
+            "   already captured are skipped. Exiting non-zero (FAILED, not done)."
+        )
+        click.echo("=" * 70)
+        return 3
+
+    # Propagate a failed crawl's exit code (previously swallowed: any scrapy
+    # failure still exited 0, so Pueue marked failed crawls as successful).
+    # Nothing below runs for a failed crawl anyway: the checkpoint is kept for
+    # the resume and only a successful crawl is uploaded.
+    if result.returncode:
+        return result.returncode
+
     # Cleanup checkpoint on successful completion (production mode only)
     if checkpoint_dir and result.returncode == 0:
         checkpoint_path = Path(checkpoint_dir)
@@ -735,34 +891,4 @@ def _run_spider(
 
     # Upload to S3 if configured (production mode only)
     if output_file and not limit and result.returncode == 0:
-        from utils.s3_upload import is_s3_configured, upload_to_s3
-
-        if is_s3_configured():
-            click.echo("📤 Uploading to S3...")
-            try:
-                # Determine S3 key (path in bucket)
-                # Preserve project/spider structure: project/spider/crawls/filename
-                output_path = Path(output_file)
-                if project_name:
-                    s3_key = f"{project_name}/{spider_name}/crawls/{output_path.name}"
-                else:
-                    s3_key = f"{spider_name}/crawls/{output_path.name}"
-
-                success = upload_to_s3(
-                    output_file,
-                    s3_key=s3_key,
-                    compress=True,
-                    delete_after_upload=True,
-                )
-
-                if success:
-                    click.echo("✅ Upload to S3 completed")
-                else:
-                    click.echo("⚠️  S3 upload failed (file kept locally)")
-
-            except ImportError:
-                click.echo("⚠️  boto3 not installed")
-                click.echo("   Run: pip install -r requirements.txt")
-            except Exception as e:
-                click.echo(f"⚠️  S3 upload error: {e}")
-                click.echo("   File kept locally")
+        _upload_crawl_file(output_file, project_name, spider_name)

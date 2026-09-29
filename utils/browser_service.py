@@ -141,7 +141,10 @@ async def handle_request(pool, req, stop):
                 wait_timeout=req.get("wait_timeout", 10),
             )
             if not html:
-                return {"ok": False, "error": "verify failed"}
+                # Say why when the lane knows: a challenge it could not pass is
+                # the site refusing us, not the service failing.
+                error = getattr(lane, "last_error", None) or "verify failed"
+                return {"ok": False, "error": error}
             cookies = await _lane_cookies(lane, req["url"])
             user_agent = await _lane_user_agent(lane)
         return {
@@ -173,8 +176,10 @@ async def handle_request(pool, req, stop):
 
 async def _run(port, proxy_type, pool_size):
     _sweep_orphans()  # clean up Chromes a SIGKILLed/OOMed predecessor left behind
+    # shared: every lane drives a tab in this browser, so no request may close
+    # or relaunch it (docs/requests/30).
     parent = CloudflareBrowserClient(
-        headless=False, proxy_chain=proxy_mod.chain(proxy_type)
+        headless=False, proxy_chain=proxy_mod.chain(proxy_type), shared=True
     )
     await parent.start()
 
