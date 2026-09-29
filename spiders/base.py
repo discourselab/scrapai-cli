@@ -35,6 +35,33 @@ def with_scroll_fallback(strategies, custom_settings):
     return strategies
 
 
+def _find_spider_record(db, spider_name, project=None):
+    """The Spider row a crawl loads its config from (docs/requests/28).
+
+    Names are unique per project, not globally (uq_spider_name_project), so
+    the lookup is scoped by project whenever one is given — the CLI always
+    passes `-a project=<p>`. Without one (a direct `scrapy crawl`), a name held
+    by exactly one row still resolves; a name held in several projects raises
+    rather than picking one.
+    """
+    from core.models import Spider
+
+    conditions = [Spider.name == spider_name]
+    if project:
+        conditions.append(Spider.project == project)
+    rows = db.query(Spider).filter(*conditions).all()
+    if not rows:
+        where = f" (project '{project}')" if project else ""
+        raise ValueError(f"Spider '{spider_name}' not found in database{where}")
+    if len(rows) > 1:
+        projects = ", ".join(sorted(str(r.project) for r in rows))
+        raise ValueError(
+            f"Spider '{spider_name}' exists in more than one project "
+            f"({projects}); pass -a project=<name> to choose one"
+        )
+    return rows[0]
+
+
 def _clean_pdf_text(text):
     """Tidy raw PDF text: de-hyphenate and join mid-sentence line wraps.
 

@@ -48,7 +48,7 @@ def _build_sitemap_spider(expanded):
     rec.id = 1
     with patch("spiders.sitemap_spider.get_db") as mock_get_db:
         db = Mock()
-        db.query.return_value.filter.return_value.first.return_value = rec
+        db.query.return_value.filter.return_value.all.return_value = [rec]
         cm = MagicMock()
         cm.__enter__.return_value = db
         mock_get_db.return_value = cm

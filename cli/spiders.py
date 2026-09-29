@@ -185,14 +185,23 @@ def import_spider(file, project, skip_validation):
                         f"(inspector analysis stays under data/{project}/{expected_name}/)."
                     )
 
-            # Check for existing spider
-            existing = db.query(Spider).filter(Spider.name == spider_name).first()
+            # Check for existing spider. Names are unique per project, not
+            # globally (uq_spider_name_project): the same name in another
+            # project is a separate spider, never this one moved over and
+            # rewritten (docs/requests/28).
+            existing = (
+                db.query(Spider)
+                .filter(Spider.name == spider_name, Spider.project == project)
+                .first()
+            )
             if existing:
-                click.echo(f"⚠️  Spider '{spider_name}' already exists. Updating...")
+                click.echo(
+                    f"⚠️  Spider '{spider_name}' already exists in project "
+                    f"'{project}'. Updating..."
+                )
                 existing.allowed_domains = allowed_domains
                 existing.start_urls = start_urls
                 existing.source_url = source_url
-                existing.project = project
                 existing.callbacks_config = callbacks_dict
 
                 # Delete old rules and settings
@@ -204,6 +213,18 @@ def import_spider(file, project, skip_validation):
                 ).delete()
                 spider = existing
             else:
+                elsewhere = sorted(
+                    str(p)
+                    for (p,) in db.query(Spider.project)
+                    .filter(Spider.name == spider_name)
+                    .all()
+                )
+                if elsewhere:
+                    click.echo(
+                        f"ℹ️  '{spider_name}' also exists in project(s) "
+                        f"{', '.join(elsewhere)}; creating a separate spider in "
+                        f"'{project}' and leaving those untouched."
+                    )
                 # Create new spider
                 spider = Spider(
                     name=spider_name,
@@ -298,7 +319,17 @@ def delete_spider(name, project, force):
         else:
             project_msg = ""
 
-        spider = query.first()
+        matches = query.all()
+        if len(matches) > 1:
+            # Names are unique per project only (docs/requests/28): refuse to
+            # pick one when the name alone is ambiguous.
+            projects = ", ".join(sorted(str(s.project) for s in matches))
+            click.echo(
+                f"❌ Spider '{name}' exists in more than one project ({projects}). "
+                "Pass --project to choose which one to delete."
+            )
+            return
+        spider = matches[0] if matches else None
 
         if spider:
             if not force:

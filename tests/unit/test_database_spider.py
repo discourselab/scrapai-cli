@@ -25,7 +25,7 @@ class TestDatabaseSpiderInit:
         """Test error when spider doesn't exist in database."""
         # Mock database to return no spider
         mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.query.return_value.filter.return_value.all.return_value = []
         cm = MagicMock()
         cm.__enter__.return_value = mock_db
         mock_get_db.return_value = cm
@@ -43,7 +43,7 @@ class TestDatabaseSpiderInit:
         mock_spider.active = False
 
         mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_spider
+        mock_db.query.return_value.filter.return_value.all.return_value = [mock_spider]
         cm = MagicMock()
         cm.__enter__.return_value = mock_db
         mock_get_db.return_value = cm
@@ -79,7 +79,7 @@ class TestRuleCompilation:
         mock_spider.settings = []
 
         mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_spider
+        mock_db.query.return_value.filter.return_value.all.return_value = [mock_spider]
         cm = MagicMock()
         cm.__enter__.return_value = mock_db
         mock_get_db.return_value = cm
@@ -115,7 +115,7 @@ class TestRuleCompilation:
         mock_spider.settings = []
 
         mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_spider
+        mock_db.query.return_value.filter.return_value.all.return_value = [mock_spider]
         cm = MagicMock()
         cm.__enter__.return_value = mock_db
         mock_get_db.return_value = cm
@@ -149,7 +149,7 @@ class TestCallbackRegistration:
         mock_spider.settings = []
 
         mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_spider
+        mock_db.query.return_value.filter.return_value.all.return_value = [mock_spider]
         cm = MagicMock()
         cm.__enter__.return_value = mock_db
         mock_get_db.return_value = cm
@@ -178,7 +178,7 @@ class TestCallbackRegistration:
         mock_spider.settings = []
 
         mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_spider
+        mock_db.query.return_value.filter.return_value.all.return_value = [mock_spider]
         cm = MagicMock()
         cm.__enter__.return_value = mock_db
         mock_get_db.return_value = cm
