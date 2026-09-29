@@ -22,8 +22,8 @@ spiders, the robots `Sitemap:` lines are read from disk (compliance snapshot,
 crawl witness) and each declared sitemap is fetched at most once per host,
 ever — cached, with failures remembered and re-tried only under --fetch-all.
 
-Coverage = scraped ÷ eligible, where eligible is the plain rule-matched sitemap
-count. Nothing is subtracted for URLs the crawl found dead or blocked — those are
+Coverage = scraped ÷ eligible, where eligible is the plain rule-matched count
+of the sitemaps the spider was given (never the site's other sitemaps). Nothing is subtracted for URLs the crawl found dead or blocked — those are
 pages the spider should have got, so they show as a shortfall.
 
 Outputs: data/<project>/_audit/{audit_<project>.md, crawl_audit.csv, coverage.csv}

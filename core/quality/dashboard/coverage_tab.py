@@ -249,11 +249,12 @@ def _cov_table(
             '<th class="sel"><input type="checkbox" class="fx-all" aria-label="select all"></th>'
         )
     tip_total = _tip(
-        "How many page URLs the site lists in its sitemap (its own map of all pages)."
+        "How many page URLs the sitemaps this spider was given list. The site's "
+        "other sitemaps are in the sitemap column's list, not counted here."
     )
     tip_eligible = _tip(
-        "How many pages this spider SHOULD have got — the sitemap URLs matching its "
-        "rules, including any that were dead or blocked when crawled. This is "
+        "How many pages this spider SHOULD have got — the URLs in its given sitemaps "
+        "that match its rules (what it was set to crawl, not the whole site), including any that were dead or blocked when crawled. This is "
         "the denominator for coverage."
     )
     tip_scraped = _tip(
@@ -578,8 +579,9 @@ def _notes_definitions():
     return (
         '<details class="drawer"><summary>Notes &amp; definitions</summary>'
         "<p><b>Method.</b> <i>scraped</i> = unique URLs across <code>crawls/*.jsonl</code>. "
-        "<i>content%</i> = share with non-empty content. <i>eligible</i> = sitemap URLs matching "
-        "the allow-rules (dead or blocked ones still count). <i>coverage</i> = "
+        "<i>content%</i> = share with non-empty content. <i>eligible</i> = URLs in the sitemaps "
+        "the spider was given that match its allow-rules: what it was set to crawl, not the "
+        "whole site (dead or blocked ones still count). <i>coverage</i> = "
         "scraped ÷ eligible. <i>total</i>/<i>eligible</i> come from the crawl when it recorded "
         "them, else a fetched sitemap (nested indexes capped). <code>-</code> = no sitemap.</p>"
         "<p><b>Two independent axes:</b> <i>coverage</i> (did we get enough of the right pages?) "
