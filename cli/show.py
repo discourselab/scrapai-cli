@@ -33,7 +33,7 @@ def _read_crawl_rows(crawls_dir, limit, url=None, text=None, title=None):
     rows = []
     for f in files:
         try:
-            # ponytail: whole-file read to walk lines newest-first; fine at
+            # Whole-file read to walk lines newest-first; fine at
             # observed corpus sizes (tens of MB) — stream if files grow to GBs.
             lines = f.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
