@@ -128,6 +128,5 @@ touches every parse path.
 The change covers the default `PDF_MODE=links_only` only. Under
 `PDF_MODE=extract` PDFs are not recorded from `_pdf_links()` but followed by the
 rules' `LinkExtractor`, which reads anchors (`a`/`area` `href`), so a PDF offered
-only as an `<option value>` is still not followed in extract mode. No spider in
-this working copy uses extract mode; left as is rather than widening the rules'
-link extraction.
+only as an `<option value>` is still not followed in extract mode. Left as a
+known limit rather than widening the rules' link extraction.
