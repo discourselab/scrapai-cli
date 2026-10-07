@@ -135,3 +135,50 @@ API calls with maxlag=5 all failed with maxlag errors and the client's
 backoff (up to ~8 min per lookup) made the strict pass appear to hang; the
 API answers instantly without the maxlag parameter, so the stages were run
 equivalently via a temporary monkey-patched client (no committed change).
+
+## DONE 2026-10-07 — better countries / locations (ocean cluster emptied)
+
+Problem: 8 nodes sat in the deliberate mid-Atlantic "Unknown" cluster — the
+6 closure entities that Wikidata could not pin (Fair Fuel UK, AmCham EU,
+GRSB, JBS, Public Notice, USFRA) plus 2 pre-existing members whose listing
+cards carry no country (Petroleum Communication Foundation, Conservative
+Climate Foundation).
+
+Fix (code + data):
+
+- scrape_climate_disinfo.py: listing metadata now comes from ALL DeSmog
+  databases (listing_meta() merges agribusiness/advertising-pr/koch/
+  air-pollution listing cards; the climate listing wins on conflicts).
+  Membership is still climate-only; the merged map feeds entity
+  country/continent for closure entities and target metadata in
+  relationships. The 13 closure entity rows were surgically updated to the
+  same values a full re-scrape would produce (12 gained country/continent;
+  GRSB's card carries none).
+- address_locations.py: manual and Contact & Address entries for entities
+  with NO listed country now geocode the query as-is (country=None) instead
+  of failing against "Unknown"; the Contact & Address block cap was raised
+  600→900 chars (long footnote citations, e.g. Conservative Climate
+  Foundation). This also placed 6 more orgs that already had addresses in
+  their profiles (SecondStreet.org, Group SJR, ...).
+- desmog/geo/nominatim.py: geocode() accepts country=None (keep any hit);
+  no-country lookups are cached under "no-country|<query>" so validation
+  under one country can never shadow another. A stale miss for
+  "Brussels, Belgium" (poisoned by the text pass under a different
+  country's validation) was purged from geo_cache.json.
+- desmog/countries.py: Belgium aliases now include "belgique", "belgië",
+  "bruxelles-capitale" — Nominatim's top hit for Brussels is the bilingual
+  region boundary whose display_name never contains "Belgium".
+
+Manual addresses added (manual_addresses.jsonl): JBS → São Paulo (profile),
+Public Notice → 2200 Wilson Blvd Arlington VA (SGC4 Trust filing quoted in
+profile), Fair Fuel UK → Kent (profile), AmCham EU → Brussels, GRSB →
+13560 Roller Coaster Rd Colorado Springs (IRS Form 990 via ProPublica;
+no Wikidata item), PCF → Calgary (profile; street address lost in page
+formatting). USFRA has no verifiable address (site unreachable, no Wikidata
+item) — placed at the US country centroid.
+
+Result: ocean cluster EMPTY (0 nodes at the mid-Atlantic fallback, was 8);
+unknown-country nodes 15 → 3 (GRSB, PCF, CCF: DeSmog's listing cards carry
+no country; all three are placed precisely via addresses). 7 other closure
+entities keep their Wikidata pins and now display proper countries.
+720 nodes, 3054 edges; 16/16 tests pass. relationships.jsonl unchanged.

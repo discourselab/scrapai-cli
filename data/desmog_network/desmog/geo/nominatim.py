@@ -57,18 +57,25 @@ def _search(params, desc):
 
 def geocode(query, cache, country):
     """Free-text search; keep a hit only if its display_name matches the
-    country (or an alias of it). Cached by query string."""
-    if query in cache:
-        v = cache[query]
+    country (or an alias of it). country=None means no country info:
+    keep any hit (manual addresses of entities with no listed country).
+    cached by query string (namespaced with "no-country|" when no country is
+    given, so validation under one country never shadows another)."""
+    key = query if country is not None else f"no-country|{query}"
+    if key in cache:
+        v = cache[key]
         return (v["lat"], v["lng"]) if v else None
     res = _search({"q": query, "format": "json", "limit": 1, "addressdetails": 1}, query)
     hit = None
     if res:
-        disp = res[0].get("display_name", "").lower()
-        aliases = COUNTRY_ALIASES.get(country, [country.lower()])
-        if any(a in disp for a in aliases):
+        if country is None:  # no country info: keep any hit
             hit = {"lat": float(res[0]["lat"]), "lng": float(res[0]["lon"])}
-    cache[query] = hit
+        else:
+            disp = res[0].get("display_name", "").lower()
+            aliases = COUNTRY_ALIASES.get(country, [country.lower()])
+            if any(a in disp for a in aliases):
+                hit = {"lat": float(res[0]["lat"]), "lng": float(res[0]["lon"])}
+    cache[key] = hit
     save_cache(cache)
     return (hit["lat"], hit["lng"]) if hit else None
 

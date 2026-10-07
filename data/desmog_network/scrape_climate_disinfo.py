@@ -69,9 +69,11 @@ def entry_slugs():
     return slugs
 
 
-def listing_members():
-    """Map of slug -> {type, country, continent} from the DB listing cards."""
-    html = get(LISTING)
+def listing_members(url=LISTING):
+    """Map of slug -> {type, country, continent} from one listing's cards."""
+    html = get(url)
+    if not html:
+        return {}
     sel = Selector(text=html)
     info = {}
     for c in sel.css("div.grid-view-entry"):
@@ -92,12 +94,35 @@ def listing_members():
     return info
 
 
+# DeSmog's other databases: their listing cards carry the same type/country/
+# continent metadata and cover entries that are NOT climate-DB members
+# (e.g. bayer, jbs from the agribusiness database).
+OTHER_DBS = ("agribusiness-database", "advertising-pr-database",
+             "koch-network-database", "air-pollution-lobbying-database")
+
+
+def listing_meta(climate):
+    """slug -> {type, country, continent} across ALL DeSmog databases: each
+    database's listing cards parsed once, climate listing winning on conflicts
+    (its cards are canonical for our members). Feeds relationship-target
+    metadata and the closure pass below."""
+    meta = {}
+    for db in OTHER_DBS:
+        meta.update(listing_members(f"{BASE}/{db}/"))
+    meta.update(climate)
+    return meta
+
+
 def seg(href):
     m = re.match(r"https://www\.desmog\.com/([^/?#]+)/?$", href or "")
     return m.group(1) if m else None
 
 
 def scrape_profile(slug, all_entries, listing):
+    """Scrape one entry. `listing` is the metadata map across ALL DeSmog
+    databases (see listing_meta): it fills type/country/continent for the
+    entity and type/country for relationship targets that live in other
+    databases."""
     url = f"{BASE}/{slug}/"
     html = get(url)
     if not html:
@@ -181,6 +206,9 @@ def main():
     listing = listing_members()
     members = sorted(set(listing) & all_entries)
     print(f"  {len(members)} climate-disinformation-database profiles", flush=True)
+    meta = listing_meta(listing)
+    print(f"  {len(set(meta) - set(listing))} entries in other DeSmog databases",
+          flush=True)
 
     if args.limit:
         members = members[: args.limit]
@@ -191,7 +219,7 @@ def main():
     n_ent = n_rel = 0
     written, targets = set(), set()
     for i, slug in enumerate(members, 1):
-        entity, rels = scrape_profile(slug, all_entries, listing)
+        entity, rels = scrape_profile(slug, all_entries, meta)
         if entity:
             ent_f.write(json.dumps(entity, ensure_ascii=False) + "\n")
             n_ent += 1
@@ -209,19 +237,20 @@ def main():
 
     # ---- closure pass -------------------------------------------------------
     # Climate-DB profiles sometimes link to DeSmog entries from OTHER databases
-    # (agribusiness-database, chamber of commerce, ...). Those slugs appear as
+    # (agribusiness-database, koch-network-database, ...). Those slugs appear as
     # relationship targets but are not in the climate listing, so without this
     # pass they surface in the dashboard as "unknown" nodes. Scrape a bare
-    # entity row for each: the type comes from the page's entry-type class
-    # (country/continent are listing-card metadata and stay unset; the locate
-    # passes place them via Wikidata instead). Their own outbound links are NOT
-    # harvested -- the edge set stays links-from-climate-profiles only.
+    # entity row for each: type/country/continent come from the entry's OWN
+    # database listing cards (agribusiness etc.); the locate passes then place
+    # them via Wikidata, profile addresses, or the country centroid. Their own
+    # outbound links are NOT harvested -- the edge set stays
+    # links-from-climate-profiles only.
     missing = sorted(targets - written)
     if missing:
         print(f"\nClosure pass: {len(missing)} linked entities without a profile",
               flush=True)
     for i, slug in enumerate(missing, 1):
-        entity, _rels = scrape_profile(slug, all_entries, listing)
+        entity, _rels = scrape_profile(slug, all_entries, meta)
         if entity:
             ent_f.write(json.dumps(entity, ensure_ascii=False) + "\n")
             n_ent += 1

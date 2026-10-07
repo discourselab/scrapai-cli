@@ -55,7 +55,10 @@ POSTCODE_RE = re.compile(
     r"|\b(?:[A-Z]{2}|VIC|NSW|QLD|ACT|TAS|WA|SA|NT)\s+\d{4,5}\b"  # US state+ZIP / AU state+postcode
     r"|\b[A-Z][a-z]+(?: [A-Z][a-z]+)?,?\s+\d{5}\b")              # "Florida 34994", "Texas 78701"
 FORMER = re.compile(r"initial|formerly|former|prior|until|previous|moved from|originally", re.I)
-CONTACT_RE = re.compile(r"Contact (?:&|and) Address(.{0,600}?)(?=Social Media|Resources|$)")
+# block runs to the next section marker; the generous cap covers profiles
+# whose Contact & Address section interleaves long footnote citations
+# (e.g. conservative-climate-foundation: marker at +789)
+CONTACT_RE = re.compile(r"Contact (?:&|and) Address(.{0,900}?)(?=Social Media|Resources|$)")
 BASED_RE = re.compile(r"(?:is|are|was)\s+(?:currently\s+|now\s+)?(?:based|located|headquartered|housed)"
                       r"\s+at\s+(" + STREET + ")")
 SHARE_RE = re.compile(r"(?:shares?|sharing)\s+(?:an?\s+|the\s+same\s+)?(?:address|office|offices|building|premises)"
@@ -144,19 +147,22 @@ def main():
 
     # ---- hand-supplied addresses: address -> postcode -> city, country-box checked ----
     for m in manual:
-        countries = countries_of(ents.get(m["slug"], {})) or ["Unknown"]
+        listed = countries_of(ents.get(m["slug"], {}))
+        # entities with no listed country (e.g. a closure-pass entity from
+        # another DeSmog database whose listing card has none): geocode the
+        # query as-is and accept any result (country=None)
         ll, via = None, "manual"
-        for country in countries:
+        for country in listed or [None]:
             for query, v in ((m["address"], "manual"), (m.get("city"), "manual/city")):
                 if not query:
                     continue
-                q = query if country.lower() in query.lower() else f"{query}, {country}"
+                q = query if country is None or country.lower() in query.lower() else f"{query}, {country}"
                 ll = geocode(q, cache, country)
-                if ll and in_bbox(ll, country):
+                if ll and (country is None or in_bbox(ll, country)):
                     via = v
                     break
                 ll = None
-                if v == "manual" and m.get("postcode"):
+                if v == "manual" and m.get("postcode") and country:
                     ll = geocode_postcode(m["postcode"], [country], cache)
                     if ll:
                         via = "manual/postcode"
@@ -185,10 +191,11 @@ def main():
                 hit = True
                 break
             ll = None
-            for country in countries or ["Unknown"]:
-                ll = geocode(addr if not countries or country.lower() in addr.lower()
-                             else f"{addr}, {country}", cache, country)
-                if ll and in_bbox(ll, country):
+            for country in countries or [None]:
+                q = addr if country is None or country.lower() in addr.lower() \
+                    else f"{addr}, {country}"
+                ll = geocode(q, cache, country)
+                if ll and (country is None or in_bbox(ll, country)):
                     break
                 ll = None
             if not ll and pc:
@@ -199,10 +206,11 @@ def main():
                 city = (city.replace(pc, "") if pc else city)
                 city = re.sub(r"^\W*(?:[NSEW]{1,2}\b)?[\s,.]*|\b(?:CANADA|USA|United (?:States|Kingdom))\b",
                               "", city).strip(" ,.")
-                for country in countries:
+                for country in countries or [None]:
                     if len(city) >= 3:
-                        ll = geocode(f"{city}, {country}", cache, country)
-                        if ll and in_bbox(ll, country):
+                        q = f"{city}, {country}" if country else city
+                        ll = geocode(q, cache, country)
+                        if ll and (country is None or in_bbox(ll, country)):
                             via = via.split("/")[0] + "/city"
                             break
                         ll = None

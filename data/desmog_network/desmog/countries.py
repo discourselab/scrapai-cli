@@ -46,7 +46,9 @@ ISO2 = {"United Kingdom": "gb", "Canada": "ca", "United States": "us", "Australi
 COUNTRY_ALIASES = {
     "United States": ["united states", "usa"], "United Kingdom": ["united kingdom", "uk", "england", "scotland", "wales"],
     "Canada": ["canada"], "Australia": ["australia"], "Germany": ["germany", "deutschland"],
-    "Netherlands": ["netherlands", "nederland"], "New Zealand": ["new zealand"], "Belgium": ["belgium"],
+    "Netherlands": ["netherlands", "nederland"], "New Zealand": ["new zealand"],
+    # bilingual naming: Brussels hits often carry only region names
+    "Belgium": ["belgium", "belgique", "belgië", "bruxelles-capitale"],
     "France": ["france"], "Sweden": ["sweden"], "India": ["india"], "Brazil": ["brazil", "brasil"],
     "Norway": ["norway"], "Finland": ["finland"], "Spain": ["spain"], "South Africa": ["south africa"],
     "Hungary": ["hungary"], "Czech Republic": ["czech"], "Nigeria": ["nigeria"], "Pakistan": ["pakistan"],
