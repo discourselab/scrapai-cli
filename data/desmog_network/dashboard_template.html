@@ -135,7 +135,8 @@ const DATA = __DATA__;
 const N = new Map(DATA.nodes.map(n=>[n.id,n]));
 
 // ---- palettes ----
-const ATYPE_COLOR = {organization:'#e4572e', individual:'#2e86ab', unknown:'#888'};
+const ATYPE_COLOR = {organization:'#e4572e', individual:'#2e86ab'};
+const ATYPES = [...new Set(['organization','individual', ...DATA.allNodes.map(n=>n.atype)])];
 const CONT_COLOR = {north_america:'#e4572e', europe:'#2e86ab', oceania:'#38b000',
   asia:'#9b5de5', south_america:'#f9c74f', africa:'#f3722c', '?':'#888'};
 const PALETTE = ['#e4572e','#2e86ab','#38b000','#9b5de5','#f9c74f','#f3722c','#00b4d8',
@@ -150,7 +151,7 @@ const pcCats=[...new Set(DATA.nodes.map(n=>n.pcountry))];
 const pcColor={}; pcCats.forEach((c,i)=>pcColor[c]=PALETTE[i%PALETTE.length]);
 
 // ---- state ----
-const state={color:'atype', atypeOn:new Set(['organization','individual','unknown']),
+const state={color:'atype', atypeOn:new Set(ATYPES),
   rtypeOn:new Set(RTYPES), onlyConnected:false, view:'net'};
 
 function nodeColor(n){
@@ -245,9 +246,7 @@ function chip(text,color,on,onclick){
   return s;
 }
 const aBox=document.getElementById('atypeChips');
-[['organization','organization'],['individual','individual'],['unknown','unknown']].forEach(([k,lbl])=>{
-  aBox.appendChild(chip(lbl,ATYPE_COLOR[k],true,on=>{on?state.atypeOn.add(k):state.atypeOn.delete(k);refresh();}));
-});
+ATYPES.forEach(k=>aBox.appendChild(chip(k,ATYPE_COLOR[k]||'#888',true,on=>{on?state.atypeOn.add(k):state.atypeOn.delete(k);refresh();})));
 // ---- relationship-type filter: group chips (broad) + expandable fine-type chips ----
 const rBox=document.getElementById('rgroups');
 const gEls={};   // group -> {wrap, gh, chips: {finetype: chipEl}}

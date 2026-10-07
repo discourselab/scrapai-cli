@@ -227,3 +227,15 @@ Design decisions:
 Tests: taxonomy completeness test (every RULES type grouped, groups ==
 RGROUPS order, unknown -> Unclear); 17/17 pass. Dashboard rebuilt:
 720 nodes / 3054 edges / 16 fine types / 8 groups.
+
+## DONE 2026-10-07 — drop the empty 'unknown' actor-type category
+
+The closure pass eliminated the last untyped entities, but the sidebar
+still showed a hardcoded 'unknown' chip for a type with zero nodes. Made
+the chips data-driven instead of hardcoding the type list: `ATYPES`
+derives from the distinct atype values actually present in DATA.allNodes
+(organization/individual today; an 'unknown' chip would reappear
+automatically if an untyped entity ever returns), and `state.atypeOn`
+initialises from ATYPES. nodeColor keeps a #888 fallback for unexpected
+values. The 3 'Unknown' strings remaining in the built file are pcountry
+data (GRSB/PCF/CCF — no country on DeSmog's cards), not actor types.
