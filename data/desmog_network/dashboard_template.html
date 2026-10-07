@@ -22,6 +22,18 @@
         background:#222b3b;color:var(--txt);cursor:pointer;font-size:12px;user-select:none}
   .chip.off{opacity:.35}
   .chip .sw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  /* ---- two-level relationship-type filter: group header + drill-down ---- */
+  .rgroup{margin:5px 0}
+  .rgroup .gh{display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border:1px solid var(--line);
+               border-radius:6px;background:#222b3b;font-size:12px;user-select:none}
+  .rgroup .gh:hover{border-color:var(--acc)}
+  .rgroup .gh .tri{width:10px;color:var(--mut);transition:transform .15s;display:inline-block}
+  .rgroup .gh .sw{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
+  .rgroup.open .gh .tri{transform:rotate(90deg)}
+  .rgroup .gh .cnt{color:var(--mut);font-size:10px;margin-left:auto;white-space:nowrap}
+  .rgroup .gchips{display:none;margin:4px 0 4px 16px;border-left:2px solid var(--line);padding-left:7px}
+  .rgroup.open .gchips{display:block}
+  .chip.small{font-size:11px;padding:3px 7px}
   label.row{display:flex;align-items:center;gap:7px;font-size:13px;margin:5px 0;cursor:pointer}
   button.lk{background:var(--panel);border:1px solid var(--line);color:var(--txt);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;margin:2px 0}
   select,input[type=search]{width:100%;padding:6px;background:#222b3b;color:var(--txt);border:1px solid var(--line);border-radius:6px;font-size:13px}
@@ -82,7 +94,7 @@
     </div>
     <div class="grp">
       <h3>Relationship type (edges)</h3>
-      <div id="rtypeChips"></div>
+      <div id="rgroups"></div>
       <button class="lk" id="rAll">all</button>
       <button class="lk" id="rNone">none</button>
     </div>
@@ -107,6 +119,7 @@
         <div class="card"><h3>Nodes by continent</h3><div class="sub">all profiles in the database</div><div class="chart" id="c_cont"></div></div>
         <div class="card wide"><h3>Top 15 countries</h3><div class="sub">all profiles in the database</div><div class="chart" id="c_country"></div></div>
         <div class="card wide"><h3>Relationship types</h3><div class="sub" id="s_edges"></div><div class="chart" id="c_rtype"></div></div>
+        <div class="card wide"><h3>Relationship types — detail</h3><div class="sub">fine-grained types, coloured by their group</div><div class="chart" id="c_rdetail"></div></div>
         <div class="card"><h3>Degree distribution</h3><div class="sub">number of connections per node (networked only)</div><div class="chart" id="c_deg"></div></div>
         <div class="card wide"><h3>Top 15 most connected</h3><div class="sub">by total degree (in + out)</div><div class="chart" id="c_top"></div></div>
       </div>
@@ -128,7 +141,11 @@ const CONT_COLOR = {north_america:'#e4572e', europe:'#2e86ab', oceania:'#38b000'
 const PALETTE = ['#e4572e','#2e86ab','#38b000','#9b5de5','#f9c74f','#f3722c','#00b4d8',
   '#d62828','#8ac926','#ff6b6b','#4cc9f0','#b5179e','#fb8500','#606c38','#9a8c98'];
 const RTYPES = DATA.rtypes;
-const RTYPE_COLOR = {}; RTYPES.forEach((t,i)=>RTYPE_COLOR[t]=PALETTE[i%PALETTE.length]);
+const RGROUPS = DATA.rgroups;
+const RGROUP_COLOR = {}; RGROUPS.forEach((g,i)=>RGROUP_COLOR[g]=PALETTE[i%PALETTE.length]);
+// fine type -> group (every fine type appears on >=1 edge) and group -> types
+const TG = {}; DATA.edges.forEach(e=>{ if(e.rgroup) TG[e.rtype]=e.rgroup; });
+const GROUPED = {}; RTYPES.forEach(t=>{ const g=TG[t]||'Unclear'; (GROUPED[g]=GROUPED[g]||[]).push(t); });
 const pcCats=[...new Set(DATA.nodes.map(n=>n.pcountry))];
 const pcColor={}; pcCats.forEach((c,i)=>pcColor[c]=PALETTE[i%PALETTE.length]);
 
@@ -167,7 +184,8 @@ function rebuildNet(){
   const ids=new Set(vis.map(n=>n.id));
   vnEdges.add(DATA.edges.filter(e=>edgeVisible(e)&&ids.has(e.from)&&ids.has(e.to))
     .map((e,i)=>({id:'e'+i,from:e.from,to:e.to,value:e.weight,
-      color:{color:RTYPE_COLOR[e.rtype],opacity:0.5},title:`${e.rtype} (${e.weight})`})));
+      color:{color:RGROUP_COLOR[e.rgroup]||'#4f9cf0',opacity:0.5},
+      title:`${e.rgroup} · ${e.rtype} (${e.weight})`})));
 }
 net.on('click',p=>{ if(p.nodes.length) showInfo(p.nodes[0]); });
 
@@ -187,7 +205,7 @@ function rebuildMap(){
       const a=pos.get(e.from),b=pos.get(e.to);
       if(a.id===b.id) return; // skip self/co-located overlaps
       L.polyline([[a.lat,a.lng],[b.lat,b.lng]],
-        {color:RTYPE_COLOR[e.rtype],weight:Math.min(0.8+e.weight*0.25,3),opacity:0.5,
+        {color:RGROUP_COLOR[e.rgroup]||'#4f9cf0',weight:Math.min(0.8+e.weight*0.25,3),opacity:0.5,
          interactive:false,className:'map-edge'}).addTo(mapEdgeLayer);
     });
   }
@@ -230,10 +248,41 @@ const aBox=document.getElementById('atypeChips');
 [['organization','organization'],['individual','individual'],['unknown','unknown']].forEach(([k,lbl])=>{
   aBox.appendChild(chip(lbl,ATYPE_COLOR[k],true,on=>{on?state.atypeOn.add(k):state.atypeOn.delete(k);refresh();}));
 });
-const rBox=document.getElementById('rtypeChips');
-RTYPES.forEach(t=>rBox.appendChild(chip(t,RTYPE_COLOR[t],true,on=>{on?state.rtypeOn.add(t):state.rtypeOn.delete(t);refresh();})));
-document.getElementById('rAll').onclick=()=>{state.rtypeOn=new Set(RTYPES);[...rBox.children].forEach(c=>c.classList.remove('off'));refresh();};
-document.getElementById('rNone').onclick=()=>{state.rtypeOn=new Set();[...rBox.children].forEach(c=>c.classList.add('off'));refresh();};
+// ---- relationship-type filter: group chips (broad) + expandable fine-type chips ----
+const rBox=document.getElementById('rgroups');
+const gEls={};   // group -> {wrap, gh, chips: {finetype: chipEl}}
+function updateGroupUI(g){
+  const el=gEls[g]; if(!el) return;
+  const types=GROUPED[g]||[];
+  const on=types.filter(t=>state.rtypeOn.has(t)).length;
+  el.gh.style.opacity = on===0 ? .35 : (on===types.length ? 1 : .7);
+  types.forEach(t=>el.chips[t].classList.toggle('off',!state.rtypeOn.has(t)));
+}
+RGROUPS.forEach(g=>{
+  const types=GROUPED[g]||[];
+  const wrap=document.createElement('div'); wrap.className='rgroup';
+  const gh=document.createElement('div'); gh.className='gh';
+  gh.title='click to toggle all types in this group';
+  gh.innerHTML=`<span class="tri">▸</span><span class="sw" style="background:${RGROUP_COLOR[g]}"></span>`+
+    `<span>${g}</span><span class="cnt">${types.length} type${types.length>1?'s':''}</span>`;
+  const sub=document.createElement('div'); sub.className='gchips';
+  const chips={};
+  types.forEach(t=>{
+    const c=chip(t,RGROUP_COLOR[g],true,on=>{on?state.rtypeOn.add(t):state.rtypeOn.delete(t);updateGroupUI(g);refresh();});
+    c.classList.add('small');
+    sub.appendChild(c); chips[t]=c;
+  });
+  gh.onclick=()=>{ // whole group on/off
+    const allOn=types.every(t=>state.rtypeOn.has(t));
+    types.forEach(t=>allOn?state.rtypeOn.delete(t):state.rtypeOn.add(t));
+    updateGroupUI(g); refresh();
+  };
+  gh.querySelector('.tri').onclick=ev=>{ ev.stopPropagation(); wrap.classList.toggle('open'); };
+  wrap.appendChild(gh); wrap.appendChild(sub); rBox.appendChild(wrap);
+  gEls[g]={wrap,gh,chips};
+});
+document.getElementById('rAll').onclick=()=>{state.rtypeOn=new Set(RTYPES);RGROUPS.forEach(updateGroupUI);refresh();};
+document.getElementById('rNone').onclick=()=>{state.rtypeOn=new Set();RGROUPS.forEach(updateGroupUI);refresh();};
 document.querySelectorAll('input[name=color]').forEach(r=>r.onchange=()=>{state.color=r.value;refresh();});
 document.getElementById('onlyConnected').onchange=e=>{state.onlyConnected=e.target.checked;refresh();};
 document.getElementById('physics').onchange=e=>net.setOptions({physics:{enabled:e.target.checked}});
@@ -275,8 +324,10 @@ function renderStats(){
   barChart('c_atype',aggCount(all,'atype'),{color:k=>ATYPE_COLOR[k]||'#888'});
   barChart('c_cont',aggCount(all,'continent'),{color:k=>CONT_COLOR[k]||'#888'});
   barChart('c_country',aggCount(all,'pcountry'),{limit:15,color:k=>pcColor[k]||'#4f9cf0'});
-  const rt={}; DATA.edges.forEach(e=>rt[e.rtype]=(rt[e.rtype]||0)+1);
-  barChart('c_rtype',Object.entries(rt).sort((a,b)=>b[1]-a[1]),{color:k=>RTYPE_COLOR[k]||'#4f9cf0'});
+  const rt={}; DATA.edges.forEach(e=>{if(e.rgroup) rt[e.rgroup]=(rt[e.rgroup]||0)+1;});
+  barChart('c_rtype',Object.entries(rt).sort((a,b)=>b[1]-a[1]),{color:k=>RGROUP_COLOR[k]||'#4f9cf0'});
+  const rd={}; DATA.edges.forEach(e=>rd[e.rtype]=(rd[e.rtype]||0)+1);
+  barChart('c_rdetail',Object.entries(rd).sort((a,b)=>b[1]-a[1]),{color:k=>RGROUP_COLOR[TG[k]]||'#4f9cf0'});
   const buckets=[[1,1],[2,2],[3,5],[6,10],[11,20],[21,50],[51,1e9]];
   const labels=['1','2','3-5','6-10','11-20','21-50','50+']; const counts=buckets.map(()=>0);
   DATA.nodes.forEach(n=>{for(let i=0;i<buckets.length;i++){if(n.degree>=buckets[i][0]&&n.degree<=buckets[i][1]){counts[i]++;break;}}});

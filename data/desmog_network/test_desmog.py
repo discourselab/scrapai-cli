@@ -126,6 +126,19 @@ def test_subject_names():
     assert "gwpf" in names and "the group" in names
 
 
+# ---- relationship-type taxonomy --------------------------------------------
+def test_reltypes_mapping_complete():
+    from desmog import reltypes
+    # every type the classifier can emit is grouped
+    for t, _ in typ.RULES:
+        assert t in reltypes.GROUPS, f"fine type not grouped: {t}"
+    # every group is in the canonical order and every mapped group exists
+    assert set(reltypes.GROUPS.values()) == set(reltypes.RGROUPS)
+    assert len(reltypes.RGROUPS) == len(set(reltypes.RGROUPS))
+    assert reltypes.group_of("Nonsense type") == "Unclear"
+    assert reltypes.group_of("Leadership") == "Affiliation"
+
+
 # ---- placement merge priority ----------------------------------------------
 def test_placement_merge_priority(tmp_path):
     import json

@@ -19,6 +19,7 @@ from pathlib import Path
 from desmog import placement
 from desmog.countries import CENTROID, jitter, primary_country
 from desmog.data import D, load_entities, load_jsonl
+from desmog.reltypes import RGROUPS, group_of
 
 OUT = D / "dashboard.html"
 TEMPLATE = Path(__file__).parent / "dashboard_template.html"
@@ -45,8 +46,8 @@ def main():
         informative = [x for x in types if x != "Mention/unclear"]
         rep = Counter(informative or types).most_common(1)[0][0]
         w = len(types)
-        edges.append({"from": s, "to": t, "rtype": rep, "weight": w,
-                      "allTypes": sorted(set(types))})
+        edges.append({"from": s, "to": t, "rtype": rep, "rgroup": group_of(rep),
+                      "weight": w, "allTypes": sorted(set(types))})
         deg[s] += 1; deg[t] += 1
         outdeg[s] += 1; indeg[t] += 1
 
@@ -87,7 +88,8 @@ def main():
         })
 
     rtypes = sorted({e["rtype"] for e in edges})
-    print(f"nodes: {len(nodes)}  edges: {len(edges)}  rel-types: {len(rtypes)}")
+    print(f"nodes: {len(nodes)}  edges: {len(edges)}  rel-types: {len(rtypes)} "
+          f"({len(RGROUPS)} groups)")
 
     # ---- minimal attributes for ALL entities (not just networked) for stats ----
     all_nodes = [{
@@ -96,7 +98,8 @@ def main():
         "continent": e.get("continent") or "?",
     } for e in ents.values()]
 
-    DATA = {"nodes": nodes, "edges": edges, "rtypes": rtypes, "allNodes": all_nodes}
+    DATA = {"nodes": nodes, "edges": edges, "rtypes": rtypes, "rgroups": RGROUPS,
+            "allNodes": all_nodes}
 
     OUT.write_text(TEMPLATE.read_text().replace("__DATA__", json.dumps(DATA, ensure_ascii=False)))
     print("wrote", OUT)

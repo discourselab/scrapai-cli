@@ -182,3 +182,48 @@ unknown-country nodes 15 → 3 (GRSB, PCF, CCF: DeSmog's listing cards carry
 no country; all three are placed precisely via addresses). 7 other closure
 entities keep their Wikidata pins and now display proper countries.
 720 nodes, 3054 edges; 16/16 tests pass. relationships.jsonl unchanged.
+
+## DONE 2026-10-07 — relationship-type groups (dashboard UX)
+
+Problem: 16 fine relationship types in a flat legend — noisy, and the
+secondary PALETTE has only 15 colours (Trustee collided with
+Accused/criticised). Worse, the fine types are harder to browse than to
+analyse: Leadership/Founder/Board/Employee/Advisor/Trustee are really one
+question ("who runs whom") and counted separately.
+
+Two-level taxonomy, new module `desmog/reltypes.py` (single source of truth):
+
+    Affiliation             Leadership, Founder, Board/member, Employee/role,
+                            Advisor, Trustee                  (1141 edges)
+    Unclear                  Mention/unclear                    (742)
+    Content & discourse      Published/authored, Cited/linked-to (382)
+    Funding                  Funder/donor                      (358)
+    Collaboration & events  Spoke at/attended, Partnered/event (262)
+    Conflict & campaigns     Opposed/campaigned, Accused/criticised (84)
+    Denial framing           Climate-denial framing            (64)
+    Location                 Co-located/based                   (21)
+
+Design decisions:
+- Rules untouched: `type_relationships.py` still emits the 16 fine types;
+  it now also writes `primary_group` (derived via reltypes). Fine types stay
+  in the data (relationship_types, primary_type, allTypes) — grouping is a
+  presentation/aggregation layer, not a re-classification.
+- Denial framing stays its own small group rather than folding into
+  discourse: it co-occurs with everything (it is a qualifier, not a tie
+  kind) and is analytically central to this KB.
+- "Conflict & campaigns" name reflects the rule's actual span: the
+  keywords match advocacy FOR things ("support the", "promot", "pushed
+  for") as well as opposition.
+- Dashboard: `rgroup` on every edge, `rgroups` in DATA. Edges/network and
+  map are coloured BY GROUP (8 ≤ 15 palette colours, no collisions);
+  tooltips show `group · fine type (weight)`. Sidebar filter is two-level:
+  group chips as the broad toggle (partial groups render at 0.7 opacity,
+  empty at 0.35), each expands (▸) to its fine-type chips for drill-down;
+  all/none master buttons kept. Stats: relationship-type card now groups,
+  new detail card lists the 16 fine types coloured by their group.
+- State model unchanged: `state.rtypeOn` remains a set of FINE types; group
+  chips just toggle all their members.
+
+Tests: taxonomy completeness test (every RULES type grouped, groups ==
+RGROUPS order, unknown -> Unclear); 17/17 pass. Dashboard rebuilt:
+720 nodes / 3054 edges / 16 fine types / 8 groups.

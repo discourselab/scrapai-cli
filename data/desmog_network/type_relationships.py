@@ -11,6 +11,7 @@ import json, re, csv
 from collections import Counter
 
 from desmog.data import D, load_entities, load_relationships
+from desmog.reltypes import group_of
 
 # Ordered: first match that applies is kept as the PRIMARY type; all matches
 # are recorded in relationship_types.
@@ -79,6 +80,7 @@ def main():
             "target_type": te.get("type"),
             "target_country": te.get("country"),
             "primary_type": tags[0],
+            "primary_group": group_of(tags[0]),
             "relationship_types": "; ".join(tags),
             "evidence": w,
         })
@@ -94,6 +96,9 @@ def main():
     print("\n=== PRIMARY relationship type distribution ===")
     for t, n in Counter(o["primary_type"] for o in out).most_common():
         print(f"  {n:5d}  {t}")
+    print("\n=== by GROUP (primary) ===")
+    for g, n in Counter(o["primary_group"] for o in out).most_common():
+        print(f"  {n:5d}  {g}")
     print("\n=== by any-match (relationships can have multiple types) ===")
     anyc = Counter()
     for o in out:
