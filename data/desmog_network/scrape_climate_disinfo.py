@@ -189,13 +189,16 @@ def main():
     ent_f = open(OUT / "entities.jsonl", "w", encoding="utf-8")
     rel_f = open(OUT / "relationships.jsonl", "w", encoding="utf-8")
     n_ent = n_rel = 0
+    written, targets = set(), set()
     for i, slug in enumerate(members, 1):
         entity, rels = scrape_profile(slug, all_entries, listing)
         if entity:
             ent_f.write(json.dumps(entity, ensure_ascii=False) + "\n")
             n_ent += 1
+            written.add(slug)
             for r in rels:
                 rel_f.write(json.dumps(r, ensure_ascii=False) + "\n")
+                targets.add(r["target_slug"])
             n_rel += len(rels)
             print(f"[{i}/{len(members)}] {slug} ({entity['type']}) "
                   f"-> {len(rels)} relationships", flush=True)
@@ -203,6 +206,32 @@ def main():
             print(f"[{i}/{len(members)}] {slug} FAILED", flush=True)
         ent_f.flush(); rel_f.flush()
         time.sleep(args.delay)
+
+    # ---- closure pass -------------------------------------------------------
+    # Climate-DB profiles sometimes link to DeSmog entries from OTHER databases
+    # (agribusiness-database, chamber of commerce, ...). Those slugs appear as
+    # relationship targets but are not in the climate listing, so without this
+    # pass they surface in the dashboard as "unknown" nodes. Scrape a bare
+    # entity row for each: the type comes from the page's entry-type class
+    # (country/continent are listing-card metadata and stay unset; the locate
+    # passes place them via Wikidata instead). Their own outbound links are NOT
+    # harvested -- the edge set stays links-from-climate-profiles only.
+    missing = sorted(targets - written)
+    if missing:
+        print(f"\nClosure pass: {len(missing)} linked entities without a profile",
+              flush=True)
+    for i, slug in enumerate(missing, 1):
+        entity, _rels = scrape_profile(slug, all_entries, listing)
+        if entity:
+            ent_f.write(json.dumps(entity, ensure_ascii=False) + "\n")
+            n_ent += 1
+            print(f"  [closure {i}/{len(missing)}] {slug} ({entity['type']})",
+                  flush=True)
+        else:
+            print(f"  [closure {i}/{len(missing)}] {slug} FAILED", flush=True)
+        ent_f.flush()
+        time.sleep(args.delay)
+
     ent_f.close(); rel_f.close()
     print(f"\nDone: {n_ent} entities, {n_rel} relationships", flush=True)
     print(f"  {OUT/'entities.jsonl'}")

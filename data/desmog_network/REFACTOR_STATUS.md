@@ -107,3 +107,31 @@ Optional future work (not needed for correctness):
   - build_dashboard: sorted(deg) instead of set(deg) for stable node order.
   - type_relationships: still writes relationships_typed via main(); fine.
   - move the package out of scrapai-cli/data/ if desired (keep project.json).
+
+## DONE 2026-10-07 — closure pass (13 unknown nodes fixed)
+
+Problem: climate-DB profiles link to DeSmog entries from OTHER databases
+(agribusiness-database, chamber of commerce, ...). Those slugs appeared in
+the network as relationship targets without being climate-listing members,
+so they had no entity row: the dashboard showed them as "unknown" type
+(13 of 720 nodes: Bayer, BASF, Syngenta, Monsanto, JBS, ...), 8 of them
+without any map placement.
+
+Fix: scrape_climate_disinfo.py gained a closure pass — after the member loop,
+linked-but-unprofiled targets get a bare entity row (type from the page's
+entry-type class; country/continent stay unset — they are listing-card
+metadata — so the locate passes place them via Wikidata). Their own
+outbound links are NOT harvested: the edge set stays links-from-climate-
+profiles only. The same 13 rows were appended to the current entities.jsonl
+(same code path, same order) so the existing data benefits without a full
+re-scrape; a future full re-scrape reproduces the same output.
+
+Result (after re-running type/locate/build): 720 nodes, 0 unknown-type,
+0 unplaced; 7 of the 13 placed precisely via Wikidata, 6 in the deliberate
+"Unknown" ocean cluster. 16/16 tests pass. relationships.jsonl unchanged.
+
+Operational note: while running this, Wikidata's query service was lagged, so
+API calls with maxlag=5 all failed with maxlag errors and the client's
+backoff (up to ~8 min per lookup) made the strict pass appear to hang; the
+API answers instantly without the maxlag parameter, so the stages were run
+equivalently via a temporary monkey-patched client (no committed change).
