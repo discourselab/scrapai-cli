@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>DeSmog Climate Disinformation Network — Dashboard</title>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<style>
+  :root{--bg:#14181f;--panel:#1b2130;--line:#2b3446;--txt:#e7ecf3;--mut:#9aa7bd;--acc:#4f9cf0}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--txt);height:100vh;overflow:hidden}
+  #app{display:grid;grid-template-columns:270px 1fr 320px;grid-template-rows:48px 1fr;height:100vh}
+  header{grid-column:1/4;display:flex;align-items:center;gap:16px;padding:0 16px;background:#0f131a;border-bottom:1px solid var(--line)}
+  header h1{font-size:16px;margin:0}
+  header .tabs{margin-left:auto;display:flex;gap:6px}
+  .tab{padding:6px 14px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--txt);cursor:pointer;font-size:13px}
+  .tab.active{background:var(--acc);border-color:var(--acc)}
+  #side,#info{background:var(--panel);overflow-y:auto;padding:12px}
+  #side{border-right:1px solid var(--line)} #info{border-left:1px solid var(--line)}
+  .grp{margin-bottom:16px}
+  .grp h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:0 0 8px}
+  .chip{display:inline-block;padding:4px 9px;margin:3px 3px 0 0;border:1px solid var(--line);border-radius:14px;
+        background:#222b3b;color:var(--txt);cursor:pointer;font-size:12px;user-select:none}
+  .chip.off{opacity:.35}
+  .chip .sw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  label.row{display:flex;align-items:center;gap:7px;font-size:13px;margin:5px 0;cursor:pointer}
+  button.lk{background:var(--panel);border:1px solid var(--line);color:var(--txt);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;margin:2px 0}
+  select,input[type=search]{width:100%;padding:6px;background:#222b3b;color:var(--txt);border:1px solid var(--line);border-radius:6px;font-size:13px}
+  #stage{position:relative}
+  #net,#map{position:absolute;inset:0}
+  #map{display:none}
+  .view-map #net{display:none} .view-map #map{display:block}
+  #info h2{font-size:17px;margin:0 0 4px} #info .sub{color:var(--mut);font-size:13px;margin-bottom:10px}
+  .kv{display:grid;grid-template-columns:90px 1fr;gap:4px 8px;font-size:13px;margin-bottom:10px}
+  .kv .k{color:var(--mut)}
+  .evi{font-size:12px;color:#cdd7e6;border-left:2px solid var(--line);padding-left:8px;margin:6px 0}
+  .muted{color:var(--mut);font-size:12px}
+  a{color:var(--acc)}
+  .leaflet-container{background:#0d1117}
+  .legend{font-size:12px}
+  /* ---- stats view ---- */
+  #stats{position:absolute;inset:0;overflow:auto;padding:18px;display:none}
+  #app.view-stats{grid-template-columns:1fr}
+  .view-stats #side,.view-stats #info,.view-stats #net,.view-stats #map{display:none}
+  .view-stats #stats{display:block}
+  .stats-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;max-width:1150px;margin:0 auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .card.wide{grid-column:1/3}
+  .card h3{margin:0 0 4px;font-size:13px}
+  .card .sub{color:var(--mut);font-size:11px;margin:0 0 12px}
+  .chart{display:flex;flex-direction:column;gap:5px}
+  .bar{display:grid;grid-template-columns:150px 1fr 48px;align-items:center;gap:8px;font-size:12px}
+  .bar .bl{color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bar .bt{background:#222b3b;border-radius:4px;overflow:hidden;height:16px}
+  .bar .bf{height:100%;border-radius:4px;min-width:2px}
+  .bar .bv{text-align:right;font-variant-numeric:tabular-nums}
+</style></head>
+<body><div id="app">
+  <header>
+    <h1>DeSmog Climate Disinformation Network</h1>
+    <span class="muted" id="counts"></span>
+    <div class="tabs">
+      <div class="tab active" data-view="net">Network</div>
+      <div class="tab" data-view="map">Map</div>
+      <div class="tab" data-view="stats">Stats</div>
+    </div>
+  </header>
+
+  <aside id="side">
+    <div class="grp">
+      <h3>Search</h3>
+      <input type="search" id="q" placeholder="find a name… (Enter)">
+    </div>
+    <div class="grp">
+      <h3>Color nodes by</h3>
+      <label class="row"><input type="radio" name="color" value="atype" checked> Actor type</label>
+      <label class="row"><input type="radio" name="color" value="continent"> Continent</label>
+      <label class="row"><input type="radio" name="color" value="pcountry"> Country</label>
+    </div>
+    <div class="grp">
+      <h3>Actor type</h3>
+      <div id="atypeChips"></div>
+    </div>
+    <div class="grp">
+      <h3>Relationship type (edges)</h3>
+      <div id="rtypeChips"></div>
+      <button class="lk" id="rAll">all</button>
+      <button class="lk" id="rNone">none</button>
+    </div>
+    <div class="grp">
+      <h3>Options</h3>
+      <label class="row"><input type="checkbox" id="onlyConnected"> hide nodes with no visible edges</label>
+      <label class="row"><input type="checkbox" id="physics" checked> physics (network)</label>
+      <label class="row"><input type="checkbox" id="mapEdges" checked> draw edges on map</label>
+    </div>
+    <div class="grp legend">
+      <h3>Node size</h3>
+      <div class="muted">= degree (number of connections)</div>
+    </div>
+  </aside>
+
+  <main id="stage">
+    <div id="net"></div>
+    <div id="map"></div>
+    <div id="stats">
+      <div class="stats-grid">
+        <div class="card"><h3>Nodes by actor type</h3><div class="sub" id="s_total"></div><div class="chart" id="c_atype"></div></div>
+        <div class="card"><h3>Nodes by continent</h3><div class="sub">all profiles in the database</div><div class="chart" id="c_cont"></div></div>
+        <div class="card wide"><h3>Top 15 countries</h3><div class="sub">all profiles in the database</div><div class="chart" id="c_country"></div></div>
+        <div class="card wide"><h3>Relationship types</h3><div class="sub" id="s_edges"></div><div class="chart" id="c_rtype"></div></div>
+        <div class="card"><h3>Degree distribution</h3><div class="sub">number of connections per node (networked only)</div><div class="chart" id="c_deg"></div></div>
+        <div class="card wide"><h3>Top 15 most connected</h3><div class="sub">by total degree (in + out)</div><div class="chart" id="c_top"></div></div>
+      </div>
+    </div>
+  </main>
+
+  <aside id="info">
+    <div class="muted">Click a node to see its attributes.</div>
+  </aside>
+</div>
+<script>
+const DATA = __DATA__;
+const N = new Map(DATA.nodes.map(n=>[n.id,n]));
+
+// ---- palettes ----
+const ATYPE_COLOR = {organization:'#e4572e', individual:'#2e86ab', unknown:'#888'};
+const CONT_COLOR = {north_america:'#e4572e', europe:'#2e86ab', oceania:'#38b000',
+  asia:'#9b5de5', south_america:'#f9c74f', africa:'#f3722c', '?':'#888'};
+const PALETTE = ['#e4572e','#2e86ab','#38b000','#9b5de5','#f9c74f','#f3722c','#00b4d8',
+  '#d62828','#8ac926','#ff6b6b','#4cc9f0','#b5179e','#fb8500','#606c38','#9a8c98'];
+const RTYPES = DATA.rtypes;
+const RTYPE_COLOR = {}; RTYPES.forEach((t,i)=>RTYPE_COLOR[t]=PALETTE[i%PALETTE.length]);
+const pcCats=[...new Set(DATA.nodes.map(n=>n.pcountry))];
+const pcColor={}; pcCats.forEach((c,i)=>pcColor[c]=PALETTE[i%PALETTE.length]);
+
+// ---- state ----
+const state={color:'atype', atypeOn:new Set(['organization','individual','unknown']),
+  rtypeOn:new Set(RTYPES), onlyConnected:false, view:'net'};
+
+function nodeColor(n){
+  if(state.color==='atype') return ATYPE_COLOR[n.atype]||'#888';
+  if(state.color==='continent') return CONT_COLOR[n.continent]||'#888';
+  return pcColor[n.pcountry]||'#888';
+}
+function edgeVisible(e){ return state.rtypeOn.has(e.rtype) &&
+  state.atypeOn.has(N.get(e.from).atype) && state.atypeOn.has(N.get(e.to).atype); }
+function nodeVisible(n){
+  if(!state.atypeOn.has(n.atype)) return false;
+  if(state.onlyConnected){ return DATA.edges.some(e=>edgeVisible(e)&&(e.from===n.id||e.to===n.id)); }
+  return true;
+}
+
+// ---- vis-network ----
+const vnNodes=new vis.DataSet(), vnEdges=new vis.DataSet();
+const net=new vis.Network(document.getElementById('net'),{nodes:vnNodes,edges:vnEdges},{
+  nodes:{shape:'dot',scaling:{min:4,max:55,label:{min:10,max:28}},font:{color:'#e7ecf3',size:12}},
+  edges:{arrows:{to:{enabled:true,scaleFactor:0.45}},smooth:{type:'continuous'},
+         color:{opacity:0.45},scaling:{min:0.4,max:7}},
+  physics:{stabilization:{iterations:150},maxVelocity:12,minVelocity:0.75,timestep:0.3,
+           barnesHut:{gravitationalConstant:-9000,springLength:130,avoidOverlap:0.25,damping:0.4}},
+  interaction:{hover:true,tooltipDelay:120}
+});
+function rebuildNet(){
+  const vis=DATA.nodes.filter(nodeVisible);
+  vnNodes.clear(); vnEdges.clear();
+  vnNodes.add(vis.map(n=>({id:n.id,label:n.name,value:n.degree,color:nodeColor(n),
+    title:`${n.name} · ${n.atype} · ${n.country} · deg ${n.degree}`})));
+  const ids=new Set(vis.map(n=>n.id));
+  vnEdges.add(DATA.edges.filter(e=>edgeVisible(e)&&ids.has(e.from)&&ids.has(e.to))
+    .map((e,i)=>({id:'e'+i,from:e.from,to:e.to,value:e.weight,
+      color:{color:RTYPE_COLOR[e.rtype],opacity:0.5},title:`${e.rtype} (${e.weight})`})));
+}
+net.on('click',p=>{ if(p.nodes.length) showInfo(p.nodes[0]); });
+
+// ---- leaflet map ----
+const map=L.map('map',{worldCopyJump:true,preferCanvas:true}).setView([30,-20],2);
+// Esri Dark Gray Canvas — free, no API key, natively dark (allows file:// usage, unlike OSM's tile servers).
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+  {attribution:'&copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors',maxZoom:10}).addTo(map);
+// add edge layer first so node markers render on top of the relation lines
+let mapEdgeLayer=L.layerGroup().addTo(map), markerLayer=L.layerGroup().addTo(map);
+function rebuildMap(){
+  markerLayer.clearLayers(); mapEdgeLayer.clearLayers();
+  const vis=DATA.nodes.filter(n=>nodeVisible(n)&&n.lat!=null);
+  const pos=new Map(vis.map(n=>[n.id,n]));
+  if(document.getElementById('mapEdges').checked){
+    DATA.edges.filter(e=>edgeVisible(e)&&pos.has(e.from)&&pos.has(e.to)).forEach(e=>{
+      const a=pos.get(e.from),b=pos.get(e.to);
+      if(a.id===b.id) return; // skip self/co-located overlaps
+      L.polyline([[a.lat,a.lng],[b.lat,b.lng]],
+        {color:RTYPE_COLOR[e.rtype],weight:Math.min(0.8+e.weight*0.25,3),opacity:0.5,
+         interactive:false,className:'map-edge'}).addTo(mapEdgeLayer);
+    });
+  }
+  vis.forEach(n=>{
+    L.circleMarker([n.lat,n.lng],{radius:3+Math.sqrt(n.degree)*2.2,color:'#0b0e13',weight:0.6,
+      fillColor:nodeColor(n),fillOpacity:0.85})
+     .on('click',()=>showInfo(n.id))
+     .bindTooltip(`${n.name} (${n.degree})`).addTo(markerLayer);
+  });
+}
+
+// ---- info panel ----
+function showInfo(id){
+  const n=N.get(id); if(!n) return;
+  const out=DATA.edges.filter(e=>e.from===id&&edgeVisible(e));
+  const inc=DATA.edges.filter(e=>e.to===id&&edgeVisible(e));
+  const rel=l=>l.map(e=>{const o=N.get(e.from===id?e.to:e.from);
+    return `<div class="evi"><b>${e.rtype}</b> → <a href="${o.url}" target="_blank">${o.name}</a> `+
+           `<span class="muted">(${o.atype}, ${o.country})</span></div>`;}).join('')||'<div class="muted">none (with current filters)</div>';
+  document.getElementById('info').innerHTML=
+    `<h2>${n.name}</h2><div class="sub">${n.atype} · ${n.country}</div>`+
+    `<div class="kv"><div class="k">Degree</div><div>${n.degree} (in ${n.indeg} / out ${n.outdeg})</div>`+
+    `<div class="k">Continent</div><div>${n.continent}</div>`+
+    `<div class="k">Map pin</div><div>${({wikidata:'exact (Wikidata HQ)','wikidata-loose':'exact (Wikidata, loose name match)',geocode:'exact (geocoded)',address:'exact (address in profile)','address-city':'approx (city, manually supplied)',affiliation:'approx (university affiliation)',inherited:'approx (via affiliate)',country:'country centroid'})[n.geosrc]||n.geosrc||'?'}</div>`+
+    `<div class="k">Profile</div><div><a href="${n.url}" target="_blank">desmog.com ↗</a></div></div>`+
+    (n.preview?`<div class="muted">${n.preview}…</div>`:'')+
+    `<div class="grp"><h3>Outgoing (${out.length})</h3>${rel(out)}</div>`+
+    `<div class="grp"><h3>Incoming (${inc.length})</h3>${rel(inc)}</div>`;
+  net.selectNodes([id]);
+}
+
+// ---- controls ----
+function chip(text,color,on,onclick){
+  const s=document.createElement('span'); s.className='chip'+(on?'':' off');
+  s.innerHTML=(color?`<span class="sw" style="background:${color}"></span>`:'')+text;
+  s.onclick=()=>{s.classList.toggle('off');onclick(!s.classList.contains('off'));};
+  return s;
+}
+const aBox=document.getElementById('atypeChips');
+[['organization','organization'],['individual','individual'],['unknown','unknown']].forEach(([k,lbl])=>{
+  aBox.appendChild(chip(lbl,ATYPE_COLOR[k],true,on=>{on?state.atypeOn.add(k):state.atypeOn.delete(k);refresh();}));
+});
+const rBox=document.getElementById('rtypeChips');
+RTYPES.forEach(t=>rBox.appendChild(chip(t,RTYPE_COLOR[t],true,on=>{on?state.rtypeOn.add(t):state.rtypeOn.delete(t);refresh();})));
+document.getElementById('rAll').onclick=()=>{state.rtypeOn=new Set(RTYPES);[...rBox.children].forEach(c=>c.classList.remove('off'));refresh();};
+document.getElementById('rNone').onclick=()=>{state.rtypeOn=new Set();[...rBox.children].forEach(c=>c.classList.add('off'));refresh();};
+document.querySelectorAll('input[name=color]').forEach(r=>r.onchange=()=>{state.color=r.value;refresh();});
+document.getElementById('onlyConnected').onchange=e=>{state.onlyConnected=e.target.checked;refresh();};
+document.getElementById('physics').onchange=e=>net.setOptions({physics:{enabled:e.target.checked}});
+document.getElementById('mapEdges').onchange=()=>rebuildMap();
+document.getElementById('q').addEventListener('keydown',e=>{
+  if(e.key!=='Enter')return; const term=e.target.value.toLowerCase().trim(); if(!term)return;
+  const hit=DATA.nodes.find(n=>n.name.toLowerCase().includes(term)); if(!hit)return;
+  if(state.view==='net'){net.focus(hit.id,{scale:1.2,animation:true});} else {map.setView([hit.lat||30,hit.lng||-20],4);}
+  showInfo(hit.id);
+});
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active')); t.classList.add('active');
+  state.view=t.dataset.view;
+  const app=document.getElementById('app');
+  app.classList.toggle('view-map',state.view==='map');
+  app.classList.toggle('view-stats',state.view==='stats');
+  if(state.view==='map'){setTimeout(()=>{map.invalidateSize();rebuildMap();},50);}
+  if(state.view==='stats'){renderStats();}
+});
+
+// ---- stats view ----
+function aggCount(arr,key){const m=new Map();arr.forEach(x=>{const k=x[key]||'?';m.set(k,(m.get(k)||0)+1);});
+  return [...m.entries()].sort((a,b)=>b[1]-a[1]);}
+function barChart(elId,pairs,{color,limit}={}){
+  const el=document.getElementById(elId); if(limit)pairs=pairs.slice(0,limit);
+  const max=Math.max(1,...pairs.map(p=>p[1]));
+  el.innerHTML=pairs.map(([k,v],i)=>{
+    const c=typeof color==='function'?color(k,i):(color||'#4f9cf0');
+    return `<div class="bar"><div class="bl" title="${k}">${k}</div>`+
+      `<div class="bt"><div class="bf" style="width:${v/max*100}%;background:${c}"></div></div>`+
+      `<div class="bv">${v}</div></div>`;}).join('');
+}
+let statsDone=false;
+function renderStats(){
+  if(statsDone)return; statsDone=true;
+  const all=DATA.allNodes;
+  document.getElementById('s_total').textContent=`${all.length} profiles total`;
+  document.getElementById('s_edges').textContent=`${DATA.edges.length} unique directed relationships`;
+  barChart('c_atype',aggCount(all,'atype'),{color:k=>ATYPE_COLOR[k]||'#888'});
+  barChart('c_cont',aggCount(all,'continent'),{color:k=>CONT_COLOR[k]||'#888'});
+  barChart('c_country',aggCount(all,'pcountry'),{limit:15,color:k=>pcColor[k]||'#4f9cf0'});
+  const rt={}; DATA.edges.forEach(e=>rt[e.rtype]=(rt[e.rtype]||0)+1);
+  barChart('c_rtype',Object.entries(rt).sort((a,b)=>b[1]-a[1]),{color:k=>RTYPE_COLOR[k]||'#4f9cf0'});
+  const buckets=[[1,1],[2,2],[3,5],[6,10],[11,20],[21,50],[51,1e9]];
+  const labels=['1','2','3-5','6-10','11-20','21-50','50+']; const counts=buckets.map(()=>0);
+  DATA.nodes.forEach(n=>{for(let i=0;i<buckets.length;i++){if(n.degree>=buckets[i][0]&&n.degree<=buckets[i][1]){counts[i]++;break;}}});
+  barChart('c_deg',labels.map((l,i)=>[l,counts[i]]),{color:'#4f9cf0'});
+  const top=[...DATA.nodes].sort((a,b)=>b.degree-a.degree).slice(0,15).map(n=>[n.name,n.degree]);
+  barChart('c_top',top,{color:'#e4572e'});
+}
+
+function refresh(){ rebuildNet(); if(state.view==='map') rebuildMap();
+  document.getElementById('counts').textContent=
+    `${vnNodes.length} nodes · ${vnEdges.length} edges shown`;
+}
+refresh();
+</script></body></html>

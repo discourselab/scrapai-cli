@@ -1,0 +1,113 @@
+{
+  "name": "desmog_network",
+  "goal": "DeSmog network sources — a searchable knowledge base built with the same CARDS/KB recipe as kb_policy_CARDS. Content is published both as HTML pages and as PDFs. This scraper captures (a) the body text of HTML content pages and (b) ALL PDF URLs found on a page — same-organisation PDFs (own domain or a subdomain of it) into pdf_urls, and PDF links on EXTERNAL domains into external_pdf_urls. Both buckets are wanted; the split is by domain only. All report URLs are captured as URLs only; a downstream pipeline downloads them and extracts text later.",
+  "content_type": "articles",
+  "content_focus": "A row qualifies if it has its own substantive body text OR it links at least one PDF URL (same-organisation OR external). All three resulting kinds of row are wanted: (1) an HTML page with body text (a policy/report in HTML form); (2) an HTML page with body text AND PDF URL(s); (3) a page with PDF URL(s) but NO body text (a report landing or index page that is only download links). Keep report/publication/resource index pages even when they are case (3) — they are a primary source of report PDFs. Legal/policy pages are also kept as content rows with their PDFs. Exclude only pages that are neither content nor a PDF source: taxonomy/tag/author/date archives, search/filter result pages, events, and nav/site-utility pages. PDFs are split by domain into two fields, both wanted: 'same organisation' (registrable domain and any subdomain) -> pdf_urls; every other domain -> external_pdf_urls.",
+  "schema": {
+    "fields": [
+      {
+        "name": "title",
+        "type": "string",
+        "required": false,
+        "core": true
+      },
+      {
+        "name": "content",
+        "type": "string",
+        "required": false,
+        "core": true
+      },
+      {
+        "name": "url",
+        "type": "url",
+        "required": true
+      },
+      {
+        "name": "author",
+        "type": "string",
+        "required": false,
+        "core": true
+      },
+      {
+        "name": "published_date",
+        "type": "datetime",
+        "required": false,
+        "core": true
+      },
+      {
+        "name": "tags",
+        "type": "list",
+        "required": false,
+        "core": true
+      },
+      {
+        "name": "markdown",
+        "type": "string",
+        "required": false,
+        "core": true
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "required": false,
+        "core": true
+      },
+      {
+        "name": "top_image",
+        "type": "url",
+        "required": false,
+        "core": true
+      },
+      {
+        "name": "images",
+        "type": "list",
+        "required": false,
+        "core": true
+      },
+      {
+        "name": "videos",
+        "type": "list",
+        "required": false,
+        "core": true
+      },
+      {
+        "name": "pdf_urls",
+        "type": "list",
+        "required": false,
+        "core": true
+      },
+      {
+        "name": "external_pdf_urls",
+        "type": "list",
+        "required": false,
+        "core": true
+      }
+    ]
+  },
+  "exclusions": [
+    "Taxonomy/archive listings: category, tag, topic, theme, keyword archives (e.g. /category/, /tag/, /topic/, /themes/).",
+    "Author/people/staff/team archives (e.g. /author/, /people/, /staff/, /team/).",
+    "Date archives (e.g. /2024/, /2024/05/, /archive/2023/).",
+    "Events — listings and individual event/calendar pages. Deny /events?(/|$) (anchored so article slugs like 'extreme-weather-event-attribution' survive).",
+    "Search results and filter/faceted-result pages (e.g. /search, ?q=, ?filter=, ?sort=).",
+    "Nav/site-utility pages: about, contact, donate, subscribe/newsletter, account/login, accessibility, and the human-readable HTML sitemap page. (Legal/policy pages are NOT treated as utility here — they are wanted; see content_focus.)",
+    "RSS/Atom feeds (e.g. /feed, /rss).",
+    "Report/publication/resource INDEX pages are NOT excluded as listings — keep them (they are a primary source of report PDFs) and follow their pagination so reports on later pages are reached.",
+    "Binary files are never crawled or downloaded as pages, but their URLs are captured: same-organisation PDFs into pdf_urls, and PDF links on EXTERNAL domains into external_pdf_urls. The machine-readable sitemap.xml (USE_SITEMAP discovery) is kept — never deny it."
+  ],
+  "content_assessment_process": [
+    "Discovery first (every spider): before exploring, fetch robots.txt, the sitemap, and llms.txt. robots.txt usually declares the Sitemap: location — read it to locate the sitemap instead of guessing /sitemap.xml. The sitemap is the primary URL inventory. llms.txt, when present, is a curated human-written guide to the site's key content — use it to steer what to scrape and to surface report/publication sections. A site lacking robots.txt/llms.txt soft-404s to an HTML page (not text) — treat that as absent.",
+    "Safe denies (every spider): do not crawl INTO binary/asset files (\\.(pdf|docx?|pptx?|xlsx?|csv|zip|jpe?g|png|webp|gif|svg|mp4|mp3|...)([?#]|$)), RSS/Atom feeds (/(feed|rss|atom)(/|$)), or search/filter/sort query params ([?&](q|s|query|search|keyword|filter|sort)=). On a rule-based spider, follow report-index pagination — do NOT deny ?page=/?paged= or /page/N/ on report/publication/resource listings (that would drop reports on later pages). (USE_SITEMAP spiders do not follow links — they get every report and pagination URL from the sitemap, so this deny is moot for them, but still avoid blanket pagination denies.) Never deny a page that links PDFs, a legal/policy page, or sitemap.xml.",
+    "Deciding exclusions: before excluding ANY section / landing / listing / index / utility page, first CHECK it for same-organisation PDFs (inspect the page and look for own-domain .pdf links beyond the one site-wide footer PDF). If it links report PDFs it is a primary report source — KEEP it (add no deny). Only exclude a page that has BOTH no body text AND no same-org PDFs. Never use a blanket 'deny every section/index page' rule — that is the main way report PDFs are missed.",
+    "HTML extraction: use EXTRACTOR_ORDER [\"trafilatura\", \"newspaper\"] for title/content/author/published_date. Add FIELD_EXTRACT overrides only to correct a field the generic extractor gets wrong.",
+    "PDF capture (cases 2 and 3): add the pdf_urls overlay directive (runs on top of the generic extractor). pdf_urls is declared core:true so the generic extractor is allowed alongside it; the value is stored in metadata_json. Scope the selector to the org domain so external PDFs are excluded — substitute ORGDOMAIN with the registrable domain: {\"pdf_urls\": {\"css\": \"a[href^='/'][href*='.pdf']:not([href*='facebook.com/sharer']):not([href*='/intent/']):not([href*='linkedin.com/share']):not([href*='/url?'])::attr(href), a[href*='ORGDOMAIN'][href*='.pdf']:not([href*='facebook.com/sharer']):not([href*='/intent/']):not([href*='linkedin.com/share']):not([href*='/url?'])::attr(href)\", \"get_all\": true, \"processors\": [{\"type\": \"strip\"}, {\"type\": \"regex\", \"pattern\": \"^((?:https?://|/)\\\\S*?\\\\.pdf(?:[#?][^\\\\s]*)?)\"}]}}. [href*='ORGDOMAIN'] also matches subdomains; [href^='/'] catches relative links; *='.pdf' matches .pdf, .pdf?ver=, .pdf#page. SELECTOR HYGIENE (required): the :not([href*='facebook.com/sharer']):not([href*='/intent/']):not([href*='linkedin.com/share']):not([href*='/url?']) exclusions on every clause drop social-share / redirect wrappers (facebook/twitter/linkedin share buttons, google /url?) that embed a .pdf inside a query param — the wrapped PDF is the page's own and is captured directly anyway, so nothing is lost. The trailing regex processor trims junk after .pdf (e.g. .pdf%20type=application/pdf, .pdfhttp://, a whitespace-joined second URL) WHILE keeping a legitimate ?query/#fragment (e.g. blob-store SAS tokens, ?ver=, #page) — regex_processor passes a non-matching value through unchanged, so relative paths are safe. Capture broadly — do NOT restrict the selector to the main content (that misses sidebar/download-box PDFs). Most CMS PDF links are absolute; if a site uses root-relative hrefs the stored value is a path (e.g. /wp-content/x.pdf) that the downstream pipeline must resolve against the org domain. Dedupe the same-org PDF URL set before the downstream pipeline so each PDF (including any site-wide footer PDF) is fetched once.",
+    "External PDFs: also add an external_pdf_urls overlay directive — PDF links on OTHER domains, which the same-org pdf_urls misses. ALL of these are wanted, not just the org's own host. Generic directive, substitute ORGDOMAIN; it excludes same-org and relative links so the two fields stay disjoint: {\"external_pdf_urls\": {\"css\": \"a[href*='.pdf']:not([href^='/']):not([href*='ORGDOMAIN']):not([href*='facebook.com/sharer']):not([href*='/intent/']):not([href*='linkedin.com/share']):not([href*='/url?'])::attr(href)\", \"get_all\": true, \"processors\": [{\"type\": \"strip\"}, {\"type\": \"regex\", \"pattern\": \"^((?:https?://|/)\\\\S*?\\\\.pdf(?:[#?][^\\\\s]*)?)\"}]}}. Capture every external PDF link at capture time — do NOT filter. Apply the SAME selector hygiene as pdf_urls (the share/redirect :not(...) exclusions + the trailing trim regex). external_pdf_report.py can still rank external hosts by frequency per spider for downstream review, but no host is dropped.",
+    "Case 3 — bodyless report pages (PDF links, no body text): the generic extractor DROPS a page with no article text BEFORE pdf_urls runs, so these are missed by the overlay alone. Capture them with a named callback (e.g. parse_pdf_index — not a reserved name) routed by a rule to those URL patterns: the callback extracts pdf_urls (same domain-scoped selector) plus a title (title::text) and always emits a row. This keeps trafilatura for the real content pages — do NOT switch the whole spider to pure-CSS. ROUTING (important — per-URL callbacks do NOT fire on start_urls): a rule's callback fires only on a FOLLOWED link that matches that rule's allow pattern (rule-based spiders) or on a SITEMAP entry that matches a sitemap-rule (USE_SITEMAP). So route a case-3 page to parse_pdf_index by letting the spider FOLLOW a link to it (rule-based) or by having it present IN a sitemap (USE_SITEMAP). start_urls are NOT pattern-routed: on a rule-based spider every start URL goes to the FIRST defined callback (or parse_article if there are none), and on a USE_SITEMAP spider start_urls are sitemaps (XML), not pages. If a case-3 page is neither reachable by a followed link nor present in a sitemap, capture it with a small DEDICATED spider whose start_urls are exactly those URLs and whose ONLY callback is parse_pdf_index (start-URL routing then applies parse_pdf_index to them).",
+    "Scope: on a rule-based spider, follow report/publication/resource listings and their pagination so the spider reaches every report — detail pages (cases 1 and 2) and index pages (case 3). On a USE_SITEMAP spider there is no link-following: coverage comes from the sitemap, so make sure the report detail and index URLs are listed in a sitemap (add the relevant sitemap if not). For a listing whose pagination is JavaScript/hash/infinite-scroll (no real <a href> next link), use the PAGINATED_LISTINGS setting — a browser walks the Next button and routes the discovered detail URLs to parse_article.",
+    "Legal/policy pages: include them as content rows and capture their PDFs. Identify them in the site's OWN language (aviso-legal, impressum, datenschutz, mentions-legales, 개인정보처리방침, etc.) — do not rely on an English word-list. Do not deny them, and let them match an ordinary article rule (generic extractor) — NOT the parse_pdf_index rule. Reach them normally: followed from a crawled page (rule-based) or present in a sitemap (USE_SITEMAP); they almost always are (footer links / sitemap). Per the routing note in the case-3 step, do not rely on start_urls to route them when the spider has callbacks. (robots.txt and other compliance signals are handled by compliance_capture.py, not the spider.)",
+    "Download-manager / NON-HREF PDF URLs: a report's PDF/download URL is often NOT an <a href> — it can live in JSON-LD (\"contentUrl\":\"https://site/download/<id>/\"), a data-attribute, or be XHR-resolved. href-based tools (extract-urls, a[href*='.pdf']) and the generic extractor MISS these, so you may wrongly conclude a page has no PDF. ALWAYS verify against the live page's raw HTML / JSON-LD (not just hrefs, and not by diffing old crawl output — a config change explains output diffs without any site change). Capture JSON-LD downloads with an xpath STRING-FUNCTION + get_all:true — NOT a regex processor. CRITICAL: list fields (pdf_urls / external_pdf_urls) MUST come out as JSON LISTS; a regex processor used as the value EXTRACTOR returns a single STRING (and is a no-op on a get_all list), so the field serialises character-by-character downstream (the rmi_org bug). Extract the URL with an xpath string-function so get_all can wrap it in a list — substring-before(substring-after(string(the ld+json script), 'contentUrl\":\"'), '\"') with get_all:true + a strip processor (see rmi_org for the working directive). (href-based PDFs already list-ify via CSS ::attr(href)+get_all; only the JSON-LD/text case needs this.) Only genuinely XHR-only downloads need --browser; record any truly unreachable ones in analysis/NOTES.md.",
+    "Test before finalising: crawl --limit 5 and show — confirm content pages get title+content, case-3 pages get pdf_urls, and pdf_urls captures same-org PDFs while excluding external ones. Fix the directive/rules/callback and re-test, then import the final spider."
+  ],
+  "notes": "Searchable knowledge base for the desmog_network source set. A row qualifies on body content OR any PDF URL (same-org OR external). Standard PDF-first kb recipe (trafilatura for HTML; pdf_urls/external_pdf_urls overlays; case-3 PDF-index pages via parse_pdf_index callback). markdown/description/top_image/images/videos auto-populate from trafilatura where present. Rules copied from kb_policy_CARDS. See content_assessment_process.",
+  "created_at": "2026-10-01"
+}
