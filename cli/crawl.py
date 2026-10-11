@@ -408,6 +408,11 @@ def _run_spider(
         # Extract all needed info from db_spider before exiting the session
         # so the subprocess work below can run without a live DB connection.
         spider_settings = list(db_spider.settings) if db_spider.settings else []
+        # For the USE_SITEMAP warning below: does this spider have follow rules
+        # the sitemap spider will silently ignore? (docs/requests/19)
+        has_follow_rules = any(
+            getattr(r, "follow", False) for r in (db_spider.rules or [])
+        )
 
     # No --limit = production crawl: hand it to Pueue so it survives an SSH
     # disconnect. The Pueue task re-runs this command with --detached, which
@@ -532,6 +537,21 @@ def _run_spider(
     if use_sitemap:
         spider_class = "sitemap_database_spider"
         click.echo("🗺️  Using sitemap spider")
+        if has_follow_rules:
+            # USE_SITEMAP swaps the spider class: SitemapSpider has no
+            # LinkExtractor, so link-following is gone, not added to
+            # (docs/requests/19). Make the trade-off visible at launch.
+            click.echo(
+                "⚠️  USE_SITEMAP replaces link-following: ONLY sitemap-listed "
+                "URLs will be crawled."
+            )
+            click.echo(
+                "   This spider's follow rules are ignored — content sections "
+                "missing from the"
+            )
+            click.echo(
+                "   sitemap will NOT be discovered via links (docs/requests/19)."
+            )
     else:
         spider_class = "database_spider"
 
