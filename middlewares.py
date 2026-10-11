@@ -65,6 +65,14 @@ class SmartProxyMiddleware:
         # Flag to show expert-in-the-loop message only once
         self.expert_message_shown = False
 
+        # Dead-proxy detection (auto mode): consecutive transport-level failures
+        # of proxied requests. Any proxied response that arrives resets the
+        # counter; at the threshold the proxy is declared dead for this crawl
+        # and escalation fails open to direct connections (docs/requests/16).
+        self.proxy_dead = False
+        self._proxy_consecutive_failures = 0
+        self.proxy_dead_threshold = 5
+
         # Statistics
         self.stats = {
             "direct_requests": 0,
@@ -104,8 +112,17 @@ class SmartProxyMiddleware:
             self.stats["proxy_requests"] += 1
             return None
 
+        # Proxy declared dead: strip it from scheduled/retried requests so they
+        # go direct instead of burning timeouts through a broken tunnel.
+        if self.proxy_dead and self.proxy_mode == "auto" and request.meta.get("proxy"):
+            del request.meta["proxy"]
+
         # Check if this domain needs proxy (learned from previous blocks)
-        if domain in self.blocked_domains and self.proxy_available:
+        if (
+            domain in self.blocked_domains
+            and self.proxy_available
+            and not self.proxy_dead
+        ):
             if not request.meta.get("proxy"):
                 request.meta["proxy"] = self.proxy_url
                 self.stats["proxy_requests"] += 1
@@ -123,8 +140,20 @@ class SmartProxyMiddleware:
         """
         domain = urlparse(request.url).netloc
 
+        # Any proxied response arriving proves the tunnel works — reset the
+        # dead-proxy counter (blocked statuses included: that's a site answer,
+        # not a transport failure).
+        if request.meta.get("proxy"):
+            self._proxy_consecutive_failures = 0
+
         # Check for rate limiting or blocking
         if response.status in [403, 429, 503]:
+            # Compliance witness probes (robots/llms captures) must not poison
+            # the domain: many sites hard-403 them while serving content fine.
+            # The witness file records the 403 as evidence (docs/requests/16).
+            if request.meta.get("compliance_file"):
+                return response
+
             # Check if we already tried with proxy
             if request.meta.get("proxy"):
                 # Already used proxy and still blocked
@@ -145,8 +174,10 @@ class SmartProxyMiddleware:
 
                 return response
 
-            # First block - retry with proxy if available
-            if self.proxy_available:
+            # First block - retry with proxy if available (never once the
+            # proxy is declared dead: the page just fails through the normal
+            # retry path instead of poisoning the domain)
+            if self.proxy_available and not self.proxy_dead:
                 logger.warning(f"⚠️  Blocked ({response.status}): {request.url}")
                 logger.info(f"🔄 Retrying with {self.active_proxy_type} proxy...")
 
@@ -173,6 +204,57 @@ class SmartProxyMiddleware:
                 self.crawler.stats.inc_value("proxy/success")
 
         return response
+
+    def process_exception(self, request, exception):
+        """Detect a dead escalation proxy (docs/requests/16).
+
+        Exceptions reach this middleware only after RetryMiddleware gives up,
+        so each hit is a request that terminally failed at transport level.
+        Consecutive failures of PROXIED requests (a working proxy would answer
+        with SOMETHING, even a 403) mean the tunnel itself is broken — declare
+        it dead for the crawl and fail open to direct connections. Explicit
+        residential / PROXY_FROM_START crawls are the user's deliberate proxy
+        choice and are never failed open.
+        """
+        if not request.meta.get("proxy") or self.proxy_dead:
+            return None
+
+        self._proxy_consecutive_failures += 1
+        if self.crawler is not None and getattr(self.crawler, "stats", None):
+            self.crawler.stats.inc_value("proxy/transport_failure")
+
+        if (
+            self._proxy_consecutive_failures >= self.proxy_dead_threshold
+            and self.proxy_mode == "auto"
+        ):
+            self.proxy_dead = True
+            self.blocked_domains.clear()
+            if self.crawler is not None and getattr(self.crawler, "stats", None):
+                self.crawler.stats.set_value("proxy/declared_dead", 1)
+            logger.error("")
+            logger.error("=" * 80)
+            logger.error(
+                f"💀 DEAD PROXY: {self._proxy_consecutive_failures} consecutive "
+                f"transport failures through the {self.active_proxy_type} proxy "
+                f"(last: {type(exception).__name__})."
+            )
+            logger.error(
+                "   Failing open to DIRECT connections for the rest of this crawl; "
+                "blocked pages will be skipped instead of escalated."
+            )
+            logger.error(
+                "   If the site truly blocks direct traffic, re-run with "
+                "--proxy-type residential; if it serves fine, --proxy-type none."
+            )
+            logger.error("=" * 80)
+            logger.error("")
+            # Re-issue the triggering request direct
+            new_request = request.copy()
+            del new_request.meta["proxy"]
+            new_request.dont_filter = True
+            return new_request
+
+        return None
 
     def _show_expert_message(self):
         """Show expert-in-the-loop message for residential proxy escalation."""
@@ -231,6 +313,11 @@ class SmartProxyMiddleware:
         else:
             logger.info("   Proxy: not used")
         logger.info(f"   Blocked & retried: {self.stats['blocked_retries']}")
+        if self.proxy_dead:
+            logger.warning(
+                f"   💀 {self.active_proxy_type} proxy was declared DEAD mid-crawl "
+                "(failed open to direct — see docs/requests/16)"
+            )
         logger.info(f"   Blocked domains: {len(self.blocked_domains)}")
         if self.blocked_domains:
             logger.info(
