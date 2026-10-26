@@ -30,7 +30,15 @@ docs/scrapy-native-features-implementation.md
 skills/
 .agent/
 .agents/
-.claude/
+# .claude is local agent state, EXCEPT the shipped slash-command skills.
+# new-project.md and subset-portal.md are PROJECT-SCOPED (this team's project
+# recipes) and deliberately stay local — not part of the upstream PRs.
+.claude/*
+!.claude/commands/
+.claude/commands/new-project.md
+.claude/commands/subset-portal.md
+# team-specific docs (full skills lineup incl. local skills, migration playbook)
+docs/local/
 .gemini/
 .cursor/
 
