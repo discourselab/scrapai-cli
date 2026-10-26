@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import re
 
 logger = logging.getLogger(__name__)
@@ -110,6 +111,27 @@ def _pdf_links(response):
     return out
 
 
+# Kept in JOBDIR by a crawl that stops early, for the leg that resumes it.
+LEG_STATS_FILE = "crawl_stats_leg.json"
+_LEG_COUNTS = ("items", "requests", "responses")
+_LEG_HISTOGRAMS = ("status", "final_status", "exceptions", "retries")
+
+
+def _add_leg_counts(data, earlier):
+    """Add an earlier leg's counters and histograms into this leg's `data`."""
+    for key in _LEG_COUNTS:
+        data[key] = data.get(key, 0) + (earlier.get(key) or 0)
+    for key in _LEG_HISTOGRAMS:
+        merged = dict(data.get(key) or {})
+        for name, n in (earlier.get(key) or {}).items():
+            merged[name] = merged.get(name, 0) + n
+        data[key] = merged
+    # Rejected sitemaps: the union over legs, earlier legs first, each URL once.
+    union = list(earlier.get("sitemap_rejected") or [])
+    union += [u for u in data.get("sitemap_rejected") or [] if u not in union]
+    data["sitemap_rejected"] = union
+
+
 class BaseDBSpiderMixin:
     """Mixin providing shared logic for DatabaseSpider and SitemapDatabaseSpider."""
 
@@ -145,6 +167,167 @@ class BaseDBSpiderMixin:
                 "https": "handlers.cloudflare_handler.CloudflareDownloadHandler",
             }
 
+    def closed(self, reason):
+        """Persist each completed crawl's own stats so the audit can read the
+        crawl's request outcomes and sitemap accounting for free, instead of
+        re-fetching anything. Scrapy already counts every response status and
+        exception; we just write them out. Only full production
+        crawls write: an item-capped run (--limit / health) is skipped by
+        SETTING, not close reason — a test crawl that runs out of items UNDER
+        its limit still ends "finished" and must not overwrite a real crawl's
+        numbers.
+
+        Alongside the attempt-level `status` histogram we store Scrapy's RAW
+        outcome counters, uninterpreted, so the audit can derive per-crawl
+        outcomes (and fix its formula later) without re-crawling:
+        - responses: response_received_count — final responses only; `status`
+          counts every download attempt, retried ones included.
+        - final_status: {code: n} from httperror/response_ignored_status_count
+          — final non-2xx responses after retry/proxy handling (compliance
+          witness fetches set handle_httpstatus_all, so they never land here).
+        - exceptions: {class: n} from downloader/exception_type_count —
+          attempt-level, includes retried attempts and IgnoreRequest raised
+          from process_request.
+        - retries: {reason: n} from retry/reason_count — exception class names
+          as above, or "<code> <Reason>" for HTTP-code retries.
+        All four are always written ({} / 0 when empty) so a reader can tell a
+        new-format file with nothing to report from an older file.
+
+        A checkpointed crawl that stops early keeps its counters in its own
+        JOBDIR (LEG_STATS_FILE); the leg that resumes takes them and adds its
+        own, so a crawl finished over several legs reports whole-crawl numbers,
+        marked `summed`. The file goes when the CLI removes the checkpoint.
+
+        sitemap_rejected lists the sitemap URLs Scrapy refused to parse (a 200
+        whose body is not a urlset or sitemapindex, such as an HTML view or a
+        block page; sitemap_spider.py). Their URLs were never counted, so a
+        non-empty list means sitemap_total / eligible are short. Both are still
+        written; the list is what tells the audit so. Always present ([] when
+        none, and on rule-based spiders); summed legs take the union. The kept
+        bodies are in data/<project>/_audit/sitemap_rejects/<spider>/."""
+        try:
+            if self.crawler.settings.getint("CLOSESPIDER_ITEMCOUNT"):
+                return
+            stats = self.crawler.stats.get_stats()
+
+            def by_suffix(prefix):
+                # Strip the prefix verbatim: class/reason names contain dots
+                # and spaces ("503 Service Unavailable").
+                return {
+                    k.replace(prefix, "", 1): v
+                    for k, v in stats.items()
+                    if isinstance(k, str) and k.startswith(prefix)
+                }
+
+            status = by_suffix("downloader/response_status_count/")
+            ignored = "httperror/response_ignored_status_count/"
+            final_status = by_suffix(ignored)
+            data = {
+                "spider": self.spider_name,
+                "reason": reason,
+                "items": stats.get("item_scraped_count", 0),
+                "requests": stats.get("downloader/request_count", 0),
+                "status": status,  # {"200": 4890, "404": 210, ...}
+                # Raw outcome counters (see docstring). Written on resumed
+                # legs too: like items/requests they cover this leg only
+                # unless earlier legs are added in below (`summed`); unlike
+                # the sitemap figures they are never mistaken for a whole-site
+                # denominator, so there is nothing to withhold.
+                "responses": stats.get("response_received_count", 0),
+                "final_status": final_status,
+                "exceptions": by_suffix("downloader/exception_type_count/"),
+                "retries": by_suffix("retry/reason_count/"),
+                "sitemap_rejected": list(getattr(self, "_sm_rejected", None) or []),
+            }
+            # A resumed crawl (checkpoint) restores its request queue from disk
+            # but every in-memory counter restarts at zero, so this leg's
+            # numbers aren't the whole crawl's. Record the fact and withhold
+            # the sitemap denominator below — wrong-but-plausible coverage is
+            # worse than absent (the audit falls back to fetching the sitemap).
+            resumed = getattr(self, "_resumed", False)
+            if resumed:
+                data["resumed"] = True
+                earlier = getattr(self, "_earlier_legs", None)
+                if earlier is not None:
+                    _add_leg_counts(data, earlier)
+                    data["summed"] = True
+            if reason != "finished":
+                # Only a checkpointed crawl can resume; keep this leg's counts
+                # (earlier legs included) for the leg that continues it.
+                jobdir = self.crawler.settings.get("JOBDIR")
+                if jobdir and (not resumed or data.get("summed")):
+                    with open(os.path.join(jobdir, LEG_STATS_FILE), "w") as fh:
+                        json.dump(data, fh)
+                return
+            # For the audit: sitemap spiders count their own sitemap size +
+            # rule-eligible URLs while parsing (sitemap_spider.py); record them
+            # so the audit reads the coverage denominator from the crawl instead
+            # of re-fetching the sitemap. Absent on rule-based spiders -> the
+            # audit falls back to fetching the sitemap for those.
+            sm_total = getattr(self, "_sm_total", 0)
+            if sm_total and not resumed:
+                data["sitemap_total"] = sm_total
+                data["eligible"] = getattr(self, "_sm_eligible", 0)
+            out_dir = self._audit_dir("crawl_stats")
+            os.makedirs(out_dir, exist_ok=True)
+            with open(os.path.join(out_dir, f"{self.spider_name}.json"), "w") as fh:
+                json.dump(data, fh, indent=2)
+            logger.info(f"Wrote crawl stats → {out_dir}/{self.spider_name}.json")
+        except Exception as e:
+            logger.warning(f"Could not write crawl stats: {e}")
+
+    def _audit_dir(self, *parts):
+        """data/<project>/_audit/<parts>: where this spider's audit records go.
+        The crawl-stats file and the kept rejected-sitemap bodies both resolve
+        here, so they always land in the same project."""
+        from core.config import DATA_DIR
+
+        project = (
+            getattr(getattr(self, "spider_config", None), "project", None) or "default"
+        )
+        return os.path.join(DATA_DIR, project, "_audit", *parts)
+
+    @staticmethod
+    def _resumed_from_checkpoint(crawler):
+        """True when this run continues an interrupted crawl. Scrapy's scheduler
+        persists its pending-queue state to JOBDIR/requests.queue/active.json on
+        close: a cleanly finished crawl leaves an empty list, an interrupted one
+        the non-empty priority state it will resume from — the same file Scrapy
+        itself reads to resume. Must be checked BEFORE the scheduler opens (the
+        queue is consumed during the run); callers do this from from_crawler."""
+        jobdir = crawler.settings.get("JOBDIR")
+        if not jobdir:
+            return False
+        try:
+            with open(os.path.join(jobdir, "requests.queue", "active.json")) as fh:
+                return bool(json.load(fh))
+        except (OSError, ValueError):
+            return False
+
+    @staticmethod
+    def _take_leg_stats(crawler):
+        """Read and remove the counters an earlier leg left in JOBDIR. Removed
+        at once: if this leg then dies without closing, the next leg finds no
+        file and reports its own leg only, rather than a sum missing a leg."""
+        path = os.path.join(crawler.settings.get("JOBDIR"), LEG_STATS_FILE)
+        taken = path + ".taken"
+        try:
+            # Move it aside before reading, so a file that cannot be removed
+            # or parsed is never taken twice.
+            os.replace(path, taken)
+        except OSError:
+            return None
+        try:
+            with open(taken) as fh:
+                earlier = json.load(fh)
+        except (OSError, ValueError):
+            earlier = None
+        try:
+            os.remove(taken)
+        except OSError:
+            pass
+        return earlier if isinstance(earlier, dict) else None
+
     @classmethod
     def _apply_cf_to_crawler(cls, spider, crawler):
         """Apply spider settings + Cloudflare/curl_cffi handlers to crawler after init.
@@ -155,6 +338,10 @@ class BaseDBSpiderMixin:
         propagation step, JSON-declared settings like CONCURRENT_REQUESTS,
         DOWNLOAD_DELAY, and AUTOTHROTTLE_ENABLED are silently ignored.
         """
+        # Runs from from_crawler, before the scheduler opens — the last moment
+        # the persisted queue state is still readable (see the helper).
+        spider._resumed = cls._resumed_from_checkpoint(crawler)
+        spider._earlier_legs = cls._take_leg_stats(crawler) if spider._resumed else None
         if hasattr(spider, "custom_settings"):
             for key, value in spider.custom_settings.items():
                 crawler.settings.set(key, value, priority="spider")
