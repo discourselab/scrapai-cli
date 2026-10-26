@@ -123,7 +123,11 @@ def crawl_stats_outcomes(project, spider):
     to parse (a 200 whose body is not a urlset or sitemapindex): their URLs
     were dropped and never counted, so the crawl-recorded sitemap_total /
     eligible are short. [] = none rejected; None = the file predates the key
-    (unknown, never flagged)."""
+    (unknown, never flagged).
+
+    items = the pages the recorded run scraped (None when absent). The file
+    holds the latest run only, so the caller compares it with the crawl
+    output to tell a top-up run's figures from the whole crawl's."""
     path = os.path.join(
         DATA_DIR,
         project,
@@ -157,6 +161,7 @@ def crawl_stats_outcomes(project, spider):
             "resumed": bool(d.get("resumed")),
             "summed": bool(d.get("summed")),
             "sitemap_rejected": rejected,
+            "items": d.get("items"),
         }
     status = d.get("status") or {}
     attempts = sum(int(v or 0) for v in status.values())
@@ -169,6 +174,7 @@ def crawl_stats_outcomes(project, spider):
         "resumed": bool(d.get("resumed")),
         "summed": bool(d.get("summed")),
         "sitemap_rejected": rejected,
+        "items": d.get("items"),
     }
 
 

@@ -97,8 +97,11 @@ its legs summed by the writer (the file is stamped `resumed` and `summed`) and r
 like any other crawl. One stamped `resumed` without `summed` covers only its last
 leg (an earlier leg died before handing its counters on): its figures end `last
 leg`, and a blocked or failed share over the threshold still flags, with the same
-`last leg` caveat in the flag. The dashboard's row detail labels per-attempt and
-last-leg figures as such.
+`last leg` caveat in the flag. The stats file holds the latest run only, so after a
+top-up run (a re-run that fetches only what is new or failed) its figures cover that
+run: when it scraped under 90% of the crawl output's rows, they end `last run (x/y
+pages)`, x the run's pages and y the rows, and still flag on the run's own share. The
+dashboard's row detail labels per-attempt, last-leg and last-run figures as such.
 
 **Sitemaps given.** For a `USE_SITEMAP` spider the `sitemap` cell reads `given/total`
 (e.g. `4/13`) instead of `yes`: how many of the site's sitemaps its `start_urls`

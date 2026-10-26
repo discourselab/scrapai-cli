@@ -203,6 +203,7 @@ def test_failed_excludes_retried_and_ignorerequest(data):
         "resumed": False,
         "summed": False,
         "sitemap_rejected": None,  # a file without the key: unknown
+        "items": None,
     }
     row = score_spider("example_org", _sp(), _corpus(100), _ctx(data))
     assert row["failed"] == "3 (2.9%)"
@@ -309,6 +310,31 @@ def test_resumed_unsummed_leg_flags_with_caveat(data):
 
     assert "last crawl leg only" in _coverage_detail("proj", row)
     assert _flag_title("blocked 30 (25%) last leg").startswith("Many of the crawl")
+
+
+def test_top_up_run_figures_marked_last_run(data):
+    # the stats file holds only a top-up run (104 pages) of a 44,000-row
+    # crawl: its share is the run's, not the data's, and the cells say so
+    _final_stats(
+        data, "example_org", responses=101, exceptions={TIMEOUT: 20}, items=104
+    )
+    c = _corpus(44000)
+    row = score_spider("example_org", _sp(), c, _ctx(data))
+    assert row["failed"] == "20 (17%) last run (104/44,000 pages)"
+    assert row["outcomes_basis"] == "last run"
+    assert "failed 20 (17%) last run (104/44,000 pages)" in row["flags"]
+    from core.quality.dashboard.coverage_tab import _coverage_detail
+    from core.quality.dashboard.widgets import _flag_title
+
+    assert "last crawl run only" in _coverage_detail("proj", row)
+    assert _flag_title("failed 20 (17%) last run (104/44,000 pages)")
+
+
+def test_full_run_not_marked_last_run(data):
+    _final_stats(data, "example_org", exceptions={TIMEOUT: 20}, items=95)
+    row = score_spider("example_org", _sp(), _corpus(100), _ctx(data))
+    assert row["failed"] == "20 (17%)"
+    assert row["outcomes_basis"] == "final"
 
 
 def test_resumed_summed_is_a_whole_crawl(data):

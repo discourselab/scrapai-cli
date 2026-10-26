@@ -45,6 +45,9 @@ OUTCOME_FLAG_MIN = 5
 NO_OUTCOME = "–"  # dead/blocked/failed not recorded (or status-blind spider)
 PER_ATTEMPT_MARK = "†"  # md suffix: a per-attempt figure (older crawl format)
 LAST_LEG = " last leg"  # suffix: a resumed crawl whose stats cover one leg
+# The stats file holds the latest run only: a run that scraped under this share
+# of the crawl output's rows (a DeltaFetch top-up) is marked "last run"
+LAST_RUN_SHARE = 0.9
 # what the dead/blocked/failed figures are, for the dashboard's detail and
 # tooltips: final outcomes / per-attempt counts (older crawl-stats format) /
 # the last leg of a resumed crawl whose legs weren't summed
@@ -53,6 +56,8 @@ OUTCOME_BASIS = {
     "attempts": "per attempt, older crawl format — never flagged",
     "last leg": "last crawl leg only (resumed, legs not summed) — flagged on "
     "the leg's own share",
+    "last run": "last crawl run only (a top-up; an earlier run's figures were "
+    "replaced) — not a share of the whole data, flagged on the run's own share",
 }
 
 
@@ -533,6 +538,9 @@ def score_spider(name, sp, c, ctx):
     # like any other. Without `summed` the file covers only the last leg, so
     # its figures carry a "last leg" suffix — in the cells and in any flag —
     # but still flag: a leg that is 40% blocked is real evidence of a wall.
+    # The file holds the latest run only, so after a top-up its figures cover
+    # that run, not the data: when the run scraped well under the output's
+    # rows they end "last run (x/y pages)" — x the run's pages, y the rows.
     outcomes = crawl_stats_outcomes(project, name)
     dead_cell = blocked_cell = failed_cell = NO_OUTCOME
     basis = ""
@@ -544,6 +552,11 @@ def score_spider(name, sp, c, ctx):
             "last leg" if one_leg else ("final" if outcomes["final"] else "attempts")
         )
         leg = LAST_LEG if one_leg else ""
+        items = outcomes.get("items")
+        if isinstance(items, int) and recs and items < LAST_RUN_SHARE * recs:
+            leg += f" last run ({items:,}/{recs:,} pages)"
+            if basis == "final":
+                basis = "last run"
         if not blind:
             dead_cell = outcome_cell(outcomes["dead"], base) + leg
             blocked_cell = outcome_cell(outcomes["blocked"], base) + leg
